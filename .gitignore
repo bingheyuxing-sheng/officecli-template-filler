@@ -1,0 +1,11 @@
+# Python cache & temporary files
+__pycache__/
+*.py[cod]
+*.tmp
+*.bak
+~$*.docx
+~$*.xlsx
+
+# OS artifacts
+.DS_Store
+Thumbs.db
