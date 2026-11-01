@@ -7,6 +7,7 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Word](https://img.shields.io/badge/Word-.docx-2B579A)
 ![Excel](https://img.shields.io/badge/Excel-.xlsx%20%2F%20.xlsm-217346)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
@@ -181,4 +182,4 @@ v3.5 聚焦「让报告成功等于真的完成」：事务化交付（Preflight
 
 ## License
 
-暂未声明许可证。公开发布前请补充 `LICENSE`（如 MIT / Apache-2.0），以明确他人使用、修改与分发权利。
+本项目采用 [MIT License](LICENSE)，可自由使用、修改、分发与商用，需保留版权声明与许可声明。
