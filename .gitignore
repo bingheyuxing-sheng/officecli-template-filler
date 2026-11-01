@@ -14,4 +14,7 @@ Thumbs.db
 _c_*.docx
 _c_*.xlsx
 _c_*.json
+
+# Archives (release packages under dist/ are tracked on purpose)
 *.zip
+!dist/*.zip

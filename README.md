@@ -130,11 +130,14 @@ python scripts/run_qa.py output.docx --reference template.docx
 
 ```
 officecli-template-filler/
+├── README.md             # 项目介绍与使用说明
+├── CHANGELOG.md          # 版本变更记录
 ├── SKILL.md              # Agent 使用规范与流程约束
 ├── engine/               # 核心引擎（OOXML / 表格 / 审阅 / QA / Excel / SSOT）
 ├── scripts/              # CLI 入口（路由、生成、修复、审阅、QA、渲染、清理）
 ├── schemas/              # JSON Schema（文档规格 / 修复计划 / QA 报告 / 审阅报告）
 ├── references/           # 引擎实现参考
+├── dist/                 # 历史版本打包文件
 └── tests/                # 回归测试
 ```
 
@@ -147,6 +150,17 @@ python -m unittest discover -s tests -p "test_*.py"
 ```
 
 当前基线：**50 项测试全部通过**（v3.4.2）。
+
+---
+
+## 历史版本
+
+各版本的打包文件位于 `dist/`，可直接下载后作为 Agent Skill 安装；变更细节见 [CHANGELOG.md](CHANGELOG.md)。
+
+| 版本 | 打包文件 | 要点 |
+|---|---|---|
+| v3.4.2 | [officecli-template-filler-v3.4.2-review-docx.zip](dist/officecli-template-filler-v3.4.2-review-docx.zip) | 修订 ID 真实一致、超链接结构保护、定位防误改、XLSM 保宏、QA 四态 |
+| v3.4.1 | [officecli-template-filler-v3.4.1-review-docx.zip](dist/officecli-template-filler-v3.4.1-review-docx.zip) | 格式修复写入 Word 原生格式修订痕迹 |
 
 ---
 
