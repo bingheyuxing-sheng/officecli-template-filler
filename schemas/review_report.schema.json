@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review_report.schema.json",
+  "title": "OfficeCLI REVIEW Mode Report",
+  "description": "Report emitted by scripts/review_document.py after producing a tracked-changes review document.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "task_mode",
+    "reference_docx",
+    "target_docx",
+    "output_docx",
+    "summary",
+    "execution",
+    "review_qa",
+    "passed"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "3.1" },
+    "task_mode": { "type": "string", "const": "REVIEW" },
+    "reference_docx": { "type": "string" },
+    "target_docx": { "type": "string" },
+    "output_docx": { "type": "string" },
+    "author": { "type": "string" },
+    "summary": {
+      "type": "object",
+      "required": ["format_restore_actions", "tracked_text_revisions", "comments", "total_actions"],
+      "properties": {
+        "format_restore_actions": { "type": "integer", "minimum": 0 },
+        "tracked_text_revisions": { "type": "integer", "minimum": 0 },
+        "comments": { "type": "integer", "minimum": 0 },
+        "total_actions": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "output_docx",
+        "format_restored",
+        "tracked_text_revisions",
+        "comments_added",
+        "unresolved_actions",
+        "track_changes_enabled",
+        "review_mode"
+      ],
+      "properties": {
+        "output_docx": { "type": "string" },
+        "format_restored": { "type": "integer", "minimum": 0 },
+        "tracked_text_revisions": { "type": "integer", "minimum": 0 },
+        "comments_added": { "type": "integer", "minimum": 0 },
+        "unresolved_actions": { "type": "array", "items": { "type": "string" } },
+        "track_changes_enabled": { "type": "boolean" },
+        "review_mode": { "type": "string" }
+      }
+    },
+    "review_qa": {
+      "type": "object",
+      "required": ["passed", "track_changes_enabled", "revision_count", "comment_count", "issues"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "track_changes_enabled": { "type": "boolean" },
+        "revision_count": { "type": "integer", "minimum": 0 },
+        "comment_count": { "type": "integer", "minimum": 0 },
+        "issues": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "package_qa_passed": { "type": "boolean" },
+    "passed": { "type": "boolean" }
+  }
+}
