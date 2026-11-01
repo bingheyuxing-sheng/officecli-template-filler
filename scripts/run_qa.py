@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+CLI entrypoint: Run full DOCX Package Integrity, Format-Diff & Visual QA (or Excel Formula & Style QA).
+Usage:
+    python scripts/run_qa.py <document.docx_or_xlsx> [--out qa_report.json]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+import docx
+from engine import (
+    audit_docx_package_integrity,
+    audit_format_and_text_qa,
+    run_visual_layout_qa,
+    audit_excel_formula_and_style_qa,
+    audit_review_integrity,
+    install_auto_cleanup,
+)
+
+
+SECTION_KEYS = ("package_integrity", "format_and_text_qa", "visual_qa", "review_qa", "excel_qa")
+
+# Placeholder residue is intentional in REVIEW mode: it waits for a human decision.
+PENDING_HUMAN_REVIEW_CODES = {"TEMPLATE_TEXT_RESIDUAL"}
+
+
+def _collect(report: dict) -> tuple:
+    issues = []
+    gaps = []
+    unverified = 0
+    for key in SECTION_KEYS:
+        section = report.get(key)
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("structured_issues") or section.get("issues") or []:
+            if isinstance(item, dict) and item.get("code"):
+                issues.append(item)
+        gaps.extend(section.get("coverage_gaps") or [])
+        unverified += int(section.get("unverified_count") or 0)
+    return issues, gaps, unverified
+
+
+def main() -> int:
+    install_auto_cleanup()
+    parser = argparse.ArgumentParser(description="Run full QA suite on a .docx or .xlsx output file.")
+    parser.add_argument("file_path", nargs="?", default="", help="Path to .docx or .xlsx file")
+    parser.add_argument("--output", dest="output_alias", default="", help="Alias for the positional file path")
+    parser.add_argument("--reference", default="", help="Optional reference/template .docx baseline for size and visual QA")
+    parser.add_argument("--review", action="store_true", help="Also audit tracked-change and comment integrity for REVIEW outputs")
+    parser.add_argument("--out", "--report", dest="out", default="", help="Optional output JSON report path")
+    args = parser.parse_args()
+
+    fpath = args.output_alias or args.file_path
+    if not fpath:
+        parser.error("an output file path is required (positional, --output)")
+
+    if fpath.lower().endswith((".xlsx", ".xlsm")):
+        excel_qa = audit_excel_formula_and_style_qa(fpath)
+        report = {"excel_qa": excel_qa}
+    else:
+        doc = docx.Document(fpath)
+        pkg_qa = audit_docx_package_integrity(fpath)
+        # Structured report instead of an exception: callers need the issue list, not a traceback.
+        fmt_qa = audit_format_and_text_qa(
+            doc,
+            docx_path=fpath,
+            reference_docx_path=args.reference or None,
+            raise_on_failure=False,
+        )
+        vis_qa = run_visual_layout_qa(fpath, reference_docx_path=args.reference or None)
+        report = {
+            "package_integrity": pkg_qa,
+            "format_and_text_qa": fmt_qa,
+            "visual_qa": vis_qa,
+        }
+        if args.review:
+            report["review_qa"] = audit_review_integrity(fpath)
+
+    issues, coverage_gaps, unverified_count = _collect(report)
+    pending = [item for item in issues if item["code"] in PENDING_HUMAN_REVIEW_CODES]
+    real_failures = [item for item in issues if item["code"] not in PENDING_HUMAN_REVIEW_CODES]
+    # Without `--review` nothing is expected to stay unresolved, so placeholders count as failures.
+    strict_failures = real_failures if args.review else issues
+
+    if not strict_failures:
+        status = "PENDING_HUMAN_REVIEW" if issues else "PASSED"
+    else:
+        status = "FAILED"
+    # Honest-reporting rule: a missing check can never count as a pass. When
+    # sections could not run (no PDF renderer, font table unavailable, ...),
+    # the overall status is UNVERIFIED even if zero issues were found.
+    if status == "PASSED" and (unverified_count or coverage_gaps):
+        status = "UNVERIFIED"
+
+    report.update({
+        "status": status,
+        "passed": status == "PASSED",
+        "passed_or_pending": status in ("PASSED", "PENDING_HUMAN_REVIEW", "UNVERIFIED"),
+        "issues": issues,
+        "coverage_gaps": coverage_gaps,
+        "unverified_count": unverified_count,
+        "hard_failure_count": len(strict_failures),
+        "pending_human_review_count": len(pending),
+    })
+
+    payload = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.out:
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(payload)
+    print(payload)
+    return 0 if report["passed_or_pending"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentSpec",
+  "description": "Structured Office Document Understanding specification (v3.0)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "compatibility",
+    "sections",
+    "paragraphs_count",
+    "paragraphs",
+    "candidate_hits",
+    "table_profiles",
+    "image_profiles"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "3.0"
+    },
+    "file_path": {
+      "type": "string"
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["compatibility_level", "recommended_strategy"],
+      "properties": {
+        "compatibility_level": {
+          "type": "string",
+          "enum": ["L1", "L2", "L3", "L4"]
+        },
+        "recommended_strategy": {
+          "type": "string"
+        },
+        "l2_features": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "l3_features": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "l4_features": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "section_index": { "type": "integer" },
+          "page_width_twips": { "type": ["integer", "null"] },
+          "page_height_twips": { "type": ["integer", "null"] },
+          "orientation": { "type": "integer" },
+          "top_margin_twips": { "type": ["integer", "null"] },
+          "bottom_margin_twips": { "type": ["integer", "null"] },
+          "left_margin_twips": { "type": ["integer", "null"] },
+          "right_margin_twips": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "paragraphs_count": {
+      "type": "integer"
+    },
+    "paragraphs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["location_id", "scope", "text_preview"],
+        "properties": {
+          "location_id": { "type": "string" },
+          "scope": { "type": "string" },
+          "text_preview": { "type": "string" },
+          "style_name": { "type": ["string", "null"] },
+          "resolved_sz_half_pt": { "type": ["string", "null"] },
+          "resolved_font_east_asia": { "type": ["string", "null"] },
+          "resolved_font_ascii": { "type": ["string", "null"] },
+          "has_proof_err": { "type": "boolean" }
+        }
+      }
+    },
+    "candidate_hits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["location_id", "scope", "candidate_type", "matched_text", "confirmation_tier"],
+        "properties": {
+          "location_id": { "type": "string" },
+          "scope": { "type": "string" },
+          "candidate_type": { "type": "string" },
+          "matched_text": { "type": "string" },
+          "confirmation_tier": {
+            "type": "string",
+            "enum": [
+              "MUST_ASK_USER",
+              "DEFAULT_FILL_WITH_NOTICE",
+              "AUTO_DERIVE_OR_BIND",
+              "PROTECTED_DO_NOT_TOUCH"
+            ]
+          }
+        }
+      }
+    },
+    "table_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["table_id", "rows", "cols", "cell_type_counts"],
+        "properties": {
+          "table_id": { "type": "string" },
+          "scope": { "type": "string" },
+          "depth": { "type": "integer" },
+          "rows": { "type": "integer" },
+          "cols": { "type": "integer" },
+          "headers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "cell_type_counts": { "type": "object" }
+        }
+      }
+    },
+    "image_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["location_id", "object_type"],
+        "properties": {
+          "location_id": { "type": "string" },
+          "scope": { "type": "string" },
+          "object_type": { "type": "string" },
+          "rId": { "type": ["string", "null"] },
+          "width_cm": { "type": "number" },
+          "height_cm": { "type": "number" },
+          "partname": { "type": "string" },
+          "content_type": { "type": "string" },
+          "ref_count": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

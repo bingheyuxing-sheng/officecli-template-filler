@@ -1,0 +1,1198 @@
+"""
+Template-Driven REVIEW Mode Engine (v3.1).
+
+Turns a template-vs-draft comparison into a human-reviewable document:
+
+- Format drift is restored directly, because OOXML tracked changes cannot express
+  font/size/spacing edits, and every direct edit is recorded in the review report.
+- Text edits are written as real `<w:ins>` / `<w:del>` revisions with author and
+  timestamp, and `<w:trackChanges/>` is switched on so WPS/Word opens in review mode.
+- Items that need a human decision are written as native Word comments instead of
+  being silently changed.
+
+Nothing here uses global process killing; callers stay inside `TaskResourceGuard`.
+"""
+from __future__ import annotations
+
+import copy
+import os
+import re
+import tempfile
+import zipfile
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import docx
+from docx.opc.constants import CONTENT_TYPE as CT, RELATIONSHIP_TYPE as RT
+from docx.opc.packuri import PackURI
+from docx.opc.part import Part
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.oxml.parser import parse_xml
+from lxml import etree
+
+from .ooxml_utils import is_red_run, iter_all_document_paragraphs_with_Wait_context
+from .repair_engine import (
+    _apply_paragraph_profile,
+    _classify_paragraph_role,
+    _extract_paragraph_format_profile,
+)
+from .table_engine import (
+    compare_table_style,
+    restore_table_style_from_reference,
+    table_style_signature,
+)
+
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+REVIEW_AUTHOR_DEFAULT = "OfficeCLI Reviewer"
+PLACEHOLDER_PATTERN = re.compile(r"(\{\{[^{}]+\}\}|【[^【】]+】|\*{3,}|_{3,})")
+ISO_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+_MINIMAL_COMMENTS_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    f'<w:comments xmlns:w="{W_NS}"></w:comments>'
+)
+
+
+# ---------------------------------------------------------------------------
+# Revision identifiers and timestamps
+# ---------------------------------------------------------------------------
+
+
+def _now_iso() -> str:
+    """UTC timestamp in the exact shape Word writes into `w:date`."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class _RevisionIdAllocator:
+    """Hands out `w:id` values that never collide with existing revisions or comments."""
+
+    def __init__(self, start: int = 1):
+        self._next = int(start)
+
+    def take(self) -> int:
+        value = self._next
+        self._next += 1
+        return value
+
+
+def _scan_existing_revision_ids(doc) -> int:
+    """Return one past the highest `w:id` already used in the main document part."""
+    highest = 0
+    root = doc.element.body if hasattr(doc, "element") else doc
+    for el in root.iter():
+        raw = el.get(qn("w:id"))
+        if raw is None:
+            continue
+        tag = el.tag.rsplit("}", 1)[-1]
+        if tag in ("ins", "del", "comment", "moveFrom", "moveTo",
+                   "rPrChange", "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange"):
+            try:
+                highest = max(highest, int(raw))
+            except (TypeError, ValueError):
+                continue
+    return highest + 1
+
+
+_SETTINGS_BEFORE_TRACK_CHANGES = (
+    "writeProtection", "view", "zoom", "removePersonalInformation", "removeDateAndTime",
+    "doNotDisplayPageBoundaries", "displayBackgroundShape", "printPostScriptOverText",
+    "printFractionalCharacterWidth", "printFormsData", "embedTrueTypeFonts", "embedSystemFonts",
+    "saveSubsetFonts", "saveFormsData", "mirrorMargins", "alignBordersAndEdges",
+    "bordersDoNotSurroundHeader", "bordersDoNotSurroundFooter", "gutterAtTop",
+    "hideSpellingErrors", "hideGrammaticalErrors", "activeWritingStyle", "proofState",
+    "formsDesign", "attachedTemplate", "linkStyles", "stylePaneFormatFilter",
+    "stylePaneSortMethod", "documentType", "mailMerge", "revisionView",
+)
+
+
+def enable_track_changes(doc, enabled: bool = True) -> bool:
+    """Add or remove `<w:trackChanges/>` so the delivered file opens in revision mode."""
+    settings = doc.settings.element
+    existing = settings.find(qn("w:trackChanges"))
+    if enabled:
+        if existing is None:
+            node = OxmlElement("w:trackChanges")
+            # `w:settings` is a schema sequence; insert after the last element that must precede it.
+            insert_at = 0
+            for idx, child in enumerate(settings):
+                if child.tag.rsplit("}", 1)[-1] in _SETTINGS_BEFORE_TRACK_CHANGES:
+                    insert_at = idx + 1
+            settings.insert(insert_at, node)
+        return True
+    if existing is not None:
+        settings.remove(existing)
+    return False
+
+
+def is_track_changes_enabled(doc) -> bool:
+    return doc.settings.element.find(qn("w:trackChanges")) is not None
+
+
+# ---------------------------------------------------------------------------
+# Run-level tracked changes
+# ---------------------------------------------------------------------------
+
+
+def _run_text(r_el) -> str:
+    return "".join((t.text or "") for t in r_el.findall(qn("w:t")))
+
+
+# Child elements of a run that carry non-text content. A run containing any of these
+# must never be cloned/split: the clone would duplicate drawings, field instructions,
+# or footnotes in the document body.
+_RUN_NONTEXT_TAGS = (
+    "drawing", "object", "pict", "fldChar", "instrText", "footnoteReference",
+    "endnoteReference", "commentReference", "noBreakHyphen", "sym",
+)
+
+# Direct children of `w:p` whose text belongs to a container (hyperlink, SmartTag,
+# SDT run container, field result) rather than the paragraph itself. Rewriting the
+# paragraph's direct runs while the match spans such a container would reorder it.
+_P_CONTAINER_TAGS = ("hyperlink", "smartTag", "sdt", "fldSimple", "ins", "del",
+                     "moveFrom", "moveTo", "bookmarkStart", "bookmarkEnd",
+                     "commentRangeStart", "commentRangeEnd", "commentReference")
+
+
+def _clone_run_with_text(r_el, text: str):
+    """Clone a run's formatting but replace every `<w:t>` with one new text node.
+
+    Only safe on runs whose content is purely textual (`w:t` + optional `w:rPr`).
+    """
+    clone = copy.deepcopy(r_el)
+    for t in clone.findall(qn("w:t")):
+        clone.remove(t)
+    for extra in ("w:delText", "w:br", "w:tab"):
+        for node in clone.findall(qn(extra)):
+            clone.remove(node)
+    node = OxmlElement("w:t")
+    node.set(qn("xml:space"), "preserve")
+    node.text = text
+    clone.append(node)
+    return clone
+
+
+def _as_deleted_run(r_el):
+    """Convert a cloned text run into its deleted form (`w:t` becomes `w:delText`)."""
+    for t in r_el.findall(qn("w:t")):
+        t.tag = qn("w:delText")
+    return r_el
+
+
+def _wrap_deleted_run(run_el, rev_id: int, author: str, date: str):
+    wrapper = OxmlElement("w:del")
+    wrapper.set(qn("w:id"), str(rev_id))
+    wrapper.set(qn("w:author"), author)
+    wrapper.set(qn("w:date"), date)
+    wrapper.append(_as_deleted_run(run_el))
+    return wrapper
+
+
+def _wrap_inserted_run(run_el, rev_id: int, author: str, date: str):
+    wrapper = OxmlElement("w:ins")
+    wrapper.set(qn("w:id"), str(rev_id))
+    wrapper.set(qn("w:author"), author)
+    wrapper.set(qn("w:date"), date)
+    wrapper.append(run_el)
+    return wrapper
+
+
+def apply_tracked_replacement(
+    paragraph,
+    old_text: str,
+    new_text: str,
+    author: str = REVIEW_AUTHOR_DEFAULT,
+    date: Optional[str] = None,
+    revision_ids: Optional[_RevisionIdAllocator] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Replace `old_text` with `new_text` inside `paragraph` as tracked changes.
+
+    Safety contract (v3.4.2):
+    - Only direct text runs of the paragraph participate; the match must not span
+      non-run children (hyperlinks, SDTs, fields, bookmarks, existing revisions).
+      A spanning match returns None — the caller degrades to a comment instead of
+      reordering document structure.
+    - Runs carrying drawings, field codes or references are never cloned or split.
+    - Untouched runs keep their original position; nothing outside the match moves.
+    """
+    if not old_text:
+        return None
+    p_el = paragraph._p
+
+    # A match must live entirely in the paragraph's direct text runs. If the
+    # paragraph contains any container/references children, a match is only safe
+    # when it lies fully inside one contiguous run-group between them.
+    direct_children = list(p_el)
+    if any(_local_name(child.tag) in _P_CONTAINER_TAGS for child in direct_children):
+        # Guard mode: require the match to be found within a single maximal
+        # group of consecutive plain runs separated by the containers.
+        return _replace_within_plain_run_group(p_el, old_text, new_text, author, date, revision_ids)
+
+    runs = [r for r in p_el.findall(qn("w:r")) if _run_text(r)]
+    if not runs:
+        return None
+    return _replace_in_run_list(p_el, runs, old_text, new_text, author, date, revision_ids)
+
+
+def _replace_within_plain_run_group(p_el, old_text, new_text, author, date, revision_ids):
+    """Attempt replacement inside ONE maximal group of consecutive plain text runs.
+
+    Container children (hyperlinks, fields, ...) keep their absolute position:
+    groups are processed independently, so removing/rebuilding a group's runs can
+    never reorder a container. Returns None when the text spans multiple groups or
+    is not found — never a structural rewrite.
+    """
+    group: List[Any] = []
+    groups: List[List[Any]] = []
+    for child in p_el:
+        tag = _local_name(child.tag)
+        if tag == "pPr":
+            continue
+        if tag == "r":
+            if _run_text(child):
+                group.append(child)
+                continue
+        if group:
+            groups.append(group)
+            group = []
+    if group:
+        groups.append(group)
+
+    for group in groups:
+        full_text = "".join(_run_text(r) for r in group)
+        if old_text in full_text:
+            return _replace_in_run_list(p_el, group, old_text, new_text, author, date, revision_ids)
+    return None
+
+
+def _replace_in_run_list(p_el, runs, old_text, new_text, author, date, revision_ids):
+    """Rewrite one contiguous run list in place; runs outside the list never move."""
+    # Refuse to clone/split runs carrying non-text content.
+    if any(
+        any(r.find(qn(f"w:{tag}")) is not None for tag in _RUN_NONTEXT_TAGS)
+        for r in runs
+    ):
+        return None
+
+    texts = [_run_text(r) for r in runs]
+    full_text = "".join(texts)
+    start = full_text.find(old_text)
+    if start < 0:
+        return None
+    end = start + len(old_text)
+
+    ids = revision_ids or _RevisionIdAllocator(_scan_existing_revision_ids(p_el.getroottree().getroot()))
+    date = date or _now_iso()
+
+    allocated_ids: List[int] = []
+    nodes: List[Any] = []
+    cursor = 0
+    inserted = False
+    for r_el, text in zip(runs, texts):
+        r_start, r_end = cursor, cursor + len(text)
+        cursor = r_end
+        overlap_start = max(start, r_start)
+        overlap_end = min(end, r_end)
+        if overlap_start >= overlap_end:
+            nodes.append(copy.deepcopy(r_el))
+            continue
+
+        prefix = text[: overlap_start - r_start]
+        removed = text[overlap_start - r_start : overlap_end - r_start]
+        suffix = text[overlap_end - r_start :]
+
+        if prefix:
+            nodes.append(_clone_run_with_text(r_el, prefix))
+        if removed:
+            allocated_ids.append(ids.take())
+            nodes.append(_wrap_deleted_run(_clone_run_with_text(r_el, removed), allocated_ids[-1], author, date))
+        if not inserted:
+            if new_text:
+                allocated_ids.append(ids.take())
+                nodes.append(_wrap_inserted_run(_clone_run_with_text(r_el, new_text), allocated_ids[-1], author, date))
+            inserted = True
+        if suffix:
+            nodes.append(_clone_run_with_text(r_el, suffix))
+
+    if not inserted:
+        return None
+
+    # Replace only the participating runs, in place, at the first run's position.
+    insert_at = p_el.index(runs[0])
+    for r_el in runs:
+        p_el.remove(r_el)
+    for offset, node in enumerate(nodes):
+        p_el.insert(insert_at + offset, node)
+
+    return {
+        "old_text": old_text,
+        "new_text": new_text,
+        "revision_id_start": allocated_ids[0],
+        "revision_ids": allocated_ids,
+        "tracked": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tracked formatting revisions (w:*PrChange)
+# ---------------------------------------------------------------------------
+#
+# OOXML tracked changes CAN express format edits: Word writes `w:rPrChange`,
+# `w:pPrChange`, `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange` holding the
+# PRE-change properties, and the review pane shows them as accept/reject-able
+# "Formatting: ..." revisions. REVIEW therefore must not silently rewrite
+# formats: every restored property is paired with its old value in a change
+# mark so the human confirms it. REPAIR stays direct (no marks).
+
+_PPR_BASE_TAGS = (
+    "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl",
+    "numPr", "suppressLineNumbers", "pBdr", "shd", "tabs", "suppressAutoHyphens",
+    "kinsoku", "wordWrap", "overflowPunct", "topLinePunct", "autoSpaceDE",
+    "autoSpaceDN", "bidi", "adjustRightInd", "snapToGrid", "spacing", "ind",
+    "contextualSpacing", "mirrorIndents", "suppressOverlap", "jc", "textDirection",
+    "textAlignment", "textboxTightWrap", "outlineLvl", "divId", "cnfStyle",
+)
+
+_RPR_BASE_TAGS = (
+    "rStyle", "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike",
+    "dstrike", "outline", "shadow", "emboss", "imprint", "noProof", "snapToGrid",
+    "vanish", "webHidden", "color", "spacing", "w", "kern", "position", "sz",
+    "szCs", "highlight", "u", "effect", "bdr", "shd", "fitText", "vertAlign",
+    "rtl", "cs", "em", "lang", "eastAsianLayout", "specVanish", "oMath",
+)
+
+_FORMAT_CHANGE_TAGS = (
+    "rPrChange", "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange",
+)
+
+
+def _local_name(tag) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _base_children(el, tags) -> List[Any]:
+    """Schema-base children of `el` (the properties a *PrChange mark may carry)."""
+    if el is None:
+        return []
+    return [child for child in el if _local_name(child.tag) in tags]
+
+
+def _serialize_nodes(nodes) -> bytes:
+    return b"|".join(etree.tostring(node) for node in nodes)
+
+
+def _append_format_change(parent, change_tag: str, old_nodes, rev_id: int, author: str, date: str) -> None:
+    """Append a Word formatting-revision mark carrying the pre-change properties."""
+    change = OxmlElement(change_tag)
+    change.set(qn("w:id"), str(rev_id))
+    change.set(qn("w:author"), author)
+    change.set(qn("w:date"), date)
+    for node in old_nodes:
+        change.append(copy.deepcopy(node))
+    parent.append(change)
+
+
+def _paragraph_mark_rpr(p_el):
+    pPr = p_el.find(qn("w:pPr"))
+    return pPr.find(qn("w:rPr")) if pPr is not None else None
+
+
+def _apply_paragraph_profile_tracked(paragraph, profile, strip_red: bool, author: str, date: str, ids) -> int:
+    """Restore paragraph formatting AND record every change as a tracked format revision."""
+    p_el = paragraph._p
+    old_ppr_nodes = _base_children(p_el.find(qn("w:pPr")), _PPR_BASE_TAGS)
+    old_mark_nodes = _base_children(_paragraph_mark_rpr(p_el), _RPR_BASE_TAGS)
+    old_run_nodes = [_base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS) for run in paragraph.runs]
+
+    _apply_paragraph_profile(paragraph, profile, strip_red=strip_red)
+
+    added = 0
+    # Paragraph-mark rPr first: schema requires w:rPr before w:pPrChange inside w:pPr.
+    new_mark_nodes = _base_children(_paragraph_mark_rpr(p_el), _RPR_BASE_TAGS)
+    if (new_mark_nodes or old_mark_nodes) and _serialize_nodes(new_mark_nodes) != _serialize_nodes(old_mark_nodes):
+        target = p_el.get_or_add_pPr().get_or_add_rPr()
+        _append_format_change(target, "w:rPrChange", old_mark_nodes, ids.take(), author, date)
+        added += 1
+    new_ppr = p_el.find(qn("w:pPr"))
+    if new_ppr is not None:
+        if _serialize_nodes(_base_children(new_ppr, _PPR_BASE_TAGS)) != _serialize_nodes(old_ppr_nodes):
+            _append_format_change(new_ppr, "w:pPrChange", old_ppr_nodes, ids.take(), author, date)
+            added += 1
+    for run, old_nodes in zip(paragraph.runs, old_run_nodes):
+        new_nodes = _base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS)
+        if _serialize_nodes(new_nodes) != _serialize_nodes(old_nodes):
+            _append_format_change(run._r.get_or_add_rPr(), "w:rPrChange", old_nodes, ids.take(), author, date)
+            added += 1
+    return added
+
+
+def _restore_table_style_tracked(target_tbl, reference_tbl, author: str, date: str, ids) -> Tuple[bool, int]:
+    """Restore table style from the template AND record changes as tracked format revisions."""
+    from .table_engine import TBLPR_ORDER, TCPR_ORDER, TRPR_ORDER, _get_or_add_trPr, get_unique_row_cells
+
+    tcpr_tags = tuple(tag for tag in TCPR_ORDER if tag != "tcPrChange")
+    tbl_el = target_tbl._tbl
+
+    def _cell_marks(cell):
+        marks = []
+        for p in cell.paragraphs:
+            marks.append((
+                _base_children(_paragraph_mark_rpr(p._p), _RPR_BASE_TAGS),
+                [_base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS) for run in p.runs],
+            ))
+        return marks
+
+    old_tblpr = _base_children(tbl_el.find(qn("w:tblPr")), TBLPR_ORDER)
+    old_trpr = [_base_children(row._tr.find(qn("w:trPr")), TRPR_ORDER) for row in target_tbl.rows]
+    old_tcpr = [
+        [_base_children(cell._tc.find(qn("w:tcPr")), tcpr_tags) for cell in get_unique_row_cells(row)]
+        for row in target_tbl.rows
+    ]
+    old_marks = [
+        [_cell_marks(cell) for cell in get_unique_row_cells(row)]
+        for row in target_tbl.rows
+    ]
+
+    if not restore_table_style_from_reference(target_tbl, reference_tbl):
+        return False, 0
+
+    added = 0
+    tblPr = tbl_el.find(qn("w:tblPr"))
+    if tblPr is not None and _serialize_nodes(_base_children(tblPr, TBLPR_ORDER)) != _serialize_nodes(old_tblpr):
+        _append_format_change(tblPr, "w:tblPrChange", old_tblpr, ids.take(), author, date)
+        added += 1
+
+    for row, old_nodes in zip(target_tbl.rows, old_trpr):
+        trPr = row._tr.find(qn("w:trPr"))
+        if _serialize_nodes(_base_children(trPr, TRPR_ORDER)) != _serialize_nodes(old_nodes):
+            trPr = _get_or_add_trPr(row._tr)
+            _append_format_change(trPr, "w:trPrChange", old_nodes, ids.take(), author, date)
+            added += 1
+
+    for row, old_row in zip(target_tbl.rows, old_tcpr):
+        for cell, old_nodes in zip(get_unique_row_cells(row), old_row):
+            tcPr = cell._tc.find(qn("w:tcPr"))
+            if _serialize_nodes(_base_children(tcPr, tcpr_tags)) != _serialize_nodes(old_nodes):
+                _append_format_change(cell._tc.get_or_add_tcPr(), "w:tcPrChange", old_nodes, ids.take(), author, date)
+                added += 1
+
+    for row, old_row_marks in zip(target_tbl.rows, old_marks):
+        for cell, old_cell_marks in zip(get_unique_row_cells(row), old_row_marks):
+            for p, (old_mark, old_runs) in zip(cell.paragraphs, old_cell_marks):
+                new_mark = _base_children(_paragraph_mark_rpr(p._p), _RPR_BASE_TAGS)
+                if (new_mark or old_mark) and _serialize_nodes(new_mark) != _serialize_nodes(old_mark):
+                    target = p._p.get_or_add_pPr().get_or_add_rPr()
+                    _append_format_change(target, "w:rPrChange", old_mark, ids.take(), author, date)
+                    added += 1
+                for run, old_nodes in zip(p.runs, old_runs):
+                    new_nodes = _base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS)
+                    if _serialize_nodes(new_nodes) != _serialize_nodes(old_nodes):
+                        _append_format_change(run._r.get_or_add_rPr(), "w:rPrChange", old_nodes, ids.take(), author, date)
+                        added += 1
+    return True, added
+
+
+# ---------------------------------------------------------------------------
+# Native Word comments
+# ---------------------------------------------------------------------------
+
+
+class _CommentsStore:
+    """Read/write access to `/word/comments.xml`, creating the part when missing."""
+
+    def __init__(self, doc):
+        self.doc = doc
+        self.part = self._resolve_part()
+        self.element = parse_xml(self.part.blob)
+        self._ids = _RevisionIdAllocator(self._highest_comment_id() + 1)
+
+    def _resolve_part(self):
+        for rel in self.doc.part.rels.values():
+            if rel.reltype == RT.COMMENTS:
+                return rel.target_part
+        part = Part(PackURI("/word/comments.xml"), CT.WML_COMMENTS, _MINIMAL_COMMENTS_XML.encode("utf-8"), self.doc.part.package)
+        self.doc.part.relate_to(part, RT.COMMENTS)
+        return part
+
+    def _highest_comment_id(self) -> int:
+        highest = -1
+        for node in self.element.findall(qn("w:comment")):
+            try:
+                highest = max(highest, int(node.get(qn("w:id"))))
+            except (TypeError, ValueError):
+                continue
+        return highest
+
+    def add(self, text: str, author: str, initials: str, date: str) -> int:
+        comment_id = self._ids.take()
+        comment = OxmlElement("w:comment")
+        comment.set(qn("w:id"), str(comment_id))
+        comment.set(qn("w:author"), author)
+        comment.set(qn("w:date"), date)
+        comment.set(qn("w:initials"), initials)
+        p_el = OxmlElement("w:p")
+        ref_run = OxmlElement("w:r")
+        ref_run.append(OxmlElement("w:annotationRef"))
+        p_el.append(ref_run)
+        text_run = OxmlElement("w:r")
+        t = OxmlElement("w:t")
+        t.set(qn("xml:space"), "preserve")
+        t.text = text
+        text_run.append(t)
+        p_el.append(text_run)
+        comment.append(p_el)
+        self.element.append(comment)
+        return comment_id
+
+    def flush(self) -> None:
+        self.part._blob = etree.tostring(
+            self.element,
+            xml_declaration=True,
+            encoding="UTF-8",
+            standalone=True,
+        )
+
+
+def add_paragraph_comment(
+    paragraph,
+    text: str,
+    author: str = REVIEW_AUTHOR_DEFAULT,
+    initials: str = "OCR",
+    date: Optional[str] = None,
+    comments: Optional[_CommentsStore] = None,
+) -> int:
+    """Anchor a native comment over the whole paragraph and return its id."""
+    store = comments or _CommentsStore(paragraph.part.document)
+    date = date or _now_iso()
+    comment_id = store.add(text, author, initials, date)
+
+    p_el = paragraph._p
+    start_marker = OxmlElement("w:commentRangeStart")
+    start_marker.set(qn("w:id"), str(comment_id))
+    end_marker = OxmlElement("w:commentRangeEnd")
+    end_marker.set(qn("w:id"), str(comment_id))
+    reference_run = OxmlElement("w:r")
+    reference_run.append(OxmlElement("w:commentReference"))
+    reference_run.find(qn("w:commentReference")).set(qn("w:id"), str(comment_id))
+
+    insert_at = 0
+    pPr = p_el.find(qn("w:pPr"))
+    if pPr is not None:
+        insert_at = p_el.index(pPr) + 1
+    p_el.insert(insert_at, start_marker)
+    p_el.append(end_marker)
+    p_el.append(reference_run)
+    return comment_id
+
+
+# ---------------------------------------------------------------------------
+# Review plan construction
+# ---------------------------------------------------------------------------
+
+
+def build_review_plan(
+    reference_docx_path: str,
+    target_docx_path: str,
+    author: str = REVIEW_AUTHOR_DEFAULT,
+    text_revisions: Optional[List[Dict[str, Any]]] = None,
+    comment_unresolved_placeholders: bool = True,
+) -> Dict[str, Any]:
+    """
+    Diff the target document against the reference template and split the findings into
+    three review channels: direct format restore, tracked text revisions, and comments.
+    """
+    ref_doc = docx.Document(reference_docx_path)
+    tgt_doc = docx.Document(target_docx_path)
+
+    role_catalog: Dict[str, Dict[str, Any]] = {}
+    for idx, p in enumerate(ref_doc.paragraphs):
+        if not (p.text or "").strip():
+            continue
+        role = _classify_paragraph_role(p, idx)
+        role_catalog.setdefault(role, _extract_paragraph_format_profile(p))
+
+    actions: List[Dict[str, Any]] = []
+    format_count = 0
+    comment_count = 0
+
+    for p_idx, tgt_p in enumerate(tgt_doc.paragraphs):
+        text = (tgt_p.text or "").strip()
+        if not text:
+            continue
+        role = _classify_paragraph_role(tgt_p, p_idx)
+
+        ref_profile = None
+        if p_idx < len(ref_doc.paragraphs) and (ref_doc.paragraphs[p_idx].text or "").strip():
+            if _classify_paragraph_role(ref_doc.paragraphs[p_idx], p_idx) == role:
+                ref_profile = _extract_paragraph_format_profile(ref_doc.paragraphs[p_idx])
+        if ref_profile is None:
+            ref_profile = role_catalog.get(role) or role_catalog.get("body")
+
+        if ref_profile is not None:
+            tgt_profile = _extract_paragraph_format_profile(tgt_p)
+            diffs = {}
+            for key in ("jc", "spacing_line", "spacing_lineRule", "first_line_indent", "sz_val", "font_east_asia", "font_ascii"):
+                if ref_profile.get(key) is not None and ref_profile.get(key) != tgt_profile.get(key):
+                    diffs[key] = {"reference": ref_profile.get(key), "target": tgt_profile.get(key)}
+            has_red = any(is_red_run(r, tgt_p) for r in tgt_p.runs)
+            if diffs or has_red:
+                actions.append({
+                    "action_id": f"format_restore_{p_idx}",
+                    "action_type": "RESTORE_PARAGRAPH_FORMAT",
+                    "target": f"body.p[{p_idx}]",
+                    "paragraph_index": p_idx,
+                    "role": role,
+                    "target_profile": ref_profile,
+                    "strip_red": has_red,
+                    "diffs": diffs,
+                    "change_mode": "DIRECT",
+                    "requires_human_review": False,
+                    "risk_level": "LOW",
+                })
+                format_count += 1
+
+        if comment_unresolved_placeholders:
+            placeholder = PLACEHOLDER_PATTERN.search(text)
+            if placeholder:
+                actions.append({
+                    "action_id": f"comment_placeholder_{p_idx}",
+                    "action_type": "ADD_REVIEW_COMMENT",
+                    "target": f"body.p[{p_idx}]",
+                    "paragraph_index": p_idx,
+                    "comment": f"待人工确认：此行仍含模板占位内容 {placeholder.group(0)}，请核对是否应替换为正式内容。",
+                    "change_mode": "COMMENT",
+                    "requires_human_review": True,
+                    "risk_level": "MEDIUM",
+                })
+                comment_count += 1
+
+    reference_tables = list(ref_doc.tables)
+    for t_idx, target_tbl in enumerate(tgt_doc.tables):
+        if t_idx >= len(reference_tables):
+            break
+        reference_tbl = reference_tables[t_idx]
+        issues = compare_table_style(
+            table_style_signature(target_tbl),
+            table_style_signature(reference_tbl),
+            t_idx,
+        )
+        if issues:
+            actions.append({
+                "action_id": f"table_style_restore_{t_idx}",
+                "action_type": "RESTORE_TABLE_STYLE",
+                "target": f"body.tbl[{t_idx}]",
+                "table_index": t_idx,
+                "issues": [list(issue) for issue in issues],
+                "change_mode": "DIRECT",
+                "requires_human_review": False,
+                "risk_level": "LOW",
+            })
+
+    for revision_index, revision in enumerate(text_revisions or []):
+        old_text = str(revision.get("old_text", ""))
+        new_text = str(revision.get("new_text", ""))
+        if not old_text:
+            continue
+        actions.append({
+            "action_id": f"text_revision_{revision_index}",
+            "action_type": "TRACK_TEXT_REVISION",
+            "target": revision.get("location_id") or revision.get("target", "auto_locate"),
+            "location_id": revision.get("location_id"),
+            "occurrence": revision.get("occurrence"),
+            "old_text": old_text,
+            "new_text": new_text,
+            "reason": revision.get("reason", "按模板规范修正文本"),
+            "change_mode": "TRACKED",
+            "requires_human_review": True,
+            "risk_level": revision.get("risk_level", "MEDIUM"),
+        })
+
+    return {
+        "schema_version": "3.1",
+        "task_mode": "REVIEW",
+        "reference_docx": reference_docx_path,
+        "target_docx": target_docx_path,
+        "author": author,
+        "track_changes": True,
+        "summary": {
+            "format_restore_actions": format_count,
+            "table_style_restores": len([a for a in actions if a["action_type"] == "RESTORE_TABLE_STYLE"]),
+            "tracked_text_revisions": len(text_revisions or []),
+            "comments": comment_count,
+            "total_actions": len(actions),
+        },
+        "actions": actions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+
+
+def _full_text_of(doc) -> str:
+    return "\n".join(p.text or "" for p in doc.paragraphs)
+
+
+def _find_paragraph_by_location(doc, location_id: str):
+    """Resolve a `location_id` from the unified walker to its paragraph, or None."""
+    for context in iter_all_document_paragraphs_with_Wait_context(doc):
+        if context["location_id"] == location_id:
+            return context["paragraph"]
+    return None
+
+
+def _count_occurrences(doc, needle: str) -> int:
+    total = 0
+    for context in iter_all_document_paragraphs_with_Wait_context(doc):
+        total += (context["paragraph"].text or "").count(needle)
+    return total
+
+
+def _merge_diff_kind(target_tbl, reference_tbl) -> List[str]:
+    """Merge-topology properties (gridSpan/hMerge/vMerge) that still differ between tables."""
+    from .table_engine import compare_table_style, table_style_signature
+
+    kinds: List[str] = []
+    for issue in compare_table_style(
+        table_style_signature(target_tbl), table_style_signature(reference_tbl), 0
+    ):
+        if issue[0] == "table_cell_property" and len(issue) > 4 and issue[4] in ("gridSpan", "hMerge", "vMerge"):
+            kinds.append(str(issue[4]))
+    return sorted(set(kinds))
+
+
+def execute_review_plan(
+    review_plan: Dict[str, Any],
+    output_docx_path: str,
+) -> Dict[str, Any]:
+    """
+    Apply the review plan: restore formatting, write tracked text revisions, anchor comments,
+    turn on track changes, and save the reviewable document.
+    """
+    ref_doc = docx.Document(review_plan["reference_docx"])
+    tgt_doc = docx.Document(review_plan["target_docx"])
+    author = review_plan.get("author") or REVIEW_AUTHOR_DEFAULT
+    date = _now_iso()
+
+    revision_ids = _RevisionIdAllocator(_scan_existing_revision_ids(tgt_doc))
+    comments: Optional[_CommentsStore] = None
+    applied_format = 0
+    tracked = 0
+    tracked_format = 0
+    added_comments = 0
+    unresolved: List[str] = []
+    action_results: List[Dict[str, Any]] = []
+
+    for action in review_plan.get("actions", []):
+        action_type = action.get("action_type")
+
+        if action_type == "RESTORE_PARAGRAPH_FORMAT":
+            p_idx = action.get("paragraph_index")
+            if p_idx is not None and p_idx < len(tgt_doc.paragraphs):
+                first_id = revision_ids._next
+                marks = _apply_paragraph_profile_tracked(
+                    tgt_doc.paragraphs[p_idx],
+                    action.get("target_profile", {}),
+                    strip_red=bool(action.get("strip_red", False)),
+                    author=author,
+                    date=date,
+                    ids=revision_ids,
+                )
+                applied_format += 1
+                tracked_format += marks
+                action_results.append({
+                    "action_id": action.get("action_id"),
+                    "status": "APPLIED",
+                    "target": f"body.p[{p_idx}]",
+                    "revision_ids": [],
+                    "format_revision_ids": list(range(first_id, first_id + marks)),
+                })
+
+        elif action_type == "RESTORE_TABLE_STYLE":
+            t_idx = action.get("table_index")
+            if t_idx is not None and t_idx < len(tgt_doc.tables) and t_idx < len(ref_doc.tables):
+                first_id = revision_ids._next
+                ok, marks = _restore_table_style_tracked(
+                    tgt_doc.tables[t_idx], ref_doc.tables[t_idx],
+                    author=author, date=date, ids=revision_ids,
+                )
+                if ok:
+                    applied_format += 1
+                    tracked_format += marks
+                    # Merge topology (gridSpan/hMerge/vMerge) is deliberately not
+                    # rewritten — a merge change can destroy business content. If it
+                    # still differs from the template, the action must NOT claim
+                    # full success.
+                    unresolved_kinds = _merge_diff_kind(tgt_doc.tables[t_idx], ref_doc.tables[t_idx])
+                    status = "PARTIALLY_APPLIED" if unresolved_kinds else "APPLIED"
+                    action_results.append({
+                        "action_id": action.get("action_id"),
+                        "status": status,
+                        "target": f"body.tbl[{t_idx}]",
+                        "revision_ids": [],
+                        "format_revision_ids": list(range(first_id, first_id + marks)),
+                        "restored_properties": ["tblPr", "trPr", "tcW", "tcMar", "shd", "vAlign", "trHeight", "fonts"],
+                        "unresolved_properties": unresolved_kinds,
+                        "requires_human_review": bool(unresolved_kinds),
+                    })
+                else:
+                    unresolved.append(f"table_style:{t_idx}")
+                    action_results.append({
+                        "action_id": action.get("action_id"),
+                        "status": "UNRESOLVED",
+                        "revision_ids": [],
+                        "format_revision_ids": [],
+                    })
+
+        elif action_type == "TRACK_TEXT_REVISION":
+            old_text = action.get("old_text", "")
+            new_text = action.get("new_text", "")
+            location_id = action.get("location_id") or ""
+            occurrence = action.get("occurrence")
+            located = False
+            ambiguous = False
+
+            # Safety rule: never guess when the text is ambiguous. With no explicit
+            # location and multiple matches, hand the decision to a human comment
+            # instead of silently editing the first hit.
+            if not location_id and not isinstance(occurrence, int) and _count_occurrences(tgt_doc, old_text) > 1:
+                ambiguous = True
+            else:
+                candidates = []
+                resolved_location = location_id
+                if location_id:
+                    p = _find_paragraph_by_location(tgt_doc, location_id)
+                    if p is not None:
+                        candidates = [(p, location_id)]
+                else:
+                    contexts = list(iter_all_document_paragraphs_with_Wait_context(tgt_doc))
+                    if isinstance(occurrence, int) and occurrence >= 1:
+                        seen = 0
+                        for context in contexts:
+                            hits = (context["paragraph"].text or "").count(old_text)
+                            if hits:
+                                seen += hits
+                                if seen >= occurrence:
+                                    candidates = [(context["paragraph"], context["location_id"])]
+                                    break
+                    else:
+                        candidates = [(context["paragraph"], context["location_id"]) for context in contexts]
+
+                for p, context_location in candidates:
+                    result = apply_tracked_replacement(
+                        p, old_text, new_text, author=author, date=date, revision_ids=revision_ids
+                    )
+                    if result is not None:
+                        tracked += 1
+                        located = True
+                        action_results.append({
+                            "action_id": action.get("action_id"),
+                            "status": "APPLIED",
+                            "target": resolved_location if location_id else context_location,
+                            "revision_ids": result["revision_ids"],
+                            "format_revision_ids": [],
+                        })
+                        break
+
+            if not located:
+                unresolved.append(f"text_revision:{old_text[:30]}")
+                action_results.append({
+                    "action_id": action.get("action_id"),
+                    "status": "UNRESOLVED",
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                    **({"reason": "AMBIGUOUS_MULTIPLE_MATCHES"} if ambiguous else {}),
+                })
+                # Never drop an intended edit silently: show it as a comment the reviewer can act on.
+                anchor_context = next((c for c in iter_all_document_paragraphs_with_Wait_context(tgt_doc) if (c["paragraph"].text or "").strip()), None)
+                if anchor_context is not None:
+                    comments = comments or _CommentsStore(tgt_doc)
+                    if ambiguous:
+                        message = (
+                            f"原文“{old_text}”在文档中出现多处，未指定位置，"
+                            "为避免改错位置已停止自动修改，请人工确认应修改哪一处。"
+                        )
+                    else:
+                        message = (
+                            f"未能自动定位该修订：原文“{old_text}”未在文档中找到。"
+                            f"建议改为“{new_text}”，请人工确认应修改的位置。"
+                        )
+                    add_paragraph_comment(
+                        anchor_context["paragraph"],
+                        message,
+                        author=author,
+                        date=date,
+                        comments=comments,
+                    )
+                    added_comments += 1
+
+        elif action_type == "ADD_REVIEW_COMMENT":
+            p_idx = action.get("paragraph_index")
+            if p_idx is not None and p_idx < len(tgt_doc.paragraphs):
+                comments = comments or _CommentsStore(tgt_doc)
+                add_paragraph_comment(
+                    tgt_doc.paragraphs[p_idx],
+                    action.get("comment", ""),
+                    author=author,
+                    date=date,
+                    comments=comments,
+                )
+                added_comments += 1
+                action_results.append({
+                    "action_id": action.get("action_id"),
+                    "status": "APPLIED",
+                    "target": f"body.p[{p_idx}]",
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+
+    if comments is not None:
+        comments.flush()
+
+    if review_plan.get("track_changes", True):
+        enable_track_changes(tgt_doc, True)
+
+    tgt_doc.save(output_docx_path)
+
+    return {
+        "output_docx": output_docx_path,
+        "format_restored": applied_format,
+        "tracked_format_changes": tracked_format,
+        "tracked_text_revisions": tracked,
+        "comments_added": added_comments,
+        "unresolved_actions": unresolved,
+        "action_results": action_results,
+        "revision_count": tracked,
+        "track_changes_enabled": bool(review_plan.get("track_changes", True)),
+        "review_mode": "TRACKED_CHANGES",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Review integrity QA
+# ---------------------------------------------------------------------------
+
+
+def _part_xml_bytes(docx_path: str, part_name: str) -> Optional[bytes]:
+    import zipfile
+
+    with zipfile.ZipFile(docx_path) as zf:
+        try:
+            return zf.read(part_name)
+        except KeyError:
+            return None
+
+
+def _iter_revision_nodes(root):
+    for node in root.iter():
+        if node.tag.rsplit("}", 1)[-1] in ("ins", "del"):
+            yield node
+
+
+def list_revisions(docx_path: str) -> List[Dict[str, Any]]:
+    """List Word revisions across document, headers, footers, footnotes and endnotes."""
+    revisions: List[Dict[str, Any]] = []
+    with zipfile.ZipFile(docx_path) as archive:
+        for name in archive.namelist():
+            if not name.startswith("word/") or not name.endswith(".xml") or name.endswith("settings.xml"):
+                continue
+            try:
+                root = etree.fromstring(archive.read(name))
+            except etree.XMLSyntaxError:
+                continue
+            for node in _iter_revision_nodes(root):
+                revision_type = node.tag.rsplit("}", 1)[-1]
+                text_nodes = node.findall(".//" + qn("w:t")) if revision_type == "ins" else node.findall(".//" + qn("w:delText"))
+                revisions.append({
+                    "part": name,
+                    "revision_id": node.get(qn("w:id")),
+                    "type": revision_type,
+                    "author": node.get(qn("w:author")),
+                    "date": node.get(qn("w:date")),
+                    "text": "".join((item.text or "") for item in text_nodes),
+                })
+    return revisions
+
+
+def list_format_revisions(docx_path: str) -> List[Dict[str, Any]]:
+    """List tracked formatting revisions (`w:*PrChange`) with their pre-change properties."""
+    revisions: List[Dict[str, Any]] = []
+    with zipfile.ZipFile(docx_path) as archive:
+        for name in archive.namelist():
+            if not name.startswith("word/") or not name.endswith(".xml") or name.endswith("settings.xml"):
+                continue
+            try:
+                root = etree.fromstring(archive.read(name))
+            except etree.XMLSyntaxError:
+                continue
+            for node in root.iter():
+                tag = _local_name(node.tag)
+                if tag not in _FORMAT_CHANGE_TAGS:
+                    continue
+                revisions.append({
+                    "part": name,
+                    "revision_id": node.get(qn("w:id")),
+                    "type": tag,
+                    "author": node.get(qn("w:author")),
+                    "date": node.get(qn("w:date")),
+                    "old_properties": [_local_name(child.tag) for child in node],
+                })
+    return revisions
+
+
+def _rewrite_revision(docx_path: str, output_docx_path: str, revision_id: str, action: str) -> Dict[str, Any]:
+    changed = 0
+    with zipfile.ZipFile(docx_path) as source:
+        payloads = {name: source.read(name) for name in source.namelist()}
+        infos = {name: source.getinfo(name) for name in source.namelist()}
+    for name, payload in payloads.items():
+        if not name.startswith("word/") or not name.endswith(".xml"):
+            continue
+        try:
+            root = etree.fromstring(payload)
+        except etree.XMLSyntaxError:
+            continue
+        for node in list(_iter_revision_nodes(root)):
+            if node.get(qn("w:id")) != str(revision_id):
+                continue
+            revision_type = node.tag.rsplit("}", 1)[-1]
+            parent = node.getparent()
+            if action == "accept":
+                if revision_type == "ins":
+                    index = parent.index(node)
+                    for child in list(node):
+                        parent.insert(index, child)
+                        index += 1
+                parent.remove(node)
+            elif action == "reject":
+                if revision_type == "ins":
+                    parent.remove(node)
+                else:
+                    index = parent.index(node)
+                    for child in list(node):
+                        for text_node in child.iter(qn("w:delText")):
+                            text_node.tag = qn("w:t")
+                        parent.insert(index, child)
+                        index += 1
+                    parent.remove(node)
+            elif action == "restore":
+                if revision_type == "ins":
+                    parent.remove(node)
+                else:
+                    index = parent.index(node)
+                    for child in list(node):
+                        for text_node in child.iter(qn("w:delText")):
+                            text_node.tag = qn("w:t")
+                        parent.insert(index, child)
+                        index += 1
+                    parent.remove(node)
+            else:
+                raise ValueError(f"Unsupported revision action: {action}")
+            changed += 1
+        if changed:
+            payloads[name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    with zipfile.ZipFile(output_docx_path, "w") as target:
+        for name, payload in payloads.items():
+            target.writestr(infos[name], payload)
+    return {"output_docx": output_docx_path, "revision_id": str(revision_id), "action": action, "changed": changed}
+
+
+def accept_revision(docx_path: str, output_docx_path: str, revision_id: str) -> Dict[str, Any]:
+    return _rewrite_revision(docx_path, output_docx_path, revision_id, "accept")
+
+
+def reject_revision(docx_path: str, output_docx_path: str, revision_id: str) -> Dict[str, Any]:
+    return _rewrite_revision(docx_path, output_docx_path, revision_id, "reject")
+
+
+def restore_revision(docx_path: str, output_docx_path: str, revision_id: str) -> Dict[str, Any]:
+    return _rewrite_revision(docx_path, output_docx_path, revision_id, "restore")
+
+
+def audit_review_integrity(docx_path: str) -> Dict[str, Any]:
+    """
+    Verify that every revision and comment is internally consistent so Word/WPS can open
+    the file in review mode without repair prompts.
+    """
+    issues: List[str] = []
+
+    document_xml = _part_xml_bytes(docx_path, "word/document.xml")
+    if document_xml is None:
+        raise ValueError(f"word/document.xml missing in {docx_path}")
+    root = etree.fromstring(document_xml)
+
+    settings_xml = _part_xml_bytes(docx_path, "word/settings.xml")
+    track_changes = settings_xml is not None and b"trackChanges" in settings_xml
+
+    seen_ids: Dict[str, int] = {}
+    revision_count = 0
+    format_revision_count = 0
+    for el in root.iter():
+        tag = el.tag.rsplit("}", 1)[-1]
+        if tag not in ("ins", "del") and tag not in _FORMAT_CHANGE_TAGS:
+            continue
+        raw_id = el.get(qn("w:id"))
+        if not raw_id or not raw_id.isdigit():
+            issues.append(f"{tag} has invalid w:id={raw_id!r}")
+            continue
+        seen_ids[raw_id] = seen_ids.get(raw_id, 0) + 1
+        if not (el.get(qn("w:author")) or "").strip():
+            issues.append(f"{tag}[{raw_id}] missing w:author")
+        if not ISO_DATE_PATTERN.match(el.get(qn("w:date")) or ""):
+            issues.append(f"{tag}[{raw_id}] invalid w:date")
+        if tag in _FORMAT_CHANGE_TAGS:
+            format_revision_count += 1
+            continue
+        revision_count += 1
+        if tag == "del" and el.find(qn("w:delText")) is None and el.find(".//" + qn("w:delText")) is None:
+            issues.append(f"del[{raw_id}] contains no w:delText")
+        if tag == "ins" and el.find(".//" + qn("w:t")) is None:
+            issues.append(f"ins[{raw_id}] contains no w:t")
+
+    duplicate_ids = [rid for rid, count in seen_ids.items() if count > 1]
+    if duplicate_ids:
+        issues.append(f"duplicate revision ids: {duplicate_ids}")
+
+    referenced_comment_ids = {
+        el.get(qn("w:id"))
+        for el in root.iter()
+        if el.tag.rsplit("}", 1)[-1] == "commentReference"
+    }
+
+    comments_xml = _part_xml_bytes(docx_path, "word/comments.xml")
+    defined_comment_ids = set()
+    if comments_xml is not None:
+        comments_root = etree.fromstring(comments_xml)
+        defined_comment_ids = {
+            node.get(qn("w:id")) for node in comments_root.findall(qn("w:comment"))
+        }
+        for node in comments_root.findall(qn("w:comment")):
+            if not (node.get(qn("w:author")) or "").strip():
+                issues.append(f"comment[{node.get(qn('w:id'))}] missing w:author")
+        dangling = referenced_comment_ids - defined_comment_ids
+        if dangling:
+            issues.append(f"commentReference ids without definitions: {sorted(dangling)}")
+        orphans = defined_comment_ids - referenced_comment_ids
+        if orphans:
+            issues.append(f"comments never referenced in document.xml: {sorted(orphans)}")
+    elif referenced_comment_ids:
+        issues.append("document.xml references comments but word/comments.xml is missing")
+
+    structured_issues = [
+        {"code": "REVIEW_INTEGRITY", "location": "revisions_comments", "detail": item, "severity": "high"}
+        for item in issues
+    ]
+
+    return {
+        "passed": not issues,
+        "track_changes_enabled": track_changes,
+        "revision_count": revision_count,
+        "format_revision_count": format_revision_count,
+        "comment_count": len(defined_comment_ids),
+        "issues": structured_issues,
+        "structured_issues": structured_issues,
+        "coverage_gaps": [] if track_changes else ["TRACK_CHANGES_DISABLED"],
+        "unverified_count": 0,
+    }

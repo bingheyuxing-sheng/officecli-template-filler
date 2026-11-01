@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RepairPlan",
+  "description": "Dual-document formatting and structural repair plan (v3.0)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "task_mode",
+    "reference_docx",
+    "broken_docx",
+    "total_actions",
+    "actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "3.0"
+    },
+    "task_mode": {
+      "type": "string",
+      "const": "REPAIR"
+    },
+    "reference_docx": {
+      "type": "string"
+    },
+    "broken_docx": {
+      "type": "string"
+    },
+    "total_actions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action_id", "action_type", "target", "risk_level"],
+        "properties": {
+          "action_id": { "type": "string" },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "SYNC_SECTION_PAGE_SETUP",
+              "SYNC_PARAGRAPH_FORMAT",
+              "REPAIR_TABLE_FORMAT_AND_PAGINATION",
+              "SANITIZE_OOXML_WHITESPACE_AND_IDS"
+            ]
+          },
+          "target": { "type": "string" },
+          "risk_level": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH"]
+          }
+        }
+      }
+    }
+  }
+}

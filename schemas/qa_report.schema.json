@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qa_report.schema.json",
+  "title": "QAReport",
+  "description": "Unified QA report for DOCX and XLSX deliverables. Every section exposes structured issues so callers can branch on codes instead of parsing prose.",
+  "type": "object",
+  "required": ["status", "passed", "issues", "coverage_gaps", "unverified_count"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["PASSED", "FAILED", "PENDING_HUMAN_REVIEW"],
+      "description": "PASSED = no issues; FAILED = at least one hard failure; PENDING_HUMAN_REVIEW = only intentional placeholder residue awaiting a human decision."
+    },
+    "passed": {
+      "type": "boolean",
+      "description": "True only when status is PASSED."
+    },
+    "passed_or_pending": {
+      "type": "boolean",
+      "description": "True when the file is structurally sound and either fully passed or awaiting human review."
+    },
+    "issues": {
+      "type": "array",
+      "description": "Flattened structured issues from every section.",
+      "items": {
+        "type": "object",
+        "required": ["code", "location", "detail", "severity"],
+        "properties": {
+          "code": { "type": "string" },
+          "location": { "type": "string" },
+          "detail": { "type": "string" },
+          "severity": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "description": "Checks that could not be performed, never reported as passed.",
+      "items": { "type": "string" }
+    },
+    "unverified_count": { "type": "integer", "minimum": 0 },
+    "hard_failure_count": { "type": "integer", "minimum": 0 },
+    "pending_human_review_count": { "type": "integer", "minimum": 0 },
+    "package_integrity": {
+      "type": "object",
+      "required": ["passed", "inspected_parts_count", "xml_parse_errors", "dangling_relationships", "unresolved_rids", "duplicate_para_ids", "duplicate_docpr_ids", "missing_space_preserve", "image_integrity"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "issues": { "type": "array", "items": { "type": "object" } },
+        "structured_issues": { "type": "array", "items": { "type": "object" } },
+        "inspected_parts_count": { "type": "integer" },
+        "xml_parse_errors": { "type": "array", "items": { "type": "string" } },
+        "dangling_relationships": { "type": "array", "items": { "type": "string" } },
+        "unresolved_rids": { "type": "array", "items": { "type": "string" } },
+        "duplicate_para_ids": { "type": "array", "items": { "type": "string" } },
+        "duplicate_docpr_ids": { "type": "array", "items": { "type": "string" } },
+        "missing_space_preserve": { "type": "integer" },
+        "image_integrity": { "type": "object" }
+      }
+    },
+    "format_and_text_qa": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "issues": { "type": "array", "items": { "type": "object" } },
+        "size_anomalies": { "type": "array" },
+        "font_anomalies": { "type": "array" },
+        "table_style_anomalies": { "type": "array" },
+        "pagination_anomalies": { "type": "array" },
+        "text_residuals": { "type": "array" },
+        "size_baseline_source": { "type": "string" },
+        "template_sizes": { "type": "array" },
+        "template_fonts": { "type": "array" }
+      }
+    },
+    "visual_qa": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "issues": { "type": "array", "items": { "type": "object" } },
+        "printable_width_twips": { "type": "integer" },
+        "layout_warnings": { "type": "array", "items": { "type": "string" } },
+        "pdf_rendered": { "type": "boolean" },
+        "pdf_path": { "type": ["string", "null"] },
+        "coverage_gaps": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "review_qa": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "track_changes_enabled": { "type": "boolean" },
+        "revision_count": { "type": "integer" },
+        "comment_count": { "type": "integer" },
+        "issues": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "excel_qa": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "issues": { "type": "array", "items": { "type": "object" } },
+        "coverage_gaps": { "type": "array", "items": { "type": "string" } },
+        "unverified_count": { "type": "integer" },
+        "recalculation": { "type": "object" }
+      }
+    }
+  }
+}
