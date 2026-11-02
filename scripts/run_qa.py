@@ -50,6 +50,21 @@ def _collect(report: dict) -> tuple:
     return issues, gaps, unverified
 
 
+def resolve_report_status(issues: list, coverage_gaps: list, unverified_count: int, review: bool) -> tuple:
+    """Fold sections into one of the four statuses; a missing check always beats PASS/PENDING."""
+    pending = [item for item in issues if item["code"] in PENDING_HUMAN_REVIEW_CODES]
+    real_failures = [item for item in issues if item["code"] not in PENDING_HUMAN_REVIEW_CODES]
+    strict_failures = real_failures if review else issues
+    if strict_failures:
+        return "FAILED", strict_failures, pending
+    status = "PENDING_HUMAN_REVIEW" if issues else "PASSED"
+    # Honest-reporting rule: a missing check can never count as a pass, and it also
+    # outranks intentional placeholder residue waiting for a human.
+    if unverified_count or coverage_gaps:
+        status = "UNVERIFIED"
+    return status, strict_failures, pending
+
+
 def main() -> int:
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Run full QA suite on a .docx or .xlsx output file.")
@@ -87,20 +102,10 @@ def main() -> int:
             report["review_qa"] = audit_review_integrity(fpath)
 
     issues, coverage_gaps, unverified_count = _collect(report)
-    pending = [item for item in issues if item["code"] in PENDING_HUMAN_REVIEW_CODES]
-    real_failures = [item for item in issues if item["code"] not in PENDING_HUMAN_REVIEW_CODES]
     # Without `--review` nothing is expected to stay unresolved, so placeholders count as failures.
-    strict_failures = real_failures if args.review else issues
-
-    if not strict_failures:
-        status = "PENDING_HUMAN_REVIEW" if issues else "PASSED"
-    else:
-        status = "FAILED"
-    # Honest-reporting rule: a missing check can never count as a pass. When
-    # sections could not run (no PDF renderer, font table unavailable, ...),
-    # the overall status is UNVERIFIED even if zero issues were found.
-    if status == "PASSED" and (unverified_count or coverage_gaps):
-        status = "UNVERIFIED"
+    status, strict_failures, pending = resolve_report_status(
+        issues, coverage_gaps, unverified_count, args.review
+    )
 
     report.update({
         "status": status,

@@ -21,11 +21,14 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+import docx
+
 from engine import (
     DocumentTransaction,
     TransactionAborted,
     TransactionPreflightError,
     audit_docx_package_integrity,
+    audit_format_and_text_qa,
     build_repair_plan,
     execute_repair_plan,
     install_auto_cleanup,
@@ -54,11 +57,21 @@ def main() -> int:
 
     tx = DocumentTransaction(args.broken, args.out, task_mode="REPAIR")
     exec_result = {}
+    pkg_qa = {}
+    fmt_qa = {}
     try:
         with tx:
             exec_result = execute_repair_plan(plan, tx.stage())
+            # Package QA alone would publish a doc whose format still drifts from the template:
+            # REPAIR's deliverable contract is the reference formatting, so verify it too.
             pkg_qa = audit_docx_package_integrity(tx.temp_path)
-            tx.record_qa(pkg_qa)
+            fmt_qa = audit_format_and_text_qa(
+                docx.Document(tx.temp_path),
+                docx_path=tx.temp_path,
+                reference_docx_path=args.reference,
+                raise_on_failure=False,
+            )
+            tx.record_qa(pkg_qa, fmt_qa)
             tx.commit()
     except TransactionPreflightError as exc:
         print(json.dumps({
@@ -75,6 +88,7 @@ def main() -> int:
             "execution": exec_result,
             "error": str(exc),
             "qa_status": tx.qa_status,
+            "qa_issues": list(pkg_qa.get("issues", [])) + list(fmt_qa.get("issues", [])),
             "transaction": tx.record(),
         }, ensure_ascii=False, indent=2))
         return 1
@@ -82,7 +96,8 @@ def main() -> int:
     print(json.dumps({
         "plan_total_actions": plan["total_actions"],
         "execution": exec_result,
-        "package_qa_passed": tx.qa_status == "PASSED",
+        "package_qa_passed": bool(pkg_qa.get("passed")),
+        "format_qa_passed": bool(fmt_qa.get("passed")),
         "qa_status": tx.qa_status,
         "transaction": tx.record(),
     }, ensure_ascii=False, indent=2))

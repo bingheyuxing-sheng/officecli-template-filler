@@ -3,7 +3,9 @@
 v3.5 M7 — Process ownership tests.
 
 Cleanup may only terminate a process this task can prove it owns: `(pid, image,
-creation time)` recorded when the process was started. Anything unprovable is reported
+creation time)` recorded when the process was spawned via `note_spawned()`. A process
+that merely appeared after the baseline may belong to a concurrent task, so it is
+reported in `unowned_pids` and left running. Unprovable owned processes are reported
 in `unreleased_pids` instead of being killed on a guess.
 """
 
@@ -55,13 +57,13 @@ class TestProcessOwnershipSuite(unittest.TestCase):
         self.assertEqual(result["task_id"], "task-a")
         self.assertTrue(result["verified"])
 
-    def test_v35_unreleased_pids_reported(self) -> None:
-        """Without a verifiable creation time the process is reported, never terminated."""
+    def test_v35_baseline_diff_is_not_ownership(self) -> None:
+        """A PID that merely appeared after the baseline may belong to a concurrent task."""
         calls = []
         live = iter([[404], [404, 505]])
 
         with mock.patch.object(process_guard, "list_process_pids", side_effect=lambda name: next(live)), \
-             mock.patch.object(process_guard, "process_start_ticks", return_value=None), \
+             mock.patch.object(process_guard, "process_start_ticks", side_effect=lambda pid: 1000 + pid), \
              mock.patch.object(
                  process_guard.TaskResourceGuard,
                  "_terminate_single_pid",
@@ -73,9 +75,35 @@ class TestProcessOwnershipSuite(unittest.TestCase):
             result = session.stop_new_instances(verify_timeout_ms=0)
 
         self.assertEqual(calls, [])
+        self.assertEqual(result["terminated_pids"], [])
+        self.assertEqual(result["spawned_during_task"], [])
+        self.assertEqual(result["unowned_pids"], [505])
+        self.assertEqual(result["ownership_source"], "no_spawned_pids")
+        self.assertTrue(result["verified"])
+
+    def test_v35_unprovable_spawned_pid_is_not_terminated(self) -> None:
+        """An owned PID without a readable creation time is reported, never killed."""
+        calls = []
+        live = iter([[404], [404, 505]])
+
+        with mock.patch.object(process_guard, "list_process_pids", side_effect=lambda name: next(live)), \
+             mock.patch.object(process_guard, "process_start_ticks", return_value=None), \
+             mock.patch.object(
+                 process_guard.TaskResourceGuard,
+                 "_terminate_single_pid",
+                 side_effect=lambda *args, **kwargs: calls.append(args) or True,
+             ), \
+             mock.patch.object(process_guard.TaskResourceGuard, "_is_pid_running", return_value=False):
+            session = EditorSdkSession(image_name="editor_sdk.exe", task_id="task-c")
+            session.record_baseline()
+            session.note_spawned([505])
+            result = session.stop_new_instances(verify_timeout_ms=0)
+
+        self.assertEqual(calls, [])
         self.assertEqual(result["unreleased_pids"], [505])
+        self.assertEqual(result["unowned_pids"], [])
         self.assertFalse(result["verified"])
-        self.assertEqual(result["ownership_source"], "baseline_diff")
+        self.assertEqual(result["ownership_source"], "spawned_pids")
 
     def test_v35_cleanup_log_is_per_task(self) -> None:
         """Concurrent tasks must not overwrite each other's cleanup evidence."""

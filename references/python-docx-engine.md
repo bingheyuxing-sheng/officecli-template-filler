@@ -1,6 +1,6 @@
-# Office Document Intelligence Engine Reference (`v3.0` — Modular `engine/` & `scripts/` API Guide)
+# Office Document Intelligence Engine Reference (`v3.5.4` — Modular `engine/` & `scripts/` API Guide)
 
-In `v3.0`, all core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repair, Process Guard, and Package/Visual QA logic has been extracted from inline Markdown snippets into standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/` and formal JSON Schemas in `schemas/`.
+All core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repair, Process Guard, Transaction, REVIEW/PROOFREAD, and Package/Visual QA logic lives in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/` and formal JSON Schemas in `schemas/`.
 
 **CRITICAL RULE**: Never write ad-hoc destructive `set_par_text`, `coalesce_fragmented_runs` (that deletes `<w:proofErr>`), float-based math solvers, or global `taskkill /F /IM` commands. Always import from `engine` or invoke `scripts/*.py`.
 
@@ -9,13 +9,14 @@ In `v3.0`, all core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repa
 ## 1. Environment Check & Unit Test Verification
 
 ```powershell
-python -c "import docx, openpyxl, matplotlib, PIL; print('OK')" 2>$null
+python -c "import docx, openpyxl; from PIL import Image; print('OK')" 2>$null
 if ($LASTEXITCODE -ne 0) {
-    pip install python-docx openpyxl matplotlib pillow -i https://pypi.tuna.tsinghua.edu.cn/simple
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 }
 
-# Run the full engine unit test suite (35 tests covering P0-1..P0-3, REPAIR pagination, table style, REVIEW deliverables, structured QA reports and auto cleanup)
-python tests/test_v3_engine.py -v
+# Run the full engine unit test suite (109 tests across engine, transaction, review lifecycle,
+# table signatures, router capabilities, Excel reliability, layout QA, process ownership and proofread)
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ---
