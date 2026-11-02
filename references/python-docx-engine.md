@@ -1,4 +1,4 @@
-# Office Document Intelligence Engine Reference (`v3.5.4` — Modular `engine/` & `scripts/` API Guide)
+# Office Document Intelligence Engine Reference (`v3.5.5` — Modular `engine/` & `scripts/` API Guide)
 
 All core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repair, Process Guard, Transaction, REVIEW/PROOFREAD, and Package/Visual QA logic lives in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/` and formal JSON Schemas in `schemas/`.
 
@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) {
     pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 }
 
-# Run the full engine unit test suite (109 tests across engine, transaction, review lifecycle,
+# Run the full engine unit test suite (111 tests across engine, transaction, review lifecycle,
 # table signatures, router capabilities, Excel reliability, layout QA, process ownership and proofread)
 python -m unittest discover -s tests -p "test_*.py" -v
 ```

@@ -46,9 +46,15 @@ def _section_fingerprint(section) -> Dict[str, Any]:
 
 
 def _own_runs(paragraph):
+    """Accepted-view runs: tracked insertions count, deletions/moves/comment anchors do not."""
     for r_el in paragraph._p.iter(qn("w:r")):
+        if r_el.find(qn("w:commentReference")) is not None:
+            continue
         parent = r_el.getparent()
         while parent is not None and parent.tag != qn("w:p"):
+            if parent.tag in (qn("w:del"), qn("w:moveFrom")):
+                parent = None
+                break
             parent = parent.getparent()
         if parent is paragraph._p:
             yield Run(r_el, paragraph)
@@ -63,6 +69,20 @@ def _run_fingerprint(run, paragraph) -> Dict[str, Any]:
     }
 
 
+def _effective_run_fingerprints(paragraph) -> List[Dict[str, Any]]:
+    """Coalesce adjacent runs with identical formatting: tracked edits split runs, layout does not."""
+    result: List[Dict[str, Any]] = []
+    previous_key = None
+    for run in _own_runs(paragraph):
+        fingerprint = _run_fingerprint(run, paragraph)
+        key = (fingerprint["font"], fingerprint["size"], fingerprint["bold"])
+        if key == previous_key:
+            continue
+        result.append(fingerprint)
+        previous_key = key
+    return result
+
+
 def _paragraph_fingerprint(location: str, paragraph) -> Dict[str, Any]:
     fmt = paragraph.paragraph_format
     return {
@@ -74,7 +94,7 @@ def _paragraph_fingerprint(location: str, paragraph) -> Dict[str, Any]:
         "space_before": _length_twips(fmt.space_before),
         "space_after": _length_twips(fmt.space_after),
         "style": getattr(getattr(paragraph, "style", None), "name", None),
-        "runs": [_run_fingerprint(run, paragraph) for run in _own_runs(paragraph)],
+        "runs": _effective_run_fingerprints(paragraph),
     }
 
 
@@ -128,13 +148,17 @@ def _images_and_gaps(document) -> Tuple[List[Dict[str, Any]], List[str]]:
 def fingerprint_docx(docx_path: str) -> Dict[str, Any]:
     """Extract layout-only data across all supported document stories."""
     document = docx.Document(docx_path)
+    # Comments are annotations, not rendered page content: their story must not
+    # change the paragraph/table counts of the layout fingerprint.
     paragraphs = [
         _paragraph_fingerprint(ctx["location_id"], ctx["paragraph"])
         for ctx in iter_all_document_paragraphs_with_Wait_context(document)
+        if not ctx["location_id"].startswith(("comments.", "comments["))
     ]
     tables = [
         _table_fingerprint(ctx["table_id"], ctx["table"])
         for ctx in iter_all_document_tables_with_context(document)
+        if not str(ctx["table_id"]).startswith(("comments.", "comments["))
     ]
     images, coverage_gaps = _images_and_gaps(document)
     return {

@@ -132,6 +132,26 @@ class TestRevisionLifecycleSuite(unittest.TestCase):
         audit = audit_review_integrity(out_path)
         self.assertTrue(audit["passed"], audit["issues"])
 
+    def test_v35_format_and_text_revision_ids_stay_unique(self) -> None:
+        """Splitting a formatted run into del/ins/prefix/suffix must not duplicate a format id."""
+        out_path = self._build_review_output(
+            text_revisions=[{"old_text": "生成正文段落", "new_text": "模板正文段落"}],
+        )
+
+        with zipfile.ZipFile(out_path) as archive:
+            root = etree.fromstring(archive.read("word/document.xml"))
+        ids = [
+            node.get(qn("w:id")) for node in root.iter()
+            if _local_name(node.tag) in ("ins", "del") or _local_name(node.tag) in FORMAT_CHANGE_WRAPPERS
+        ]
+        self.assertTrue(any(_local_name(node.tag) == "ins" for node in root.iter()))
+        self.assertTrue(any(_local_name(node.tag) == "del" for node in root.iter()))
+        self.assertTrue(any(_local_name(node.tag) in FORMAT_CHANGE_WRAPPERS for node in root.iter()))
+        self.assertEqual(len(ids), len(set(ids)), f"duplicate revision ids: {ids}")
+
+        audit = audit_review_integrity(out_path)
+        self.assertTrue(audit["passed"], audit["issues"])
+
     def test_v35_list_revisions_includes_format_marks(self) -> None:
         """`include_format=True` must return text and format marks, each with an explicit kind."""
         out_path = self._build_review_output(
