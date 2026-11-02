@@ -161,7 +161,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
-| v3.5.2 | 当前 `main`（打包文件待发布） | Excel Translator 与对象预检、版面指纹 QA、进程所有权、PROOFREAD、合并安全写入 |
+| v3.5.2 | [Release v3.5.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.2) | Excel Translator 与对象预检、版面指纹 QA、进程所有权、PROOFREAD、合并安全写入 |
 | v3.5.0 | 已并入 v3.5.2 | 事务化交付、修订生命周期与快照、表格签名收紧、能力注册表 |
 | v3.4.2 | [Release v3.4.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.2) | 修订 ID 真实一致、超链接结构保护、定位防误改、XLSM 保宏、QA 四态 |
 | v3.4.1 | [Release v3.4.1-archive](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.1-archive) | 格式修复写入 Word 原生格式修订痕迹 |
