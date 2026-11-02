@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v3.5.4 — Process Ownership Hardening, Full Transaction QA, Execution Profiles, Semantic Preflight, Staged Checkpoints, Rendering & TOC Degradation)
+# OfficeCLI + Python Office Document Intelligence Skill (v3.5.5 — REVIEW Revision-ID Uniqueness, Revision-Aware Layout QA, Process Ownership Hardening, Full Transaction QA, Execution Profiles, Semantic Preflight, Staged Checkpoints, Rendering & TOC Degradation)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
@@ -112,7 +112,7 @@ officecli-template-filler/
 │   ├── repair_plan.schema.json           # RepairPlan output schema
 │   ├── review_report.schema.json         # v3.1: REVIEW mode execution + integrity report
 │   └── qa_report.schema.json             # Unified QA Report schema
-├── tests/                                # Automated unit test suite (109 tests)
+├── tests/                                # Automated unit test suite (111 tests)
 │   ├── test_v3_engine.py                 # P0-1..P1-8, REPAIR, REVIEW & Excel regression baseline
 │   ├── test_transaction.py               # v3.5 M1: staged write, abort on QA failure, atomic commit
 │   ├── test_review_lifecycle.py          # v3.5 M2: revision marks, accept/reject/restore, snapshot
@@ -226,6 +226,9 @@ v3.4 additions:
   - Cleanup no longer treats a baseline diff as ownership: only PIDs recorded through `note_spawned()` may be terminated. Processes that merely appeared during the run are reported in `unowned_pids` and left alone, so a concurrent task can never be killed.
   - `generate_document.py` now runs package-integrity QA alongside format QA before commit; `repair_document.py` now runs format QA against the reference alongside package QA. A partial gate can no longer be reported as `transaction.qa_status: PASSED`.
   - `run_qa.py` reports `UNVERIFIED` when a check could not run even if placeholder residue would otherwise yield `PENDING_HUMAN_REVIEW`; a missing check never hides behind pending review.
+- **v3.5.5 — Review revision-ID uniqueness and revision-aware layout QA**:
+  - Splitting a run that already carries a `w:*PrChange` mark must not copy the same `w:id` into every prefix/`w:del`/`w:ins`/suffix clone. Only the first clone keeps the format mark; `audit_review_integrity()` must always pass with unique ids.
+  - `fingerprint_docx()` compares the accepted-revision view: `w:del`/`w:moveFrom` runs and comment-reference runs are ignored, adjacent runs with identical formatting are coalesced, and the comments story is excluded. A legitimate REVIEW document must not fail QA with `LAYOUT_RUN_COUNT` / `LAYOUT_PARAGRAPH_COUNT`.
 
 Mandatory rules:
 

@@ -159,10 +159,12 @@ _P_CONTAINER_TAGS = ("hyperlink", "smartTag", "sdt", "fldSimple", "ins", "del",
                      "commentRangeStart", "commentRangeEnd", "commentReference")
 
 
-def _clone_run_with_text(r_el, text: str):
+def _clone_run_with_text(r_el, text: str, keep_format_changes: bool = True):
     """Clone a run's formatting but replace every `<w:t>` with one new text node.
 
     Only safe on runs whose content is purely textual (`w:t` + optional `w:rPr`).
+    A split run produces several clones; only the first may keep the source run's
+    `w:*PrChange` mark, otherwise every clone repeats the same revision id.
     """
     clone = copy.deepcopy(r_el)
     for t in clone.findall(qn("w:t")):
@@ -170,6 +172,11 @@ def _clone_run_with_text(r_el, text: str):
     for extra in ("w:delText", "w:br", "w:tab"):
         for node in clone.findall(qn(extra)):
             clone.remove(node)
+    if not keep_format_changes:
+        for rpr in clone.findall(qn("w:rPr")):
+            for child in list(rpr):
+                if child.tag.rsplit("}", 1)[-1] in _FORMAT_CHANGE_TAGS:
+                    rpr.remove(child)
     node = OxmlElement("w:t")
     node.set(qn("xml:space"), "preserve")
     node.text = text
@@ -307,18 +314,24 @@ def _replace_in_run_list(p_el, runs, old_text, new_text, author, date, revision_
         removed = text[overlap_start - r_start : overlap_end - r_start]
         suffix = text[overlap_end - r_start :]
 
+        # A source run may be split into prefix + del + ins + suffix. Keep its format
+        # revision mark on the first clone only, so one w:id never appears four times.
+        keep_format = True
         if prefix:
-            nodes.append(_clone_run_with_text(r_el, prefix))
+            nodes.append(_clone_run_with_text(r_el, prefix, keep_format))
+            keep_format = False
         if removed:
             allocated_ids.append(ids.take())
-            nodes.append(_wrap_deleted_run(_clone_run_with_text(r_el, removed), allocated_ids[-1], author, date))
+            nodes.append(_wrap_deleted_run(_clone_run_with_text(r_el, removed, keep_format), allocated_ids[-1], author, date))
+            keep_format = False
         if not inserted:
             if new_text:
                 allocated_ids.append(ids.take())
-                nodes.append(_wrap_inserted_run(_clone_run_with_text(r_el, new_text), allocated_ids[-1], author, date))
+                nodes.append(_wrap_inserted_run(_clone_run_with_text(r_el, new_text, keep_format), allocated_ids[-1], author, date))
+                keep_format = False
             inserted = True
         if suffix:
-            nodes.append(_clone_run_with_text(r_el, suffix))
+            nodes.append(_clone_run_with_text(r_el, suffix, keep_format))
 
     if not inserted:
         return None

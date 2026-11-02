@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-OfficeCLI + Python Document Intelligence Engine (v3.5.4).
+OfficeCLI + Python Document Intelligence Engine (v3.5.5).
 
 Exports the Word (.docx) / Excel (.xlsx) engine: template understanding, SSOT Decimal math,
 non-destructive cross-run replacement, safe image replacement, complex cell protection,
@@ -132,7 +132,7 @@ from .transaction import (
 )
 from .layout_qa import compare_layout_fingerprints, fingerprint_docx
 
-__version__ = "3.5.4"
+__version__ = "3.5.5"
 
 __all__ = [
     "__version__",

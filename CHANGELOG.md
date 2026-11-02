@@ -2,9 +2,19 @@
 
 本文件记录 officecli-template-filler 各版本的变更。`dist/` 下附带对应版本的打包文件，可直接下载后作为 Agent Skill 安装。
 
-> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.4 的源码即当前 `main`。
+> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.5 的源码即当前 `main`。
 
 ---
+
+## v3.5.5
+
+**主题：REVIEW 修订 ID 唯一性与修订感知版面 QA（全链路验证发现并修复）**
+
+- 修订 ID 冲突：当同一段落既有格式修复又有文字修订时，拆分 Run 会把同一个 `w:rPrChange` 的 `w:id` 复制到 prefix / `w:del` / `w:ins` / suffix 副本中，导致 `audit_review_integrity()` 报 `duplicate revision ids`，REVIEW 事务被中止。现在只有第一个副本保留格式修订标记，其余副本剥离，保证每个 `w:id` 唯一。
+- 版面 QA 误报：`run_qa.py --review --reference` 将修订拆分后的 Run 数量、批注故事段落计入版面指纹，导致合法 REVIEW 文档被判 `FAILED`。`fingerprint_docx()` 现在按“接受修订后”的视图计数（忽略 `w:del`/`w:moveFrom` 与批注引用），并合并格式相同的相邻 Run；批注故事不参与版面对比。
+- 回归测试：新增 REVIEW 格式修订与文字修订同段落的 ID 唯一性测试，以及修订/批注感知的版面指纹测试。
+- 功能验证：GENERATE（含负向中止）、REPAIR、REVIEW、PROOFREAD、EXCEL_GENERATE、输入路由、能力拦截、进程清理日志共 20 个端到端场景全部通过。
+- 测试：111 项全部通过。
 
 ## v3.5.4
 

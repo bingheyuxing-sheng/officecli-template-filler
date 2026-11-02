@@ -25,7 +25,13 @@ import docx
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from engine import compare_layout_fingerprints, fingerprint_docx, run_visual_layout_qa
+from engine import (
+    build_review_plan,
+    compare_layout_fingerprints,
+    execute_review_plan,
+    fingerprint_docx,
+    run_visual_layout_qa,
+)
 
 
 class TestLayoutQaSuite(unittest.TestCase):
@@ -64,6 +70,26 @@ class TestLayoutQaSuite(unittest.TestCase):
         report = compare_layout_fingerprints(output, reference)
         self.assertTrue(report["passed"], report["issues"])
         self.assertEqual(report["issues"], [])
+
+    def test_v35_layout_qa_normalizes_tracked_changes(self) -> None:
+        """REVIEW splits runs and adds comments; that is revision structure, not layout drift."""
+        reference = self._docx("review_ref.docx", "正文内容", size=12)
+        target = self._docx("review_target.docx", "正文内容", size=18)
+        output = os.path.join(self.work_dir, "review_out.docx")
+        execute_review_plan(
+            build_review_plan(
+                reference,
+                target,
+                text_revisions=[{"old_text": "正文内容", "new_text": "正文材料"}],
+            ),
+            output,
+            snapshot_path="",
+        )
+
+        report = compare_layout_fingerprints(output, reference)
+        self.assertTrue(report["passed"], report["issues"])
+        self.assertNotIn("LAYOUT_RUN_COUNT", {item["code"] for item in report["issues"]})
+        self.assertNotIn("LAYOUT_PARAGRAPH_COUNT", {item["code"] for item in report["issues"]})
 
     def test_v35_layout_qa_detects_font_size_drift(self) -> None:
         """Same text position with a different size is a real layout change."""
