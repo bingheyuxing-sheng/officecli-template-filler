@@ -4,6 +4,8 @@
 CLI entrypoint: Generate a filled document from a template and a JSON replacement map.
 Usage:
     python scripts/generate_document.py --template <template.docx> --data <data.json> --out <output.docx>
+
+The output is staged in a sibling temp file and only published after QA passes.
 """
 
 from __future__ import annotations
@@ -19,7 +21,10 @@ if ROOT_DIR not in sys.path:
 
 import docx
 from engine import (
+    DocumentTransaction,
     TaskResourceGuard,
+    TransactionAborted,
+    TransactionPreflightError,
     LogicalParagraphView,
     iter_all_document_paragraphs_with_Wait_context,
     sanitize_ooxml_whitespace_and_pagination,
@@ -41,34 +46,57 @@ def main() -> int:
         data_map = json.load(f)
 
     tokens_map = data_map.get("tokens", data_map)
+    replaced_count = 0
+    qa_report = None
+    tx = DocumentTransaction(args.template, args.out, task_mode="GENERATE")
 
-    with TaskResourceGuard() as guard:
-        doc = docx.Document(args.template)
-        replaced_count = 0
-        for ctx in iter_all_document_paragraphs_with_Wait_context(doc):
-            p_el = ctx["p_el"]
-            view = LogicalParagraphView(p_el)
-            for token, replacement in tokens_map.items():
-                if token in view.logical_text:
-                    replaced_count += view.replace_all_tokens(str(token), str(replacement), strip_red=True)
+    try:
+        with tx:
+            with TaskResourceGuard() as guard:
+                doc = docx.Document(args.template)
+                for ctx in iter_all_document_paragraphs_with_Wait_context(doc):
+                    p_el = ctx["p_el"]
+                    view = LogicalParagraphView(p_el)
+                    for token, replacement in tokens_map.items():
+                        if token in view.logical_text:
+                            replaced_count += view.replace_all_tokens(str(token), str(replacement), strip_red=True)
 
-        sanitize_ooxml_whitespace_and_pagination(doc)
-        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-        doc.save(args.out)
+                sanitize_ooxml_whitespace_and_pagination(doc)
+                doc.save(tx.stage())
 
-        qa_report = audit_format_and_text_qa(
-            doc,
-            docx_path=args.out,
-            reference_docx_path=args.template,
-            raise_on_failure=False,
-        )
-        release_office_file_locks(guard=guard)
+                qa_report = audit_format_and_text_qa(
+                    doc,
+                    docx_path=tx.temp_path,
+                    reference_docx_path=args.template,
+                    raise_on_failure=False,
+                )
+                tx.record_qa(qa_report)
+                release_office_file_locks(guard=guard)
+            tx.commit()
+    except TransactionPreflightError as exc:
+        print(json.dumps({
+            "output": args.out,
+            "error": str(exc),
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except TransactionAborted as exc:
+        print(json.dumps({
+            "output": args.out,
+            "replaced_occurrences": replaced_count,
+            "error": str(exc),
+            "qa_status": tx.qa_status,
+            "qa_issues": (qa_report or {}).get("issues", []),
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 1
 
     print(json.dumps({
         "output": args.out,
         "replaced_occurrences": replaced_count,
-        "qa_passed": qa_report["passed"],
-        "qa_issues": qa_report.get("issues", []),
+        "qa_passed": tx.qa_status == "PASSED",
+        "qa_status": tx.qa_status,
+        "transaction": tx.record(),
     }, ensure_ascii=False, indent=2))
     return 0
 

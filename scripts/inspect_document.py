@@ -18,7 +18,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import docx
-from engine import route_document_task, extract_document_spec, install_auto_cleanup
+from engine import extract_document_spec, extract_excel_spec, install_auto_cleanup, route_document_task
 
 
 def main() -> int:
@@ -42,6 +42,8 @@ def main() -> int:
             doc = docx.Document(fpath)
             spec = extract_document_spec(doc, file_path=fpath)
             result["specs"].append(spec)
+        elif fpath.lower().endswith((".xlsx", ".xlsm")) and os.path.isfile(fpath):
+            result["specs"].append(extract_excel_spec(fpath))
 
     payload = json.dumps(result, ensure_ascii=False, indent=2)
     if args.out:
@@ -51,7 +53,8 @@ def main() -> int:
         print(f"Saved inspection output to: {args.out}")
     else:
         print(payload)
-    return 0
+    # Unsupported inputs are a routing verdict, not a crash: report them and exit 2.
+    return 2 if routing["task_mode"] == "UNSUPPORTED_INPUT" else 0
 
 
 if __name__ == "__main__":

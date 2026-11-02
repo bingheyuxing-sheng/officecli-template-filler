@@ -3,7 +3,8 @@
 """
 CLI entrypoint: Dual-Document REPAIR Mode (v3.0).
 Compares a Reference/Template .docx and a Broken/Target .docx, emits `repair_plan.json`,
-and executes the repair non-destructively.
+and executes the repair non-destructively into a staged file that is published only
+after package QA passes.
 
 Usage:
     python scripts/repair_document.py --reference <ref.docx> --broken <broken.docx> --out <repaired.docx> [--plan-out repair_plan.json]
@@ -20,7 +21,15 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from engine import build_repair_plan, execute_repair_plan, audit_docx_package_integrity, install_auto_cleanup
+from engine import (
+    DocumentTransaction,
+    TransactionAborted,
+    TransactionPreflightError,
+    audit_docx_package_integrity,
+    build_repair_plan,
+    execute_repair_plan,
+    install_auto_cleanup,
+)
 
 
 def main() -> int:
@@ -43,13 +52,39 @@ def main() -> int:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
 
-    exec_result = execute_repair_plan(plan, args.out)
-    pkg_qa = audit_docx_package_integrity(args.out)
+    tx = DocumentTransaction(args.broken, args.out, task_mode="REPAIR")
+    exec_result = {}
+    try:
+        with tx:
+            exec_result = execute_repair_plan(plan, tx.stage())
+            pkg_qa = audit_docx_package_integrity(tx.temp_path)
+            tx.record_qa(pkg_qa)
+            tx.commit()
+    except TransactionPreflightError as exc:
+        print(json.dumps({
+            "plan_total_actions": plan["total_actions"],
+            "output": args.out,
+            "error": str(exc),
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except TransactionAborted as exc:
+        print(json.dumps({
+            "plan_total_actions": plan["total_actions"],
+            "output": args.out,
+            "execution": exec_result,
+            "error": str(exc),
+            "qa_status": tx.qa_status,
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 1
 
     print(json.dumps({
         "plan_total_actions": plan["total_actions"],
         "execution": exec_result,
-        "package_qa_passed": pkg_qa["passed"],
+        "package_qa_passed": tx.qa_status == "PASSED",
+        "qa_status": tx.qa_status,
+        "transaction": tx.record(),
     }, ensure_ascii=False, indent=2))
     return 0
 

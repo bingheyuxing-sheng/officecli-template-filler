@@ -46,7 +46,10 @@ TBLPR_ORDER = (
     "shd", "tblLayout", "tblCellMar", "tblLook", "tblCaption", "tblDescription",
 )
 
-TBLPR_SYNC_TAGS = ("tblStyle", "tblW", "jc", "tblBorders", "tblLayout", "tblCellMar")
+TBLPR_SYNC_TAGS = (
+    "tblStyle", "tblStyleRowBandSize", "tblStyleColBandSize", "tblW", "jc",
+    "tblCellSpacing", "tblInd", "tblBorders", "tblLayout", "tblCellMar", "tblLook",
+)
 
 TCPR_ORDER = (
     "cnfStyle", "tcW", "gridSpan", "hMerge", "vMerge", "tcBorders", "shd", "noWrap",
@@ -80,6 +83,31 @@ def _row_height(row):
         return None
     height = trPr.find(qn("w:trHeight"))
     return height.get(qn("w:val")) if height is not None else None
+
+
+def _row_height_detail(row) -> Dict[str, Any]:
+    """`w:trHeight` value plus its rule — `atLeast 380` and `exact 380` are not the same."""
+    trPr = row._tr.find(qn("w:trPr"))
+    height = trPr.find(qn("w:trHeight")) if trPr is not None else None
+    if height is None:
+        return {"val": None, "hRule": None}
+    raw_val = height.get(qn("w:val"))
+    try:
+        val: Optional[int] = int(raw_val) if raw_val is not None else None
+    except ValueError:
+        val = None
+    return {"val": val, "hRule": height.get(qn("w:hRule"))}
+
+
+def _height_value(entry) -> Any:
+    """Read a row height as an int from either the v3.5 dict form or a pre-v3.5 raw string."""
+    value = entry.get("val") if isinstance(entry, dict) else entry
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _insert_tcpr_child(tcPr, node, tag_name: str) -> None:
@@ -125,6 +153,7 @@ def table_style_signature(tbl) -> Dict[str, Any]:
                 col_widths.append(int(raw))
 
     signature: Dict[str, Any] = {
+        "row_count": len(tbl.rows),
         "column_count": len(col_widths),
         "total_width": sum(col_widths),
         "col_widths": col_widths,
@@ -134,6 +163,11 @@ def table_style_signature(tbl) -> Dict[str, Any]:
         "borders": {},
         "header_row_height": None,
         "tbl_style": None,
+        "tbl_look": None,
+        "row_band_size": None,
+        "col_band_size": None,
+        "tbl_ind": None,
+        "tbl_cell_spacing": None,
         "header_shading": [],
         "valign_distribution": {},
         "row_heights": [],
@@ -151,6 +185,23 @@ def table_style_signature(tbl) -> Dict[str, Any]:
         jc_el = tblPr.find(qn("w:jc"))
         if jc_el is not None:
             signature["jc"] = jc_el.get(qn("w:val"))
+        look_el = tblPr.find(qn("w:tblLook"))
+        if look_el is not None:
+            signature["tbl_look"] = {
+                key.rsplit("}", 1)[-1]: value for key, value in look_el.attrib.items()
+            }
+        row_band = tblPr.find(qn("w:tblStyleRowBandSize"))
+        if row_band is not None:
+            signature["row_band_size"] = row_band.get(qn("w:val"))
+        col_band = tblPr.find(qn("w:tblStyleColBandSize"))
+        if col_band is not None:
+            signature["col_band_size"] = col_band.get(qn("w:val"))
+        ind_el = tblPr.find(qn("w:tblInd"))
+        if ind_el is not None:
+            signature["tbl_ind"] = ind_el.get(qn("w:w"))
+        spacing_el = tblPr.find(qn("w:tblCellSpacing"))
+        if spacing_el is not None:
+            signature["tbl_cell_spacing"] = spacing_el.get(qn("w:w"))
         margins_el = tblPr.find(qn("w:tblCellMar"))
         if margins_el is not None:
             for side in ("top", "left", "bottom", "right"):
@@ -171,7 +222,7 @@ def table_style_signature(tbl) -> Dict[str, Any]:
     if tbl.rows:
         signature["header_shading"] = [_cell_shading(cell) for cell in get_unique_row_cells(tbl.rows[0])]
         signature["header_row_height"] = _row_height(tbl.rows[0])
-        signature["row_heights"] = [_row_height(row) for row in tbl.rows]
+        signature["row_heights"] = [_row_height_detail(row) for row in tbl.rows]
 
     valign_counts: Dict[str, int] = {}
     for row in tbl.rows:
@@ -219,6 +270,13 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
     if out_sig["column_count"] != ref_sig["column_count"]:
         issues.append(("table_column_count", table_index, out_sig["column_count"], ref_sig["column_count"]))
         return issues
+
+    out_rows = out_sig.get("row_count")
+    ref_rows = ref_sig.get("row_count")
+    if out_rows is not None and ref_rows is not None and out_rows != ref_rows:
+        # Reported only: adding/removing rows changes business content and is never
+        # applied by `restore_table_style_from_reference`.
+        issues.append(("table_row_count", table_index, out_rows, ref_rows))
 
     if ref_sig["total_width"] and out_sig["total_width"]:
         drift = abs(out_sig["total_width"] - ref_sig["total_width"]) / float(ref_sig["total_width"])
@@ -276,16 +334,33 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
         if ref_dominant != "none" and out_dominant != ref_dominant:
             issues.append(("table_cell_valign", table_index, out_dominant, ref_dominant))
 
-    for row_index, (out_height, ref_height) in enumerate(
+    reference_look = ref_sig.get("tbl_look") or {}
+    if reference_look and reference_look != (out_sig.get("tbl_look") or {}):
+        issues.append(("table_tbl_look", table_index, out_sig.get("tbl_look"), reference_look))
+
+    for band_key in ("row_band_size", "col_band_size"):
+        ref_band = ref_sig.get(band_key)
+        if ref_band and ref_band != out_sig.get(band_key):
+            issues.append(("table_band_size", table_index, out_sig.get(band_key), ref_band))
+
+    for row_index, (out_entry, ref_entry) in enumerate(
         zip(out_sig.get("row_heights") or [], ref_sig.get("row_heights") or [])
     ):
-        if row_index > 3:
-            break
+        out_height = _height_value(out_entry)
+        ref_height = _height_value(ref_entry)
         if not ref_height:
             continue
         if not out_height:
             issues.append(("table_row_height", table_index, row_index, out_height, ref_height))
             continue
+        drift = abs(out_height - ref_height) / float(ref_height)
+        if drift > 0.15:
+            issues.append(("table_row_height", table_index, row_index, out_height, ref_height))
+            continue
+        ref_rule = (ref_entry.get("hRule") or "auto") if isinstance(ref_entry, dict) else "auto"
+        out_rule = (out_entry.get("hRule") or "auto") if isinstance(out_entry, dict) else "auto"
+        if ref_rule != out_rule:
+            issues.append(("table_row_height_rule", table_index, row_index, out_rule, ref_rule))
 
     if ref_sig["header_row_height"] and out_sig["header_row_height"]:
         try:
@@ -352,35 +427,223 @@ def _insert_trpr_child(trPr, node, tag_name: str) -> None:
     trPr.append(node)
 
 
-def restore_table_style_from_reference(target_tbl, reference_tbl) -> bool:
-    """
-    Copy grid column widths and table-level properties from the reference table.
+class TableRestoreResult(dict):
+    """Restore report. Truthiness keeps the pre-v3.5 `bool` contract (topology ok)."""
 
-    Cell text, merges and cell content are untouched; only structure that a tracked change
-    cannot express is restored. Returns False when the column counts differ.
+    def __bool__(self) -> bool:
+        return bool(self.get("topology_ok", True))
+
+
+def _tcpr_props(cell) -> Dict[str, Any]:
+    """Merge topology properties of one cell (`gridSpan` / `hMerge` / `vMerge`)."""
+    tcPr = cell._tc.tcPr
+    if tcPr is None:
+        return {}
+    props: Dict[str, Any] = {}
+    for tag_name in ("gridSpan", "hMerge", "vMerge"):
+        node = tcPr.find(qn(f"w:{tag_name}"))
+        if node is not None:
+            props[tag_name] = {
+                key.rsplit("}", 1)[-1]: value for key, value in node.attrib.items()
+            }
+    return props
+
+
+def _cell_text(cell) -> str:
+    return "".join(paragraph.text for paragraph in cell.paragraphs).strip()
+
+
+def _grid_span_of(cell) -> int:
+    span = _tcpr_props(cell).get("gridSpan") or {}
+    try:
+        return max(int(span.get("val", 1)), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _set_tcpr_prop(cell, tag_name: str, attributes: Dict[str, Any]) -> None:
+    tcPr = cell._tc.get_or_add_tcPr()
+    existing = tcPr.find(qn(f"w:{tag_name}"))
+    if existing is not None:
+        tcPr.remove(existing)
+    node = OxmlElement(f"w:{tag_name}")
+    for key, value in attributes.items():
+        node.set(qn(f"w:{key}"), str(value))
+    _insert_tcpr_child(tcPr, node, tag_name)
+
+
+def _vertical_merge_chain(table, row_index: int, cell_index: int):
+    chain = [table.rows[row_index].cells[cell_index]]
+    row = row_index
+    while row + 1 < len(table.rows):
+        next_cells = table.rows[row + 1].cells
+        if cell_index >= len(next_cells):
+            break
+        v_merge = _tcpr_props(next_cells[cell_index]).get("vMerge") or {}
+        if v_merge.get("val") != "continue":
+            break
+        row += 1
+        chain.append(next_cells[cell_index])
+    return chain
+
+
+def _restore_merges(target_tbl, reference_tbl, result: TableRestoreResult) -> None:
+    """Write merge topology only when it is provably safe; otherwise report it for a human."""
+    if len(target_tbl.rows) != len(reference_tbl.rows):
+        result["manual_required"].append({"property": "merge", "reason": "row_count_mismatch"})
+        return
+
+    for row_index, (target_row, reference_row) in enumerate(zip(target_tbl.rows, reference_tbl.rows)):
+        # `row.cells` yields one entry per grid column, repeating merged cells, so the
+        # column count of a merged and an unmerged row stays comparable.
+        target_cells = list(target_row.cells)
+        reference_cells = list(reference_row.cells)
+        if len(target_cells) != len(reference_cells):
+            result["manual_required"].append({
+                "row": row_index, "property": "merge", "reason": "cell_count_mismatch",
+            })
+            continue
+
+        seen_reference_cells: List[int] = []
+        removed_cells = 0
+        for cell_index in range(len(reference_cells)):
+            reference_cell = reference_cells[cell_index]
+            reference_id = id(reference_cell._tc)
+            if reference_id in seen_reference_cells:
+                continue
+            seen_reference_cells.append(reference_id)
+
+            target_cells = list(target_row.cells)
+            physical_index = cell_index - removed_cells
+            if physical_index >= len(target_cells):
+                break
+            target_cell = target_cells[physical_index]
+            desired = _tcpr_props(reference_cell)
+            current = _tcpr_props(target_cell)
+            if desired == current:
+                continue
+
+            if not desired:
+                # Clearing a merge the template does not have changes layout destructively.
+                result["manual_required"].append({
+                    "row": row_index, "cell": cell_index, "property": "merge",
+                    "reason": "target_has_merge_reference_does_not",
+                })
+                continue
+
+            span = _grid_span_of(reference_cell)
+            participants = target_cells[physical_index:physical_index + span]
+            if len(participants) != span:
+                result["manual_required"].append({
+                    "row": row_index, "cell": cell_index, "property": "merge",
+                    "reason": "merge_span_out_of_bounds",
+                })
+                continue
+            texts = {_cell_text(cell) for cell in participants if _cell_text(cell)}
+            if len(texts) > 1:
+                result["manual_required"].append({
+                    "row": row_index, "cell": cell_index, "property": "merge",
+                    "reason": "merged_cells_have_different_text",
+                })
+                continue
+            if any(_has_structural_anchors(cell._tc) for cell in participants):
+                result["manual_required"].append({
+                    "row": row_index, "cell": cell_index, "property": "merge",
+                    "reason": "merged_cells_contain_revisions_or_comments",
+                })
+                continue
+
+            chain_resource: List[Any] = []
+            if "vMerge" in desired:
+                reference_chain = _vertical_merge_chain(reference_tbl, row_index, cell_index)
+                target_chain = _vertical_merge_chain(target_tbl, row_index, cell_index)
+                if len(reference_chain) > 1:
+                    if len(target_chain) != len(reference_chain):
+                        result["manual_required"].append({
+                            "row": row_index, "cell": cell_index, "property": "vMerge",
+                            "reason": "vertical_merge_chain_mismatch",
+                        })
+                        continue
+                    chain_texts = {_cell_text(cell) for cell in target_chain if _cell_text(cell)}
+                    if len(chain_texts) > 1 or any(
+                        _has_structural_anchors(cell._tc) for cell in target_chain
+                    ):
+                        result["manual_required"].append({
+                            "row": row_index, "cell": cell_index, "property": "vMerge",
+                            "reason": "vertical_merge_content_unsafe",
+                        })
+                        continue
+                    chain_resource = target_chain
+
+            written: List[str] = []
+            for tag_name in ("gridSpan", "hMerge"):
+                if tag_name in desired:
+                    _set_tcpr_prop(target_cell, tag_name, desired[tag_name])
+                    written.append(tag_name)
+            if span > 1 and "gridSpan" in desired and len(participants) > 1:
+                # A merged row physically holds one `w:tc`; the covered cells must go.
+                for extra_cell in participants[1:]:
+                    parent = extra_cell._tc.getparent()
+                    if parent is not None:
+                        parent.remove(extra_cell._tc)
+                removed_cells += len(participants) - 1
+            if "vMerge" in desired:
+                _set_tcpr_prop(target_cell, "vMerge", desired["vMerge"])
+                written.append("vMerge")
+                if desired["vMerge"].get("val") == "restart" and chain_resource:
+                    for chain_cell in chain_resource[1:]:
+                        _set_tcpr_prop(chain_cell, "vMerge", {"val": "continue"})
+                        written.append("vMerge")
+
+            location = f"r{row_index}.c{cell_index}"
+            result["restored"].extend(f"{location}.{tag}" for tag in written)
+
+
+def restore_table_style_from_reference(target_tbl, reference_tbl) -> TableRestoreResult:
     """
+    Copy grid column widths, table-level properties, row heights and merge topology.
+
+    Merge writes are gated: identical topology, merged cells carrying at most one non-empty
+    text, and no revision/comment anchors inside the region. Anything else lands in
+    `manual_required` instead of being rewritten. Truthiness of the result matches the
+    pre-v3.5 boolean (False only when the column topology cannot be restored).
+    """
+    result = TableRestoreResult(
+        topology_ok=True,
+        restored=[],
+        skipped=[],
+        manual_required=[],
+    )
     target_el = target_tbl._tbl
     reference_el = reference_tbl._tbl
 
     target_grid = target_el.find(qn("w:tblGrid"))
     reference_grid = reference_el.find(qn("w:tblGrid"))
     if reference_grid is None:
-        return False
+        result["topology_ok"] = False
+        result["manual_required"].append({"property": "grid", "reason": "reference_grid_missing"})
+        return result
 
     reference_cols = reference_grid.findall(qn("w:gridCol"))
     target_cols = target_grid.findall(qn("w:gridCol")) if target_grid is not None else []
     if len(reference_cols) != len(target_cols):
-        return False
+        result["topology_ok"] = False
+        result["manual_required"].append({
+            "property": "column_count",
+            "reason": f"reference={len(reference_cols)} target={len(target_cols)}",
+        })
+        return result
 
     for target_col, reference_col in zip(target_cols, reference_cols):
         width = reference_col.get(qn("w:w"))
         if width:
             target_col.set(qn("w:w"), width)
+    result["restored"].append("grid")
 
     reference_pr = reference_el.find(qn("w:tblPr"))
     target_pr = target_el.find(qn("w:tblPr"))
     if reference_pr is None or target_pr is None:
-        return True
+        return result
 
     for tag_name in TBLPR_SYNC_TAGS:
         reference_node = reference_pr.find(qn(f"w:{tag_name}"))
@@ -390,13 +653,20 @@ def restore_table_style_from_reference(target_tbl, reference_tbl) -> bool:
         if existing is not None:
             target_pr.remove(existing)
         _insert_tblpr_child(target_pr, deepcopy(reference_node), tag_name)
+        result["restored"].append(f"tblPr.{tag_name}")
 
-    _restore_header_shading(target_tbl, reference_tbl)
-    _restore_cell_valign(target_tbl, reference_tbl)
-    _restore_row_heights(target_tbl, reference_tbl)
-    _restore_cell_text_styles(target_tbl, reference_tbl)
-    _restore_cell_tcw_and_margins(target_tbl, reference_tbl)
-    return True
+    if _restore_header_shading(target_tbl, reference_tbl):
+        result["restored"].append("header_shading")
+    if _restore_cell_valign(target_tbl, reference_tbl):
+        result["restored"].append("vAlign")
+    if _restore_row_heights(target_tbl, reference_tbl):
+        result["restored"].append("row_heights")
+    if _restore_cell_text_styles(target_tbl, reference_tbl):
+        result["restored"].append("cell_text_styles")
+    if _restore_cell_tcw_and_margins(target_tbl, reference_tbl):
+        result["restored"].append("cell_widths")
+    _restore_merges(target_tbl, reference_tbl, result)
+    return result
 
 
 def _restore_cell_tcw_and_margins(target_tbl, reference_tbl) -> int:
@@ -499,20 +769,34 @@ def _restore_cell_valign(target_tbl, reference_tbl) -> int:
 
 
 def _restore_row_heights(target_tbl, reference_tbl) -> int:
-    """Apply reference row heights where the target row declares none."""
+    """Match template row heights: fill missing rows, fix >15% drift and `hRule` drift."""
     restored = 0
     for row_index, reference_row in enumerate(reference_tbl.rows):
         if row_index >= len(target_tbl.rows):
             break
-        reference_trPr = reference_row._tr.find(qn("w:trPr"))
-        if reference_trPr is None:
-            continue
-        reference_height = reference_trPr.find(qn("w:trHeight"))
+        reference_height = reference_row._tr.find(qn("w:trPr"))
+        reference_height = (
+            reference_height.find(qn("w:trHeight")) if reference_height is not None else None
+        )
         if reference_height is None:
             continue
-        target_trPr = _get_or_add_trPr(target_tbl.rows[row_index]._tr)
-        if target_trPr.find(qn("w:trHeight")) is not None:
+
+        reference_detail = _row_height_detail(reference_row)
+        if reference_detail["val"] is None:
             continue
+
+        target_row = target_tbl.rows[row_index]
+        target_detail = _row_height_detail(target_row)
+        if target_detail["val"] is not None:
+            drift = abs(target_detail["val"] - reference_detail["val"]) / float(reference_detail["val"])
+            same_rule = (reference_detail["hRule"] or "auto") == (target_detail["hRule"] or "auto")
+            if drift <= 0.15 and same_rule:
+                continue
+
+        target_trPr = _get_or_add_trPr(target_row._tr)
+        existing = target_trPr.find(qn("w:trHeight"))
+        if existing is not None:
+            target_trPr.remove(existing)
         _insert_trpr_child(target_trPr, deepcopy(reference_height), "trHeight")
         restored += 1
     return restored

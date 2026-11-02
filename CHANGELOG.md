@@ -2,9 +2,36 @@
 
 本文件记录 officecli-template-filler 各版本的变更。`dist/` 下附带对应版本的打包文件，可直接下载后作为 Agent Skill 安装。
 
-> 说明：v3.3.1 与 v3.4.0 的打包文件未随仓库提供；仓库中保留的是这两个版本之后的归档。
+> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.2 的源码即当前 `main`。
 
 ---
+
+## v3.5.2
+
+**主题：Excel 可靠性、版面指纹、进程所有权、PROOFREAD 与合并安全写入（M4–M9）**
+
+- 公式平移：`translate_excel_formula_row_refs()` 改用 `openpyxl` 官方 `Translator`，字符串常量与跨表引用不再被正则误改；结构化引用、外部工作簿、`INDIRECT`/`OFFSET` 显式返回 `UNSUPPORTED_*`，不做猜测性替换。`clone_excel_template_row()` 返回 `{translated, unsupported}`。
+- 公式验证状态：每个公式单元格新增 `formula_status`（`VERIFIED` / `FAILED` / `UNSUPPORTED` / `NOT_RECALCULATED`），`unverified_count` 统计后两类，`run_qa.py` 据此报 `UNVERIFIED` 而非 `PASSED`。
+- XLSM 对象预检：新增 `engine/excel_objects.py`，扫描 VBA / ActiveX / Power Query / 透视表 / 切片器 / 外部连接 / 图表等部件；`generate_excel.py` 在存在无法保留的对象时以 `OBJECT_LOSS_RISK`（退出码 3）拒绝生成，需 `--allow-object-loss` 才继续。
+- 版面指纹 QA：新增 `engine/layout_qa.py`，按页面、段落、表格、图片比较版面，替换正文不会误报；字号/字体漂移报 `LAYOUT_FONT_DRIFT`，对齐缩进报 `LAYOUT_POSITION_DRIFT`，表格列宽比例差 > 5% 报 `LAYOUT_TABLE_DRIFT`。`run_visual_layout_qa()` 已接入该指纹结果。
+- 进程所有权：Windows 通过 `GetProcessTimes` 读取进程创建时间，身份改为 `(pid, image, creation_time)`；`EditorSdkSession` 支持 `spawned_pids` 证明归属，无法证明的候选记入 `unreleased_pids` 而不是强杀；`taskkill` 不再带 `/T`；清理日志按任务拆分（`officecli_editor_sdk_cleanup_<task_id>.json` + 最新汇总）。
+- PROOFREAD：新增第 8 种模式与 `scripts/proofread_document.py`，单文档校对输出带修订的 `.docx` 与快照；路由关键词覆盖“错别字 / 校对 / 数据错误 / 逻辑问题 / proofread / typo”，不再落入 REFORMAT。
+- 合并拓扑：`restore_table_style_from_reference()` 返回 `{topology_ok, restored, skipped, manual_required}`；仅在行列拓扑一致、合并区域内至多一个非空文本、且不含修订/批注锚点时写入 `gridSpan`/`hMerge`/`vMerge`，否则降级 `manual_required`。
+- 字体保真修复：段落格式轮廓优先采用 run 的直接字号（Word 的实际解析顺序），修复“模板 12pt 被写成 11pt”的长期偏差。
+- 测试：101 项全部通过。
+
+## v3.5.0
+
+**主题：可验证、可回滚、可解释（M1–M3）**
+
+- 事务化交付：`generate_document` / `generate_excel` / `repair_document` / `review_document` / `render_document` 统一改为 `Preflight → 暂存 → QA → 原子提交`；失败路径不产生最终文件、不留 `.tmp` / `.pending`；输出附带 `transaction`（含 preflight、qa_status、committed、abort_reason、输入/输出 SHA-256）。
+- 修订动作事务化：`accept_revision` / `reject_revision` / `restore_revision` 走同一事务；未发生改动时不产出文件（`status: NOT_FOUND`）。
+- 格式修订：`w:*PrChange` 按 schema 用 `w:rPr` / `w:pPr` / `w:tblPr` / `w:trPr` / `w:tcPr` 包裹旧属性，支持程序化接受/拒绝；修复「旧属性快照被原地改写导致 reject 无效」的缺陷；`audit_review_integrity()` 新增容器结构与跨部件重复修订 ID 检查。
+- 修订快照：REVIEW 同时产出 `<deliverable>.review_snapshot.json`；已接受/已拒绝的修订可由 `restore_revision()` 重建，缺快照返回 `SNAPSHOT_MISSING`，定位失效返回 `LOCATION_LOST`，不猜测位置。
+- 表格签名：新增 `row_count`、逐行 `{val, hRule}`、`tblLook`、band size、`tblInd`、`tblCellSpacing`；比较新增 `table_row_count`（仅报告）、>15% 行高漂移、`hRule` 漂移、`tblLook` / band 漂移；修复侧同步 `TBLPR_SYNC_TAGS` 与行高覆盖规则。
+- 能力注册表：新增 `engine/capabilities.py`；路由返回 `capability {enabled, handler, reason}`，未实现模式返回 `CAPABILITY_NOT_AVAILABLE`；`.pdf` / `.doc` / `.wps` / `.et` 等输入返回 `UNSUPPORTED_INPUT`，`inspect_document.py` 以退出码 2 表示该判定。
+- Excel 输入：新增 `scripts/analyze_excel_template.py` 与 `extract_excel_spec()`，Step 2 按容器类型分流。
+- 测试：83 项全部通过。
 
 ## v3.4.2
 

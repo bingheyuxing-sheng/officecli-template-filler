@@ -15,8 +15,10 @@ from .process_guard import (
     list_process_pids,
     process_image_name,
     process_start_ticks,
+    process_identity,
     install_auto_cleanup,
     read_auto_cleanup_log,
+    task_cleanup_log_path,
     AUTO_CLEANUP_LOG,
 )
 from .ooxml_utils import (
@@ -64,10 +66,12 @@ from .table_engine import (
 from .excel_engine import (
     copy_excel_cell_style,
     shift_excel_formula_row_refs,
+    translate_excel_formula_row_refs,
     clone_excel_template_row,
     recalculate_and_verify_excel_formulas,
     audit_excel_formula_and_style_qa,
 )
+from .excel_objects import inspect_excel_objects
 from .docx_parser import (
     TASK_MODES,
     route_document_task,
@@ -75,6 +79,15 @@ from .docx_parser import (
     extract_document_spec,
     scan_red_runs_and_cell_capacities,
 )
+from .capabilities import (
+    TASK_CAPABILITIES,
+    SUPPORTED_INPUT_EXTENSIONS,
+    CapabilityNotAvailable,
+    get_capability,
+    require_capability,
+    unsupported_inputs,
+)
+from .excel_spec import extract_excel_spec
 from .repair_engine import (
     build_repair_plan,
     execute_repair_plan,
@@ -89,6 +102,10 @@ from .review_engine import (
     execute_review_plan,
     list_revisions,
     list_format_revisions,
+    iter_revision_marks,
+    review_snapshot_path,
+    build_review_snapshot,
+    write_review_snapshot,
     accept_revision,
     reject_revision,
     restore_revision,
@@ -101,8 +118,20 @@ from .qa_engine import (
     run_visual_layout_qa,
     check_font_availability,
 )
+from .transaction import (
+    DocumentTransaction,
+    TransactionAborted,
+    TransactionPreflightError,
+    resolve_qa_status,
+    QA_PASSED,
+    QA_PENDING_HUMAN_REVIEW,
+    QA_UNVERIFIED,
+    QA_FAILED,
+    PENDING_HUMAN_REVIEW_CODES,
+)
+from .layout_qa import compare_layout_fingerprints, fingerprint_docx
 
-__version__ = "3.4.2"
+__version__ = "3.5.2"
 
 __all__ = [
     "__version__",
@@ -112,8 +141,10 @@ __all__ = [
     "list_process_pids",
     "process_image_name",
     "process_start_ticks",
+    "process_identity",
     "install_auto_cleanup",
     "read_auto_cleanup_log",
+    "task_cleanup_log_path",
     "AUTO_CLEANUP_LOG",
     "RED_HEX_SET",
     "TOKEN_PATTERN",
@@ -149,11 +180,20 @@ __all__ = [
     "restore_table_style_from_reference",
     "copy_excel_cell_style",
     "shift_excel_formula_row_refs",
+    "translate_excel_formula_row_refs",
     "clone_excel_template_row",
     "recalculate_and_verify_excel_formulas",
     "audit_excel_formula_and_style_qa",
+    "inspect_excel_objects",
     "TASK_MODES",
     "route_document_task",
+    "TASK_CAPABILITIES",
+    "SUPPORTED_INPUT_EXTENSIONS",
+    "CapabilityNotAvailable",
+    "get_capability",
+    "require_capability",
+    "unsupported_inputs",
+    "extract_excel_spec",
     "assess_template_compatibility_level",
     "extract_document_spec",
     "scan_red_runs_and_cell_capacities",
@@ -168,6 +208,10 @@ __all__ = [
     "execute_review_plan",
     "list_revisions",
     "list_format_revisions",
+    "iter_revision_marks",
+    "review_snapshot_path",
+    "build_review_snapshot",
+    "write_review_snapshot",
     "accept_revision",
     "reject_revision",
     "restore_revision",
@@ -177,4 +221,15 @@ __all__ = [
     "QAValidationError",
     "run_visual_layout_qa",
     "check_font_availability",
+    "DocumentTransaction",
+    "TransactionAborted",
+    "TransactionPreflightError",
+    "resolve_qa_status",
+    "QA_PASSED",
+    "QA_PENDING_HUMAN_REVIEW",
+    "QA_UNVERIFIED",
+    "QA_FAILED",
+    "PENDING_HUMAN_REVIEW_CODES",
+    "compare_layout_fingerprints",
+    "fingerprint_docx",
 ]

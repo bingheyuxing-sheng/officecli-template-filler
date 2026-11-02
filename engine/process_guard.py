@@ -198,36 +198,34 @@ class TaskResourceGuard:
         pid: int,
         expected_name: Optional[str] = None,
         popen: Any = None,
+        expected_ticks: Optional[int] = None,
     ) -> bool:
         """
-        Terminate ONLY the specified PID (and its child tree), never `/IM` by process name.
+        Terminate ONLY the specified PID, never `/IM` by process name.
 
         Guards against PID reuse:
-        - When a live `Popen` handle is available, `poll()` decides liveness and the handle is used
+        - A live `Popen` handle is preferred: `poll()` decides liveness and the handle is used
           to terminate, so a recycled PID is never touched.
-        - Otherwise the live image name must match the recorded name before any kill is issued.
+        - Otherwise the live image name AND creation time must match the recorded identity.
         """
         if popen is not None:
             if popen.poll() is not None:
                 return False
             try:
-                if os.name == "nt":
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid), "/T"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-                else:
-                    popen.terminate()
+                popen.terminate()
                 return True
             except Exception:
+                return False
+        if expected_ticks is not None:
+            live_ticks = process_start_ticks(pid)
+            if live_ticks is None or live_ticks != expected_ticks:
                 return False
         if not cls._is_pid_running(pid, expected_name=expected_name):
             return False
         if os.name == "nt":
+            # No `/T`: children are only terminated when their own identity is proven.
             subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid), "/T"],
+                ["taskkill", "/F", "/PID", str(pid)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -335,19 +333,66 @@ def process_image_name(pid: int) -> Optional[str]:
 
 def process_start_ticks(pid: int) -> Optional[int]:
     """
-    Kernel start time of `pid` (Linux, jiffies since boot), or None when unavailable.
+    Kernel start time of `pid`, or None when it cannot be read.
 
-    Paired with the PID, this rejects PID reuse: a recycled PID has different start ticks, so
-    a stale record can never justify terminating the new owner of that number.
+    Paired with the PID, this rejects PID reuse: a recycled PID has a different start time,
+    so a stale record can never justify terminating the new owner of that number. Windows
+    uses `GetProcessTimes` through ctypes; Linux reads `/proc/<pid>/stat`.
     """
-    if pid <= 0 or os.name == "nt":
+    if pid <= 0:
         return None
+    if os.name == "nt":
+        return _windows_process_start_ticks(pid)
     try:
         with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as handle:
             fields = handle.read().split()
         return int(fields[21])
     except (OSError, IndexError, ValueError):
         return None
+
+
+def _windows_process_start_ticks(pid: int) -> Optional[int]:
+    """Creation time of a Windows process (100 ns units since 1601), or None."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:
+        return None
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return None
+        try:
+            creation = wintypes.FILETIME()
+            exit_time = wintypes.FILETIME()
+            kernel_time = wintypes.FILETIME()
+            user_time = wintypes.FILETIME()
+            ok = kernel32.GetProcessTimes(
+                handle,
+                ctypes.byref(creation),
+                ctypes.byref(exit_time),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time),
+            )
+            if not ok:
+                return None
+            return (int(creation.dwHighDateTime) << 32) | int(creation.dwLowDateTime)
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return None
+
+
+def process_identity(pid: int) -> Dict[str, Any]:
+    """`(pid, image, creation time)` — the tuple a task must prove before terminating."""
+    return {
+        "pid": pid,
+        "image": process_image_name(pid),
+        "start_ticks": process_start_ticks(pid),
+    }
 
 
 def list_process_pids(image_name: str) -> List[int]:
@@ -409,13 +454,33 @@ class EditorSdkSession:
     this task is stopped and verified gone.
     """
 
-    def __init__(self, image_name: str = EDITOR_SDK_IMAGE, baseline_pids: Optional[List[int]] = None):
+    def __init__(
+        self,
+        image_name: str = EDITOR_SDK_IMAGE,
+        baseline_pids: Optional[List[int]] = None,
+        task_id: Optional[str] = None,
+    ):
         self.image_name = image_name
+        self.task_id = task_id or uuid.uuid4().hex[:12]
         self.baseline_pids: List[int] = list(baseline_pids or [])
         self.baseline_identities: List[Tuple[int, Optional[int]]] = [
             (pid, process_start_ticks(pid)) for pid in self.baseline_pids
         ]
         self._recorded = baseline_pids is not None
+        # PIDs this task is actually known to have started. When set, cleanup is
+        # proof-based instead of "whatever appeared after the snapshot".
+        self.spawned_pids: List[int] = []
+
+    def note_spawned(self, pids: List[int]) -> List[int]:
+        """Record PIDs this task started, so cleanup can prove ownership."""
+        for pid in pids:
+            try:
+                value = int(pid)
+            except (TypeError, ValueError):
+                continue
+            if value > 0 and value not in self.spawned_pids:
+                self.spawned_pids.append(value)
+        return self.spawned_pids
 
     def record_baseline(self) -> List[int]:
         self.baseline_identities = [
@@ -430,33 +495,46 @@ class EditorSdkSession:
 
     def stop_new_instances(self, verify_timeout_ms: int = 1000) -> Dict[str, Any]:
         """
-        Terminate instances absent from the baseline snapshot, then verify they are gone.
+        Terminate SDK instances this task can prove it owns, then verify they are gone.
 
-        Identity is `(pid, start_ticks)`, so a recycled PID is never treated as the process we
-        saw earlier. Every candidate is re-checked by exact image name before termination.
+        Ownership is `(pid, creation time)` from `spawned_pids` when available; otherwise the
+        baseline difference is used and reported as such. A candidate whose creation time
+        cannot be read is reported in `unreleased_pids` instead of being killed on a guess.
         """
         if not self._recorded:
             raise RuntimeError("call record_baseline() before stop_new_instances()")
 
         baseline_set = set(self.baseline_identities)
-        spawned = [item for item in self._live_identities() if item not in baseline_set]
+        detected = [item for item in self._live_identities() if item not in baseline_set]
+        if self.spawned_pids:
+            owned = {int(pid) for pid in self.spawned_pids}
+            candidates = [item for item in detected if item[0] in owned]
+            ownership_source = "spawned_pids"
+        else:
+            candidates = detected
+            ownership_source = "baseline_diff"
+
+        unproven = [pid for pid, ticks in candidates if ticks is None]
+        actionable = [(pid, ticks) for pid, ticks in candidates if ticks is not None]
         terminated: List[int] = []
         skipped_identity: List[int] = []
 
-        for pid, ticks in spawned:
+        for pid, ticks in actionable:
             live_ticks = process_start_ticks(pid)
-            if ticks is not None and live_ticks is not None and ticks != live_ticks:
+            if live_ticks != ticks:
                 # PID was reused between snapshot and termination; not the process we targeted.
                 skipped_identity.append(pid)
                 continue
-            if TaskResourceGuard._terminate_single_pid(pid, expected_name=self.image_name):
+            if TaskResourceGuard._terminate_single_pid(
+                pid, expected_name=self.image_name, expected_ticks=ticks
+            ):
                 terminated.append(pid)
 
         remaining: List[int] = []
         waited = 0
         while waited < verify_timeout_ms:
             remaining = [
-                pid for pid, _ticks in spawned
+                pid for pid, _ticks in actionable
                 if TaskResourceGuard._is_pid_running(pid, expected_name=self.image_name)
             ]
             if not remaining:
@@ -465,12 +543,15 @@ class EditorSdkSession:
             waited += 100
 
         return {
+            "task_id": self.task_id,
             "baseline_pids": self.baseline_pids,
-            "spawned_during_task": [pid for pid, _ticks in spawned],
+            "spawned_during_task": [pid for pid, _ticks in candidates],
+            "ownership_source": ownership_source,
             "terminated_pids": terminated,
             "skipped_identity_mismatch": skipped_identity,
+            "unreleased_pids": unproven,
             "still_running": remaining,
-            "verified": not remaining,
+            "verified": not remaining and not unproven,
         }
 
 
@@ -479,13 +560,26 @@ AUTO_CLEANUP_LOG = os.path.join(tempfile.gettempdir(), "officecli_editor_sdk_cle
 _auto_cleanup_session: Optional[EditorSdkSession] = None
 
 
-def _write_auto_cleanup_log(payload: Dict[str, Any]) -> None:
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(AUTO_CLEANUP_LOG)), exist_ok=True)
-        with open(AUTO_CLEANUP_LOG, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
+def task_cleanup_log_path(task_id: str) -> str:
+    """Per-task cleanup log, so concurrent tasks never overwrite each other's evidence."""
+    safe = "".join(
+        character if (character.isalnum() or character in "._-") else "_"
+        for character in str(task_id or "task")
+    )
+    return os.path.join(tempfile.gettempdir(), f"officecli_editor_sdk_cleanup_{safe}.json")
+
+
+def _write_auto_cleanup_log(payload: Dict[str, Any], task_id: Optional[str] = None) -> None:
+    targets = [AUTO_CLEANUP_LOG]
+    if task_id:
+        targets.append(task_cleanup_log_path(task_id))
+    for target in targets:
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
 
 
 def _run_auto_cleanup() -> None:
@@ -496,13 +590,15 @@ def _run_auto_cleanup() -> None:
         result = _auto_cleanup_session.stop_new_instances()
         result["timestamp"] = int(time.time())
         result["source_process"] = os.getpid()
-        _write_auto_cleanup_log(result)
+        result["task_id"] = _auto_cleanup_session.task_id
+        _write_auto_cleanup_log(result, task_id=_auto_cleanup_session.task_id)
     except Exception as exc:  # cleanup must never turn a successful task into a crash
         _write_auto_cleanup_log({
             "verified": False,
             "error": f"{type(exc).__name__}: {exc}",
             "source_process": os.getpid(),
-        })
+            "task_id": _auto_cleanup_session.task_id,
+        }, task_id=_auto_cleanup_session.task_id)
 
 
 def install_auto_cleanup(image_name: str = EDITOR_SDK_IMAGE) -> EditorSdkSession:
