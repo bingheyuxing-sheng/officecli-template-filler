@@ -8,8 +8,8 @@
   "properties": {
     "status": {
       "type": "string",
-      "enum": ["PASSED", "FAILED", "PENDING_HUMAN_REVIEW"],
-      "description": "PASSED = no issues; FAILED = at least one hard failure; PENDING_HUMAN_REVIEW = only intentional placeholder residue awaiting a human decision."
+      "enum": ["PASSED", "FAILED", "PENDING_HUMAN_REVIEW", "UNVERIFIED"],
+      "description": "PASSED = no issues or coverage gaps; FAILED = at least one hard failure; PENDING_HUMAN_REVIEW = only intentional placeholder residue awaiting a human decision; UNVERIFIED = no hard failure but one or more checks could not run."
     },
     "passed": {
       "type": "boolean",
@@ -82,7 +82,30 @@
         "layout_warnings": { "type": "array", "items": { "type": "string" } },
         "pdf_rendered": { "type": "boolean" },
         "pdf_path": { "type": ["string", "null"] },
-        "coverage_gaps": { "type": "array", "items": { "type": "string" } }
+        "reference_pdf_path": { "type": ["string", "null"] },
+        "pdf_conversion_errors": { "type": "object", "additionalProperties": { "type": "string" } },
+        "page_diff_available": { "type": "boolean" },
+        "page_diff_error": { "type": ["string", "null"] },
+        "page_diff_coverage": {
+          "type": "object",
+          "required": ["pages_compared", "pages_total", "partial"],
+          "properties": {
+            "pages_compared": { "type": "integer", "minimum": 0 },
+            "pages_total": { "type": "integer", "minimum": 0 },
+            "partial": { "type": "boolean" }
+          }
+        },
+        "page_count_mismatch": {
+          "type": ["array", "null"],
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "page_diffs": { "type": "array", "items": { "type": "array" } },
+        "font_availability": { "type": "object" },
+        "layout_fingerprint": { "type": ["object", "null"] },
+        "coverage_gaps": { "type": "array", "items": { "type": "string" } },
+        "unverified_count": { "type": "integer", "minimum": 0 }
       }
     },
     "review_qa": {

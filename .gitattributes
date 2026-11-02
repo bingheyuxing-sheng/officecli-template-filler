@@ -1,0 +1,4 @@
+# Keep source and configuration files on LF across platforms.
+.gitattributes text eol=lf
+*.py text eol=lf
+*.json text eol=lf
