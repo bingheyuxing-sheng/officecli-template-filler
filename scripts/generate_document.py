@@ -28,6 +28,7 @@ from engine import (
     LogicalParagraphView,
     iter_all_document_paragraphs_with_Wait_context,
     sanitize_ooxml_whitespace_and_pagination,
+    audit_docx_package_integrity,
     audit_format_and_text_qa,
     release_office_file_locks,
     install_auto_cleanup,
@@ -47,6 +48,7 @@ def main() -> int:
 
     tokens_map = data_map.get("tokens", data_map)
     replaced_count = 0
+    package_qa = None
     qa_report = None
     tx = DocumentTransaction(args.template, args.out, task_mode="GENERATE")
 
@@ -64,13 +66,16 @@ def main() -> int:
                 sanitize_ooxml_whitespace_and_pagination(doc)
                 doc.save(tx.stage())
 
+                # Transaction QA must cover both the package and the rendered content:
+                # a format-only gate would publish a structurally broken DOCX as PASSED.
+                package_qa = audit_docx_package_integrity(tx.temp_path)
                 qa_report = audit_format_and_text_qa(
                     doc,
                     docx_path=tx.temp_path,
                     reference_docx_path=args.template,
                     raise_on_failure=False,
                 )
-                tx.record_qa(qa_report)
+                tx.record_qa(package_qa, qa_report)
                 release_office_file_locks(guard=guard)
             tx.commit()
     except TransactionPreflightError as exc:
@@ -86,7 +91,8 @@ def main() -> int:
             "replaced_occurrences": replaced_count,
             "error": str(exc),
             "qa_status": tx.qa_status,
-            "qa_issues": (qa_report or {}).get("issues", []),
+            "qa_issues": list((package_qa or {}).get("issues", []))
+                         + list((qa_report or {}).get("issues", [])),
             "transaction": tx.record(),
         }, ensure_ascii=False, indent=2))
         return 1
@@ -94,6 +100,7 @@ def main() -> int:
     print(json.dumps({
         "output": args.out,
         "replaced_occurrences": replaced_count,
+        "package_qa_passed": bool((package_qa or {}).get("passed")),
         "qa_passed": tx.qa_status == "PASSED",
         "qa_status": tx.qa_status,
         "transaction": tx.record(),

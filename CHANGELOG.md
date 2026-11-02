@@ -2,9 +2,20 @@
 
 本文件记录 officecli-template-filler 各版本的变更。`dist/` 下附带对应版本的打包文件，可直接下载后作为 Agent Skill 安装。
 
-> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.3 的源码即当前 `main`。
+> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.4 的源码即当前 `main`。
 
 ---
+
+## v3.5.4
+
+**主题：进程所有权收紧、事务 QA 补齐与文档/发布一致性修复**
+
+- 进程所有权：移除“基线差集即所有权”的回退路径。只有通过 `note_spawned()` 记录为本任务启动的 PID 才会被终止；任务运行期间新出现但无法证明归属的进程记入 `unowned_pids` 并保持运行，避免并发任务被误杀。`cleanup_editor_sdk.py --stop` 改为只报告、不终止。
+- 事务 QA：`generate_document.py` 在提交前同时运行包完整性 QA 与格式 QA；`repair_document.py` 在包完整性 QA 之外新增“对照参考模板”的格式 QA。事务不再把“只跑了一半检查”的结果报成 `PASSED`。
+- QA 状态：`run_qa.py` 在存在无法执行的检查时，即使只有占位残留，也返回 `UNVERIFIED`，不再让 `PENDING_HUMAN_REVIEW` 掩盖覆盖缺口。
+- 文档修正：修正不存在的 `classify_template_compatibility()`、README 中错误的 `--target` 参数、`regenerate_unique_ooxml_ids` 导入示例、测试数量与 v3.5.3 编排层范围说明；路由表明确标注 `POLISH`/`MERGE`/`REFORMAT` 无处理器。
+- 引擎 API：导出 `regenerate_unique_ooxml_ids()`，修复参考文档示例的 ImportError。
+- 测试：109 项全部通过。
 
 ## v3.5.3
 
@@ -18,7 +29,7 @@
 - REVIEW 契约修正：格式修复必须配套 `w:*PrChange`；不支持或结构不安全的修改进入批注或 `manual_required`，不再静默修改。
 - 校验示例修正：清理验证改为显式 `RuntimeError`，不使用会被 `python -O` 移除的 `assert`。
 - 范围说明：本版本新增的是 Skill 编排规范；相关底层引擎已有能力继续复用，尚无执行入口的编排项不得被描述为已实现的引擎功能。
-- 测试：101 项全部通过。
+- 测试：106 项全部通过。
 
 ## v3.5.2
 

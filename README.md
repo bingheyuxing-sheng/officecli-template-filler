@@ -69,7 +69,7 @@ python scripts/inspect_document.py --inputs template.docx --intent "按模板生
 python scripts/generate_document.py --template template.docx --data payload.json --out output.docx
 
 # 按模板修复格式（双文档 REPAIR）
-python scripts/repair_document.py --reference template.docx --target broken.docx --out repaired.docx
+python scripts/repair_document.py --reference template.docx --broken broken.docx --out repaired.docx
 
 # 审阅：输出可在 Word/WPS 中以修订模式打开的 .docx
 python scripts/review_document.py --reference template.docx --target draft.docx \
@@ -123,7 +123,7 @@ python scripts/run_qa.py output.docx --reference template.docx
 1. **不猜位置**：修订目标优先用 `location_id` 精确定位；多处匹配且未指定 `occurrence` 时**拒绝自动修改**，转为批注请人工确认。
 2. **不静默改格式**：`REVIEW` 中每一处格式恢复都会写入 Word 格式修订（`w:rPrChange` / `w:pPrChange` / `w:tblPrChange` / `w:tcPrChange`），人工可逐条接受或拒绝。
 3. **不破坏结构**：替换只在连续纯文本 Run 内进行；超链接、内容控件、域代码容器绝不移动位置；含图片/域的 Run 拒绝拆分。
-4. **不越界收尾**：只终止本任务启动且身份可验证的进程；无法证明所有权时报告未清理，而不是强杀。
+4. **不越界收尾**：只终止本任务记录为启动且身份可验证的进程；任务期间新出现但无法证明归属的进程计入 `unowned_pids`，保持运行，绝不强杀。
 5. **不用断言做校验**：所有质量门禁抛出真实异常（`SSOTValidationError` / `QAValidationError`），`python -O` 下依然生效。
 
 ---
@@ -151,7 +151,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前基线：**101 项测试全部通过**（v3.5.3）。
+当前基线：**109 项测试全部通过**（v3.5.4）。
 
 ---
 
@@ -161,6 +161,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v3.5.4 | [Release v3.5.4](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.4) | 进程所有权收紧（无 spawn 证明不终止）、GENERATE/REPAIR 事务 QA 补齐、QA 状态诚实性修正 |
 | v3.5.3 | [Release v3.5.3](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.3) | FAST/STANDARD/FULL、培养方案语义预检、分阶段检查点、渲染与目录降级（编排层） |
 | v3.5.2 | [Release v3.5.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.2) | Excel Translator 与对象预检、版面指纹 QA、进程所有权、PROOFREAD、合并安全写入 |
 | v3.5.0 | 已并入 v3.5.2 | 事务化交付、修订生命周期与快照、表格签名收紧、能力注册表 |

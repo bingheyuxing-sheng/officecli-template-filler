@@ -1718,7 +1718,7 @@ class TestV3EngineSuite(unittest.TestCase):
 
 
     def test_p0_qa_cli_reports_structured_status_and_pending_review(self) -> None:
-        """`run_qa.py` must expose status/issues; placeholder residue alone is PENDING, not FAILED."""
+        """Placeholder residue is PENDING, not FAILED; a missing check outranks it as UNVERIFIED."""
         path = os.path.join(self.work_dir, "pending_review.docx")
         doc = docx.Document()
         doc.add_paragraph("正文：{{待人工确认}}")
@@ -1746,7 +1746,10 @@ class TestV3EngineSuite(unittest.TestCase):
         )
         self.assertEqual(relaxed.returncode, 0, relaxed.stderr)
         relaxed_report = json.loads(relaxed.stdout)
-        self.assertEqual(relaxed_report["status"], "PENDING_HUMAN_REVIEW")
+        if relaxed_report["coverage_gaps"] or relaxed_report["unverified_count"]:
+            self.assertEqual(relaxed_report["status"], "UNVERIFIED")
+        else:
+            self.assertEqual(relaxed_report["status"], "PENDING_HUMAN_REVIEW")
         self.assertFalse(relaxed_report["passed"])
         self.assertTrue(relaxed_report["passed_or_pending"])
         self.assertEqual(relaxed_report["hard_failure_count"], 0)

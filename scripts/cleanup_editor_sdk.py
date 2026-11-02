@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CLI entrypoint: stop the `editor_sdk.exe` instances this task started.
+CLI entrypoint: inspect `editor_sdk.exe` ownership evidence for a task.
 
 WorkBuddy's sandbox keeps `editor_sdk.exe` alive after an agent turn ends, which leaves the
-DOCX locked in WPS. This script uses snapshot-before / compare-after so only SDK instances
-spawned during the task are terminated; any SDK the user opened earlier keeps running.
+DOCX locked in WPS. Automatic cleanup in every entrypoint terminates only PIDs recorded as
+spawned by that task. This diagnostic tool records a baseline and reports PIDs that appeared
+afterwards; those PIDs are NOT terminated because a concurrent task may own them.
 
 Usage:
     python scripts/cleanup_editor_sdk.py --start          # record baseline before the task
-    python scripts/cleanup_editor_sdk.py --stop           # terminate new SDKs and verify
+    python scripts/cleanup_editor_sdk.py --stop           # report new SDKs without terminating them
     python scripts/cleanup_editor_sdk.py --list           # just show current SDK PIDs
 """
 from __future__ import annotations
@@ -76,6 +77,12 @@ def main() -> int:
     except OSError:
         pass
 
+    if result.get("unowned_pids"):
+        print(
+            "NOTICE: unowned_pids are not proven to be spawned by this task and were left running: "
+            + ", ".join(str(pid) for pid in result["unowned_pids"]),
+            file=sys.stderr,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["verified"] else 1
 

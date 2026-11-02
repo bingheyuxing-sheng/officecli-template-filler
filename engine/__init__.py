@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-OfficeCLI + Python Document Intelligence Engine (v3.0).
+OfficeCLI + Python Document Intelligence Engine (v3.5.4).
 
-Exports all core v3.0 modules for Word (.docx) and Excel (.xlsx) template understanding,
-SSOT Decimal math solving, non-destructive cross-run replacement, safe image replacement,
-complex cell protection, structural Excel row cloning, dual-document REPAIR planning,
-and full package + visual QA.
+Exports the Word (.docx) / Excel (.xlsx) engine: template understanding, SSOT Decimal math,
+non-destructive cross-run replacement, safe image replacement, complex cell protection,
+structural Excel row cloning, REPAIR planning, REVIEW/PROOFREAD revisions, transactional
+delivery, capability routing, and full package + format + visual QA.
 """
 
 from .process_guard import (
@@ -31,6 +31,7 @@ from .ooxml_utils import (
     iter_all_document_paragraphs_with_Wait_context,
     iter_all_document_tables_with_context,
     sanitize_ooxml_whitespace_and_pagination,
+    regenerate_unique_ooxml_ids,
 )
 from .ssot_engine import (
     SSOTValidationError,
@@ -131,7 +132,7 @@ from .transaction import (
 )
 from .layout_qa import compare_layout_fingerprints, fingerprint_docx
 
-__version__ = "3.5.3"
+__version__ = "3.5.4"
 
 __all__ = [
     "__version__",
@@ -155,6 +156,7 @@ __all__ = [
     "iter_all_document_paragraphs_with_Wait_context",
     "iter_all_document_tables_with_context",
     "sanitize_ooxml_whitespace_and_pagination",
+    "regenerate_unique_ooxml_ids",
     "to_decimal",
     "SSOTValidationError",
     "quantize_decimal",

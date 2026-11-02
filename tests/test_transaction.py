@@ -21,6 +21,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import docx
+from docx.shared import Pt, RGBColor
 
 from engine import (
     DocumentTransaction,
@@ -209,6 +210,70 @@ class TestTransactionSuite(unittest.TestCase):
         self.assertIn("TEMPLATE_TEXT_RESIDUAL", json.dumps(report["qa_issues"], ensure_ascii=False))
         self.assertFalse(os.path.exists(output))
         self.assertEqual(self._staged_leftovers(), [])
+
+    def test_v35_repair_cli_checks_format_not_only_package(self) -> None:
+        """REPAIR must verify the repaired formatting against the reference before committing."""
+        reference = os.path.join(self.work_dir, "ref.docx")
+        ref_doc = docx.Document()
+        ref_para = ref_doc.add_paragraph()
+        ref_run = ref_para.add_run("正文内容")
+        ref_run.font.size = Pt(12)
+        ref_doc.save(reference)
+
+        broken = os.path.join(self.work_dir, "broken.docx")
+        broken_doc = docx.Document()
+        broken_para = broken_doc.add_paragraph()
+        broken_run = broken_para.add_run("正文内容")
+        broken_run.font.size = Pt(18)
+        broken_run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
+        broken_doc.save(broken)
+
+        output = os.path.join(self.work_dir, "repaired.docx")
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(ROOT_DIR, "scripts", "repair_document.py"),
+                "--reference", reference,
+                "--broken", broken,
+                "--out", output,
+            ],
+            cwd=ROOT_DIR,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertTrue(report["package_qa_passed"], report)
+        self.assertTrue(report["format_qa_passed"], report)
+        self.assertTrue(report["transaction"]["committed"])
+        self.assertTrue(os.path.isfile(output))
+        self.assertEqual(self._staged_leftovers(), [])
+
+    def test_v35_run_qa_unverified_outranks_pending_review(self) -> None:
+        """A missing render check must not hide behind intentional placeholder residue."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "run_qa_module", os.path.join(ROOT_DIR, "scripts", "run_qa.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        residual = [{"code": "TEMPLATE_TEXT_RESIDUAL", "location": "body.p[0]",
+                     "detail": "{{x}}", "severity": "medium"}]
+        status, failures, pending = module.resolve_report_status(
+            residual, ["RENDER_PDF_NOT_PRODUCED"], 1, True
+        )
+        self.assertEqual(status, "UNVERIFIED")
+        self.assertEqual(failures, [])
+        self.assertEqual(len(pending), 1)
+
+        status, _failures, _pending = module.resolve_report_status(residual, [], 0, True)
+        self.assertEqual(status, "PENDING_HUMAN_REVIEW")
 
     def test_v35_qa_status_folding(self) -> None:
         """Status folding must never turn an unverifiable check into PASSED."""

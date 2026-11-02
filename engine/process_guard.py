@@ -497,22 +497,21 @@ class EditorSdkSession:
         """
         Terminate SDK instances this task can prove it owns, then verify they are gone.
 
-        Ownership is `(pid, creation time)` from `spawned_pids` when available; otherwise the
-        baseline difference is used and reported as such. A candidate whose creation time
-        cannot be read is reported in `unreleased_pids` instead of being killed on a guess.
+        Only PIDs recorded through `note_spawned()` are owned. A process that merely appeared
+        after `record_baseline()` is NOT proof of ownership: it may belong to a concurrent
+        task, so it is reported in `unowned_pids` and left running. An owned candidate whose
+        creation time cannot be read is reported in `unreleased_pids` instead of being killed
+        on a guess.
         """
         if not self._recorded:
             raise RuntimeError("call record_baseline() before stop_new_instances()")
 
         baseline_set = set(self.baseline_identities)
         detected = [item for item in self._live_identities() if item not in baseline_set]
-        if self.spawned_pids:
-            owned = {int(pid) for pid in self.spawned_pids}
-            candidates = [item for item in detected if item[0] in owned]
-            ownership_source = "spawned_pids"
-        else:
-            candidates = detected
-            ownership_source = "baseline_diff"
+        owned = {int(pid) for pid in self.spawned_pids}
+        candidates = [item for item in detected if item[0] in owned]
+        unowned = [pid for pid, _ticks in detected if pid not in owned]
+        ownership_source = "spawned_pids" if owned else "no_spawned_pids"
 
         unproven = [pid for pid, ticks in candidates if ticks is None]
         actionable = [(pid, ticks) for pid, ticks in candidates if ticks is not None]
@@ -550,6 +549,7 @@ class EditorSdkSession:
             "terminated_pids": terminated,
             "skipped_identity_mismatch": skipped_identity,
             "unreleased_pids": unproven,
+            "unowned_pids": unowned,
             "still_running": remaining,
             "verified": not remaining and not unproven,
         }
