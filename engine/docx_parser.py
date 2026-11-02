@@ -33,6 +33,7 @@ from .ooxml_utils import (
 from .style_engine import resolve_style_sz_and_font
 from .table_engine import classify_cell_structure
 from .image_engine import count_image_part_references
+from .capabilities import SUPPORTED_INPUT_EXTENSIONS, get_capability, unsupported_inputs
 
 
 TASK_MODES = (
@@ -43,6 +44,7 @@ TASK_MODES = (
     "MERGE",
     "REFORMAT",
     "EXCEL_GENERATE",
+    "PROOFREAD",
 )
 
 
@@ -51,7 +53,7 @@ def route_document_task(
     user_intent: str = "",
 ) -> Dict[str, Any]:
     """
-    Route an incoming Office document request into one of the v3.0 task modes:
+    Route an incoming Office document request into one of the v3.5 task modes:
     - GENERATE: Single .docx template -> filled output .docx
     - EXCEL_GENERATE: Single .xlsx template -> filled output .xlsx
     - POLISH: Single draft .docx -> formatted/polished .docx (no external reference doc)
@@ -59,13 +61,38 @@ def route_document_task(
     - REVIEW: Reference/template .docx + draft .docx -> revision-marked .docx for human accept/reject
     - MERGE: Multiple .docx/.xlsx inputs -> consolidated output
     - REFORMAT: Source document + target specification/template -> restyled document
+    - PROOFREAD: Single .docx -> tracked-changes corrected .docx (no template restore)
+    - UNSUPPORTED_INPUT: at least one input is not .docx/.docm/.xlsx/.xlsm
+
+    Every result carries `capability` (`{enabled, handler, reason}`) from
+    `engine/capabilities.py`, so an unimplemented mode can never be run by accident.
 
     Also determines whether external web search should be enabled by default:
-    - REPAIR / REVIEW / POLISH / REFORMAT: web_search_policy = "DISABLED_BY_DEFAULT"
+    - REPAIR / REVIEW / POLISH / REFORMAT / PROOFREAD: web_search_policy = "DISABLED_BY_DEFAULT"
     - GENERATE / EXCEL_GENERATE: web_search_policy = "ON_DEMAND_PUBLIC_STANDARDS_ONLY"
     """
     norm_files = [str(f).strip() for f in (input_files or []) if str(f).strip()]
     intent_lower = (user_intent or "").lower()
+
+    rejected = unsupported_inputs(norm_files)
+    if rejected:
+        # A PDF/.doc/.wps input cannot be read by any handler: say so instead of
+        # routing it into GENERATE and producing a document from nothing.
+        return {
+            "task_mode": "UNSUPPORTED_INPUT",
+            "input_files": norm_files,
+            "docx_files": [],
+            "xlsx_files": [],
+            "unsupported_files": rejected,
+            "supported_formats": list(SUPPORTED_INPUT_EXTENSIONS),
+            "web_search_policy": "DISABLED_BY_DEFAULT",
+            "capability": {
+                "task_mode": "UNSUPPORTED_INPUT",
+                "enabled": False,
+                "handler": None,
+                "reason": "UNSUPPORTED_INPUT",
+            },
+        }
 
     xlsx_files = [f for f in norm_files if f.lower().endswith((".xlsx", ".xlsm"))]
     docx_files = [f for f in norm_files if f.lower().endswith((".docx", ".docm"))]
@@ -77,12 +104,16 @@ def route_document_task(
     )
     polish_keywords = ("美化", "润色", "排版优化", "polish", "beautify", "format cleanup")
     repair_keywords = ("修复", "repair", "fix format")
+    proofread_keywords = (
+        "错别字", "错字", "校对", "数据错误", "逻辑问题", "proofread", "typo",
+    )
 
     is_review = any(k in intent_lower for k in review_keywords)
     is_merge = any(k in intent_lower for k in merge_keywords)
     is_reformat = any(k in intent_lower for k in reformat_keywords)
     is_polish = any(k in intent_lower for k in polish_keywords)
     is_repair = any(k in intent_lower for k in repair_keywords)
+    is_proofread = any(k in intent_lower for k in proofread_keywords)
 
     if len(docx_files) >= 2 and is_review:
         task_mode = "REVIEW"
@@ -92,7 +123,11 @@ def route_document_task(
     elif len(docx_files) >= 2:
         task_mode = "REFORMAT" if is_reformat else "REPAIR"
     elif len(docx_files) == 1:
-        if is_reformat:
+        if is_proofread:
+            # Single-document proofreading is not a restyle: route it to PROOFREAD so it
+            # does not fall into REFORMAT and rewrite formatting.
+            task_mode = "PROOFREAD"
+        elif is_reformat:
             task_mode = "REFORMAT"
         elif is_repair:
             # A single document has no reference template, so "fix format" means restyle against
@@ -107,7 +142,7 @@ def route_document_task(
     else:
         task_mode = "GENERATE"
 
-    if task_mode in ("REPAIR", "REVIEW", "POLISH", "REFORMAT", "MERGE"):
+    if task_mode in ("REPAIR", "REVIEW", "POLISH", "REFORMAT", "MERGE", "PROOFREAD"):
         web_search_policy = "DISABLED_BY_DEFAULT"
     else:
         web_search_policy = "ON_DEMAND_PUBLIC_STANDARDS_ONLY"
@@ -118,6 +153,7 @@ def route_document_task(
         "docx_files": docx_files,
         "xlsx_files": xlsx_files,
         "web_search_policy": web_search_policy,
+        "capability": get_capability(task_mode),
     }
 
 

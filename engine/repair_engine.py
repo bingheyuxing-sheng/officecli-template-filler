@@ -88,17 +88,18 @@ def _extract_paragraph_format_profile(p) -> Dict[str, Any]:
 
     font_ea, sz_val = resolve_style_sz_and_font(p, fallback_font=None, fallback_sz=None)
     font_ascii = None
-    # Also inspect populated runs if style didn't specify size/font
+    # Explicit run formatting overrides the paragraph style (that is how Word resolves it);
+    # letting the style win wrote 11pt into documents whose template run is 12pt.
     for r in p.runs:
         if r.text.strip() and r._r.rPr is not None:
             rPr = r._r.rPr
             sz_el = rPr.find(qn("w:sz"))
             if sz_el is not None and sz_el.get(qn("w:val")):
-                sz_val = sz_val or sz_el.get(qn("w:val"))
+                sz_val = sz_el.get(qn("w:val"))
             rFonts = rPr.find(qn("w:rFonts"))
             if rFonts is not None:
-                font_ea = font_ea or rFonts.get(qn("w:eastAsia"))
-                font_ascii = font_ascii or rFonts.get(qn("w:ascii"))
+                font_ea = rFonts.get(qn("w:eastAsia")) or font_ea
+                font_ascii = rFonts.get(qn("w:ascii")) or font_ascii
             break
 
     return {

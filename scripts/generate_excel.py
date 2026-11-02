@@ -4,7 +4,7 @@
 CLI entrypoint: EXCEL_GENERATE mode (v3.2).
 
 Fills an .xlsx template from a JSON payload without touching formulas or cell styles.
-This exists so `EXCEL_GENERATE` no longer routes into the Word-only generator.
+The workbook is staged in a sibling temp file and only published after QA passes.
 
 Usage:
     python scripts/generate_excel.py --template <template.xlsx> --payload <payload.json> --out <output.xlsx>
@@ -25,7 +25,14 @@ if ROOT_DIR not in sys.path:
 
 import openpyxl
 
-from engine import audit_excel_formula_and_style_qa, install_auto_cleanup
+from engine import (
+    DocumentTransaction,
+    TransactionAborted,
+    TransactionPreflightError,
+    audit_excel_formula_and_style_qa,
+    inspect_excel_objects,
+    install_auto_cleanup,
+)
 
 
 def _replacement_map(payload: dict) -> dict:
@@ -55,6 +62,11 @@ def main() -> int:
     parser.add_argument("--template", required=True, help="Input .xlsx/.xlsm template path")
     parser.add_argument("--data", "--payload", dest="data", required=True, help="JSON payload path")
     parser.add_argument("--out", "--output", dest="out", required=True, help="Output .xlsx path")
+    parser.add_argument(
+        "--allow-object-loss",
+        action="store_true",
+        help="Proceed even when the template contains parts openpyxl cannot preserve (ActiveX, pivots, slicers, ...)",
+    )
     args = parser.parse_args()
 
     with open(args.data, "r", encoding="utf-8") as handle:
@@ -62,42 +74,85 @@ def main() -> int:
     replacements = _replacement_map(payload)
 
     is_xlsm = args.template.lower().endswith(".xlsm")
-    workbook = openpyxl.load_workbook(
-        args.template,
-        keep_vba=is_xlsm,
-        keep_links=True,
-        data_only=False,
-    )
-    replaced = 0
-    for sheet in workbook.worksheets:
-        for row in sheet.iter_rows():
-            for cell in row:
-                if _apply(cell, replacements):
-                    replaced += 1
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     if is_xlsm and not args.out.lower().endswith(".xlsm"):
         # An .xlsx container cannot hold the macro content type: silently saving
         # one would drop the VBA project, so force the .xlsm extension.
         base = args.out[:-5] if args.out.lower().endswith(".xlsx") else args.out
         args.out = base + ".xlsm"
-    workbook.save(args.out)
 
-    # QA must compare the OUTPUT against the ORIGINAL TEMPLATE — comparing the
-    # output with itself proves nothing about formula or style preservation.
-    qa_report = audit_excel_formula_and_style_qa(
-        template_path=args.template,
-        output_path=args.out,
-    )
+    object_preflight = inspect_excel_objects(args.template)
+    if object_preflight["object_loss_risk"] and not args.allow_object_loss:
+        print(json.dumps({
+            "output": args.out,
+            "template": args.template,
+            "error": "OBJECT_LOSS_RISK",
+            "objects": object_preflight["loss_risk_objects"],
+            "hint": "openpyxl cannot preserve these parts; re-run with --allow-object-loss to accept the loss",
+        }, ensure_ascii=False, indent=2))
+        return 3
+
+    replaced = 0
+    qa_report = None
+    tx = DocumentTransaction(args.template, args.out, task_mode="EXCEL_GENERATE")
+
+    try:
+        with tx:
+            workbook = openpyxl.load_workbook(
+                args.template,
+                keep_vba=is_xlsm,
+                keep_links=True,
+                data_only=False,
+            )
+            for sheet in workbook.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if _apply(cell, replacements):
+                            replaced += 1
+
+            workbook.save(tx.stage())
+            workbook.close()
+
+            # QA must compare the OUTPUT against the ORIGINAL TEMPLATE — comparing the
+            # output with itself proves nothing about formula or style preservation.
+            qa_report = audit_excel_formula_and_style_qa(
+                template_path=args.template,
+                output_path=tx.temp_path,
+            )
+            tx.record_qa(qa_report)
+            tx.commit()
+    except TransactionPreflightError as exc:
+        print(json.dumps({
+            "output": args.out,
+            "template": args.template,
+            "error": str(exc),
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 2
+    except TransactionAborted as exc:
+        print(json.dumps({
+            "output": args.out,
+            "template": args.template,
+            "keep_vba": is_xlsm,
+            "replaced_cells": replaced,
+            "error": str(exc),
+            "qa_status": tx.qa_status,
+            "qa": qa_report or {},
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 1
+
     print(json.dumps({
         "output": args.out,
         "template": args.template,
         "keep_vba": is_xlsm,
         "replaced_cells": replaced,
-        "qa_passed": qa_report["passed"],
+        "object_preflight": object_preflight,
+        "qa_passed": tx.qa_status == "PASSED",
+        "qa_status": tx.qa_status,
         "qa": qa_report,
+        "transaction": tx.record(),
     }, ensure_ascii=False, indent=2))
-    return 0 if qa_report["passed"] else 1
+    return 0
 
 
 if __name__ == "__main__":

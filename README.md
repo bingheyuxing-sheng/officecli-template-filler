@@ -30,7 +30,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| **7 种任务路由** | `GENERATE` / `POLISH` / `REPAIR` / `REVIEW` / `MERGE` / `REFORMAT` / `EXCEL_GENERATE`，按输入文件与意图自动分类 |
+| **8 种任务路由** | `GENERATE` / `POLISH` / `REPAIR` / `REVIEW` / `MERGE` / `REFORMAT` / `EXCEL_GENERATE` / `PROOFREAD`，按输入文件与意图自动分类，未实现模式返回 `CAPABILITY_NOT_AVAILABLE` |
 | **模板兼容性分级** | `L1`–`L4`：从标准模板到 OLE / SmartArt / Chart / OMML 等只读保护区 |
 | **非破坏式改写** | 保留未映射的样式、`<w:proofErr>`、书签、域代码、共享图片 `rId`，不重建整篇文档 |
 | **Word 原生修订** | 文字改动写 `<w:ins>` / `<w:del>`，格式改动写 `w:*PrChange`，判断类问题写 `w:comment` |
@@ -92,6 +92,7 @@ python scripts/run_qa.py output.docx --reference template.docx
 | `EXCEL_GENERATE` | 1 个 `.xlsx` / `.xlsm` 模板 + 数据 | 填充后的工作簿（保留公式与宏） |
 | `REPAIR` | 参考模板 + 待修复文档（2 个 `.docx`） | 格式对齐、内容不变的 `.docx` |
 | `REVIEW` | 参考模板 + 待审文档 | **带修订与批注的 `.docx`**，供人工逐条确认 |
+| `PROOFREAD` | 单个 `.docx` | **带修订与批注的 `.docx`**，校对错别字与数据问题 |
 | `POLISH` | 单个草稿 | 措辞优化、版式保持（执行入口规划中） |
 | `REFORMAT` | 单个或多个 `.docx` + 排版意图 | 统一字体字号与版式 |
 | `MERGE` | 多个来源（含 `.docx` + `.xlsx` 混合） | 汇总文档 |
@@ -150,7 +151,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前基线：**50 项测试全部通过**（v3.4.2）。
+当前基线：**101 项测试全部通过**（v3.5.2）。
 
 ---
 
@@ -160,6 +161,8 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v3.5.2 | 当前 `main`（打包文件待发布） | Excel Translator 与对象预检、版面指纹 QA、进程所有权、PROOFREAD、合并安全写入 |
+| v3.5.0 | 已并入 v3.5.2 | 事务化交付、修订生命周期与快照、表格签名收紧、能力注册表 |
 | v3.4.2 | [Release v3.4.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.2) | 修订 ID 真实一致、超链接结构保护、定位防误改、XLSM 保宏、QA 四态 |
 | v3.4.1 | [Release v3.4.1-archive](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.1-archive) | 格式修复写入 Word 原生格式修订痕迹 |
 
@@ -167,8 +170,10 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## 已知限制
 
-- `POLISH` / `MERGE` / `REFORMAT` 目前没有独立执行入口，路由会返回对应模式，但需人工选择脚本。
-- Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象尚不能保证 `openpyxl` 往返无损，需要预检与人工确认。
+- `POLISH` / `MERGE` / `REFORMAT` 目前没有独立执行入口，路由返回 `CAPABILITY_NOT_AVAILABLE`，不再让 Agent 自行挑选脚本。
+- Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象不会被 `openpyxl` 保留：`inspect_excel_objects()` 会预检，`generate_excel.py` 默认以 `OBJECT_LOSS_RISK` 拒绝执行，需显式加 `--allow-object-loss`。
+- 版面 QA 使用 DOCX 版面指纹（字体、字号、对齐、缩进、表格列宽、图片比例），不承诺逐像素一致；像素级比对仍需本机 LibreOffice + PyMuPDF。
+- 进程清理只终止能证明归属的实例；读取不到进程创建时间时记入 `unreleased_pids`，不做猜测性终止。
 - 视觉 QA 依赖本机 LibreOffice 与 PyMuPDF；缺失时状态为 `UNVERIFIED`，不是通过。
 - 不承诺与 Word/WPS 逐像素一致；`L4` 对象只做只读保留并在 `coverage_gaps` 中列明。
 

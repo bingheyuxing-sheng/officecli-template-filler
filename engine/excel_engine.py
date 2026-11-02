@@ -23,39 +23,60 @@ from copy import copy, deepcopy
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import openpyxl
+from openpyxl.formula.translate import Translator
 from openpyxl.utils import column_index_from_string, get_column_letter, range_boundaries
 
 from .process_guard import TaskResourceGuard
 
 EXCEL_ERROR_TOKENS = {"#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A", "#NUM!", "#NULL!"}
 
-# Matches Excel cell references like A5, $A5, A$5, $A$5 (excluding sheet prefixes and function names)
+# Cell references for the built-in evaluator (formula row shifting uses openpyxl's
+# Translator, not this regex).
 _CELL_REF_RE = re.compile(r"(?<![A-Za-z0-9_!])(\$?[A-Za-z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])")
+
+# Formulas that cannot be row-shifted safely. They are refused explicitly instead of
+# being regex-rewritten into something plausible but wrong.
+_UNSUPPORTED_FORMULA_PATTERNS = (
+    ("UNSUPPORTED_EXTERNAL_WORKBOOK", re.compile(r"\[[^\]]+\.(xlsx|xlsm|xls|xlsb|csv)\]", re.IGNORECASE)),
+    ("UNSUPPORTED_STRUCTURED_REFERENCE", re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\]")),
+    ("UNSUPPORTED_DYNAMIC_REFERENCE", re.compile(r"\b(INDIRECT|OFFSET)\s*\(", re.IGNORECASE)),
+)
+
+
+def translate_excel_formula_row_refs(formula: str, src_row: int, dst_row: int) -> Tuple[str, Optional[str]]:
+    """
+    Row-shift a formula with openpyxl's own reference translator.
+
+    Returns `(formula, reason)`: `reason` is `None` when the translation is safe to use.
+    String literals and absolute references are handled by the translator, so
+    `=IF(A5="A5",Sheet1!B5,$C$5)` becomes `=IF(A6="A5",Sheet1!B6,$C$6)`.
+    """
+    if not isinstance(formula, str) or not formula.startswith("="):
+        return formula, None
+    if int(dst_row) == int(src_row):
+        return formula, None
+    for reason, pattern in _UNSUPPORTED_FORMULA_PATTERNS:
+        if pattern.search(formula):
+            return formula, reason
+    try:
+        translated = Translator(formula, origin=f"A{int(src_row)}").translate_formula(f"A{int(dst_row)}")
+    except Exception:
+        return formula, "TRANSLATOR_ERROR"
+    if not isinstance(translated, str) or not translated.startswith("="):
+        return formula, "TRANSLATOR_INVALID_RESULT"
+    return translated, None
 
 
 def shift_excel_formula_row_refs(formula: str, src_row: int, dst_row: int) -> str:
     """
-    Shift relative row references inside `formula` from `src_row` to `dst_row`
-    while leaving absolute row references (`$5`) untouched.
+    Backward-compatible wrapper around `translate_excel_formula_row_refs()`.
+
     Example: `shift_excel_formula_row_refs("=C5*D5/$E$2", 5, 8)` -> `"=C8*D8/$E$2"`.
+    Formulas that cannot be shifted safely are returned unchanged; callers that need
+    the reason should use `translate_excel_formula_row_refs()` directly.
     """
-    if not isinstance(formula, str) or not formula.startswith("="):
-        return formula
-    delta = dst_row - src_row
-    if delta == 0:
-        return formula
-
-    def _repl(match: re.Match) -> str:
-        col_part, abs_row_marker, row_str = match.group(1), match.group(2), match.group(3)
-        if abs_row_marker == "$":
-            return match.group(0)
-        r_num = int(row_str)
-        if r_num == src_row:
-            return f"{col_part}{dst_row}"
-        new_r = max(1, r_num + delta) if r_num >= src_row else r_num
-        return f"{col_part}{new_r}"
-
-    return _CELL_REF_RE.sub(_repl, formula)
+    translated, _reason = translate_excel_formula_row_refs(formula, src_row, dst_row)
+    return translated
 
 
 def copy_excel_cell_style(src_cell, dst_cell) -> None:
@@ -136,12 +157,27 @@ def clone_excel_template_row(
         dst_dim.collapsed = src_dim.collapsed
 
     # 2. Cell styles, hyperlinks, and formulas
+    formula_stats: Dict[str, Any] = {"translated": 0, "unsupported": [], "fallback_used": False}
     for col_idx in range(1, max_col + 1):
         src = ws.cell(row=template_row_idx, column=col_idx)
         dst = ws.cell(row=target_row_idx, column=col_idx)
         copy_excel_cell_style(src, dst)
         if clone_formulas and isinstance(src.value, str) and src.value.startswith("="):
-            dst.value = shift_excel_formula_row_refs(src.value, template_row_idx, target_row_idx)
+            translated, reason = translate_excel_formula_row_refs(
+                src.value, template_row_idx, target_row_idx
+            )
+            dst.value = translated
+            if reason:
+                # Keeping the original formula is the only safe fallback; record it so the
+                # caller never mistakes an unshifted formula for a translated one.
+                formula_stats["fallback_used"] = True
+                formula_stats["unsupported"].append({
+                    "cell": dst.coordinate,
+                    "formula": src.value,
+                    "reason": reason,
+                })
+            else:
+                formula_stats["translated"] += 1
 
     # 3. Replicate horizontal merged-cell ranges from `template_row_idx`
     if clone_merged_cells:
@@ -178,6 +214,8 @@ def clone_excel_template_row(
                 tbl.autoFilter.ref = _expand_ref_string_for_row(tbl.autoFilter.ref, template_row_idx, target_row_idx)
     if ws.auto_filter is not None and ws.auto_filter.ref:
         ws.auto_filter.ref = _expand_ref_string_for_row(ws.auto_filter.ref, template_row_idx, target_row_idx)
+
+    return formula_stats
 
 
 def _eval_simple_excel_formula(ws, formula: str, visited: Optional[set] = None) -> Tuple[Optional[Decimal], Optional[str]]:
@@ -318,6 +356,8 @@ def recalculate_and_verify_excel_formulas(
     evaluated_cells: Dict[str, Any] = {}
     formula_errors: List[str] = []
     unsupported_formulas: List[str] = []
+    formula_status: Dict[str, str] = {}
+    formula_coordinates: List[Tuple[str, str]] = []
     total_formulas = 0
 
     for s_name in wb.sheetnames:
@@ -328,9 +368,11 @@ def recalculate_and_verify_excel_formulas(
                 if isinstance(val, str) and val.startswith("="):
                     total_formulas += 1
                     key = f"{s_name}!{cell.coordinate}"
+                    formula_coordinates.append((s_name, cell.coordinate))
                     calc_val, err_tok = _eval_simple_excel_formula(ws, val)
                     if err_tok:
                         formula_errors.append(f"FORMULA_EVAL_ERROR {key}: {val} -> {err_tok}")
+                        formula_status[key] = "FAILED"
                     elif calc_val is not None:
                         num_fmt = str(getattr(cell, "number_format", "") or "")
                         if ".00" in num_fmt:
@@ -344,14 +386,14 @@ def recalculate_and_verify_excel_formulas(
                                 evaluated_cells[key] = s_raw
                         else:
                             evaluated_cells[key] = str(calc_val)
+                        formula_status[key] = "VERIFIED"
                     else:
                         # Neither an error nor a value: the builtin evaluator does not
                         # support this formula. It is UNVERIFIED, never silently passed.
                         unsupported_formulas.append(f"FORMULA_UNSUPPORTED {key}: {val}")
+                        formula_status[key] = "UNSUPPORTED"
 
     wb.close()
-
-    unverified_count = len(unsupported_formulas)
 
     soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
     engine_used = "builtin_decimal_evaluator"
@@ -366,19 +408,27 @@ def recalculate_and_verify_excel_formulas(
             recalc_file = os.path.join(tmpdir, os.path.basename(xlsx_path))
             if res.returncode == 0 and os.path.exists(recalc_file):
                 engine_used = "libreoffice+builtin"
-                # LibreOffice recalculated every formula, so nothing stays unverified
-                # unless its own pass reported an error.
-                unverified_count = 0
                 wb_val = openpyxl.load_workbook(recalc_file, data_only=True)
-                for s_name in wb_val.sheetnames:
-                    ws_v = wb_val[s_name]
-                    for row in ws_v.iter_rows(values_only=False):
-                        for cell in row:
-                            v_str = str(cell.value or "").strip()
-                            for tok in EXCEL_ERROR_TOKENS:
-                                if tok in v_str:
-                                    formula_errors.append(f"LIBREOFFICE_EVAL_ERROR {s_name}!{cell.coordinate}: {v_str}")
+                for s_name, coordinate in formula_coordinates:
+                    key = f"{s_name}!{coordinate}"
+                    if s_name not in wb_val.sheetnames:
+                        formula_status[key] = "NOT_RECALCULATED"
+                        continue
+                    value = wb_val[s_name][coordinate].value
+                    if isinstance(value, str) and any(tok in value for tok in EXCEL_ERROR_TOKENS):
+                        formula_errors.append(f"LIBREOFFICE_EVAL_ERROR {key}: {value}")
+                        formula_status[key] = "FAILED"
+                    elif value is None:
+                        # LibreOffice produced no cached value: unverified, not "fine".
+                        formula_status[key] = "NOT_RECALCULATED"
+                    else:
+                        formula_status[key] = "VERIFIED"
                 wb_val.close()
+
+    status_counts: Dict[str, int] = {}
+    for status in formula_status.values():
+        status_counts[status] = status_counts.get(status, 0) + 1
+    unverified_count = status_counts.get("UNSUPPORTED", 0) + status_counts.get("NOT_RECALCULATED", 0)
 
     return {
         "engine": engine_used,
@@ -388,6 +438,8 @@ def recalculate_and_verify_excel_formulas(
         "evaluated_Values": evaluated_cells,
         "formula_errors": formula_errors,
         "unsupported_formulas": unsupported_formulas,
+        "formula_status": formula_status,
+        "status_counts": status_counts,
         "unverified_count": unverified_count,
         "coverage_gaps": ["FORMULAS_UNVERIFIED"] if unverified_count else [],
     }
@@ -490,4 +542,5 @@ def audit_excel_formula_and_style_qa(
         "coverage_gaps": coverage_gaps,
         "unverified_count": unverified_total,
         "recalculation": recalc_report,
+        "formula_status": recalc_report.get("formula_status", {}),
     }

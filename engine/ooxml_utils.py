@@ -412,6 +412,10 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
     from docx.text.paragraph import Paragraph
 
     seen_p_ids: Set[int] = set()
+    # lxml drops element proxies once nothing references them, and CPython may reuse the
+    # freed address for a different node. Deduping on `id()` alone would then skip a real
+    # paragraph; the strong references below keep every seen id unique for this traversal.
+    seen_p_elements: List[Any] = []
 
     def _infer_scope(loc: str) -> str:
         if ".txbx_p[" in loc:
@@ -430,15 +434,17 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
 
     def _yield_p(loc: str, p_el, parent_obj):
         pid = id(p_el)
-        if pid not in seen_p_ids:
-            seen_p_ids.add(pid)
-            p_obj = Paragraph(p_el, parent_obj)
-            yield ParagraphContext(
-                location_id=loc,
-                scope=_infer_scope(loc),
-                paragraph=p_obj,
-                p_el=p_el,
-            )
+        if pid in seen_p_ids:
+            return
+        seen_p_ids.add(pid)
+        seen_p_elements.append(p_el)
+        p_obj = Paragraph(p_el, parent_obj)
+        yield ParagraphContext(
+            location_id=loc,
+            scope=_infer_scope(loc),
+            paragraph=p_obj,
+            p_el=p_el,
+        )
 
     def _walk_tables(tables, prefix: str, parent_obj):
         for t_idx, tbl in enumerate(tables):
@@ -448,6 +454,7 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
                     if id(cell._tc) in seen_tcs:
                         continue
                     seen_tcs.add(id(cell._tc))
+                    seen_p_elements.append(cell._tc)
                     cell_prefix = f"{prefix}tbl[{t_idx}].r[{r_idx}].c[{c_idx}]"
                     for p_idx, p in enumerate(cell.paragraphs):
                         yield from _yield_p(f"{cell_prefix}.p[{p_idx}]", p._p, cell)
@@ -510,6 +517,8 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
     `{"table_id": str, "scope": str, "depth": int, "table": Table}`.
     """
     seen_tbl_ids: Set[int] = set()
+    # Same proxy-recycling guard as the paragraph iterator above.
+    seen_elements: List[Any] = []
 
     def _walk(tables, scope: str, prefix: str, depth: int):
         for t_idx, tbl in enumerate(tables):
@@ -517,6 +526,7 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
             if tid in seen_tbl_ids:
                 continue
             seen_tbl_ids.add(tid)
+            seen_elements.append(tbl._tbl)
             table_id = f"{prefix}tbl[{t_idx}]"
             yield {
                 "table_id": table_id,
@@ -530,6 +540,7 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
                     if id(cell._tc) in seen_tcs:
                         continue
                     seen_tcs.add(id(cell._tc))
+                    seen_elements.append(cell._tc)
                     if cell.tables:
                         yield from _walk(
                             cell.tables,

@@ -901,22 +901,31 @@ def run_visual_layout_qa(
     # 4. Font availability: missing fonts make renderers substitute silently
     font_report = check_font_availability(_collect_declared_font_names(doc))
 
+    # 5. Layout fingerprint comparison (content-independent): this is the primary
+    #    layout signal; pixel diff below is only a secondary renderer check.
+    layout_report = None
+    if reference_docx_path and os.path.isfile(reference_docx_path):
+        try:
+            from .layout_qa import compare_layout_fingerprints
+            layout_report = compare_layout_fingerprints(docx_path, reference_docx_path)
+        except Exception:
+            layout_report = {
+                "passed": False,
+                "issues": [],
+                "coverage_gaps": ["LAYOUT_FINGERPRINT_UNAVAILABLE"],
+            }
+
     structured_issues = [
         _issue("VISUAL_LAYOUT_WARNING", "layout", item, severity="medium")
         for item in layout_warnings
     ]
+    if layout_report:
+        structured_issues.extend(layout_report.get("issues") or [])
     if page_count_mismatch is not None:
         structured_issues.append(_issue(
             "RENDER_PAGE_COUNT_MISMATCH",
             "pdf",
             f"reference pages={page_count_mismatch[0]}, output pages={page_count_mismatch[1]}",
-        ))
-    for page_index, ratio in page_diffs:
-        structured_issues.append(_issue(
-            "RENDER_PAGE_PIXEL_DIFF",
-            f"pdf.page[{page_index}]",
-            f"pixel diff ratio {ratio} vs reference",
-            severity="medium",
         ))
     if font_report["checked"]:
         for font in font_report["missing"]:
@@ -927,17 +936,14 @@ def run_visual_layout_qa(
                 severity="medium",
             ))
 
-    coverage_gaps: List[str] = []
-    unverified_count = 0
+    coverage_gaps: List[str] = list((layout_report or {}).get("coverage_gaps") or [])
+    unverified_count = len(coverage_gaps)
     if not pdf_generated:
         coverage_gaps.append("RENDER_PDF_NOT_PRODUCED")
         unverified_count += 1
     if reference_docx_path and os.path.isfile(reference_docx_path):
         if pdf_generated and ref_pdf_path is None:
             coverage_gaps.append("REFERENCE_PDF_NOT_PRODUCED")
-            unverified_count += 1
-        elif pdf_generated and ref_pdf_path is not None and not page_diff_available:
-            coverage_gaps.append("PDF_PAGE_DIFF_UNAVAILABLE")
             unverified_count += 1
     if not font_report["checked"]:
         coverage_gaps.append("FONT_AVAILABILITY_UNVERIFIED")
@@ -955,6 +961,7 @@ def run_visual_layout_qa(
         "page_count_mismatch": page_count_mismatch,
         "page_diffs": page_diffs,
         "font_availability": font_report,
+        "layout_fingerprint": layout_report,
         "coverage_gaps": coverage_gaps,
         "unverified_count": unverified_count,
     }

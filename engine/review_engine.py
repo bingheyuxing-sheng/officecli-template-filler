@@ -15,6 +15,7 @@ Nothing here uses global process killing; callers stay inside `TaskResourceGuard
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 import tempfile
@@ -38,10 +39,14 @@ from .repair_engine import (
     _extract_paragraph_format_profile,
 )
 from .table_engine import (
+    TBLPR_ORDER,
+    TCPR_ORDER,
+    TRPR_ORDER,
     compare_table_style,
     restore_table_style_from_reference,
     table_style_signature,
 )
+from .transaction import DocumentTransaction, TransactionAborted, TransactionPreflightError
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 REVIEW_AUTHOR_DEFAULT = "OfficeCLI Reviewer"
@@ -366,6 +371,39 @@ _FORMAT_CHANGE_TAGS = (
     "rPrChange", "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange",
 )
 
+# OOXML requires every *PrChange mark to wrap the pre-change properties in a
+# container element of the matching type: <w:rPrChange><w:rPr>...</w:rPr></w:rPrChange>.
+_FORMAT_CHANGE_WRAPPERS = {
+    "rPrChange": "rPr",
+    "pPrChange": "pPr",
+    "tblPrChange": "tblPr",
+    "trPrChange": "trPr",
+    "tcPrChange": "tcPr",
+    "sectPrChange": "sectPr",
+}
+
+# Tracked row/cell insertion and deletion marks are revisions, not formatting: a
+# reject must never strip them while rolling back a *PrChange.
+_TRPR_FORMAT_TAGS = tuple(tag for tag in TRPR_ORDER if tag not in ("ins", "del", "trPrChange"))
+_TCPR_FORMAT_TAGS = tuple(
+    tag for tag in TCPR_ORDER if tag not in ("tcPrChange", "cellIns", "cellDel", "cellMerge")
+)
+
+
+def _format_change_base_tags(change_tag: str):
+    """Formatting properties a `*PrChange` may restore, or None when unsupported."""
+    if change_tag == "rPrChange":
+        return _RPR_BASE_TAGS
+    if change_tag == "pPrChange":
+        return _PPR_BASE_TAGS
+    if change_tag == "tblPrChange":
+        return TBLPR_ORDER
+    if change_tag == "trPrChange":
+        return _TRPR_FORMAT_TAGS
+    if change_tag == "tcPrChange":
+        return _TCPR_FORMAT_TAGS
+    return None
+
 
 def _local_name(tag) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -378,18 +416,38 @@ def _base_children(el, tags) -> List[Any]:
     return [child for child in el if _local_name(child.tag) in tags]
 
 
+def _snapshot_nodes(nodes) -> List[Any]:
+    """Detached copy of property nodes.
+
+    `_base_children()` returns live elements, and the restore helpers mutate those
+    elements in place. Without copying here the "old properties" recorded in a
+    `*PrChange` mark would end up holding the NEW values, making reject a no-op.
+    """
+    return [copy.deepcopy(node) for node in nodes]
+
+
 def _serialize_nodes(nodes) -> bytes:
     return b"|".join(etree.tostring(node) for node in nodes)
 
 
 def _append_format_change(parent, change_tag: str, old_nodes, rev_id: int, author: str, date: str) -> None:
-    """Append a Word formatting-revision mark carrying the pre-change properties."""
+    """Append a Word formatting-revision mark carrying the pre-change properties.
+
+    The old properties go inside the container element the OOXML schema mandates
+    (`w:rPr` for `w:rPrChange`, `w:pPr` for `w:pPrChange`, ...), not directly on the
+    change node — Word repairs or drops a flat `*PrChange` mark.
+    """
     change = OxmlElement(change_tag)
     change.set(qn("w:id"), str(rev_id))
     change.set(qn("w:author"), author)
     change.set(qn("w:date"), date)
+    wrapper_name = _FORMAT_CHANGE_WRAPPERS.get(_local_name(change_tag).split(":")[-1])
+    container = change
+    if wrapper_name:
+        container = OxmlElement(f"w:{wrapper_name}")
+        change.append(container)
     for node in old_nodes:
-        change.append(copy.deepcopy(node))
+        container.append(copy.deepcopy(node))
     parent.append(change)
 
 
@@ -401,9 +459,12 @@ def _paragraph_mark_rpr(p_el):
 def _apply_paragraph_profile_tracked(paragraph, profile, strip_red: bool, author: str, date: str, ids) -> int:
     """Restore paragraph formatting AND record every change as a tracked format revision."""
     p_el = paragraph._p
-    old_ppr_nodes = _base_children(p_el.find(qn("w:pPr")), _PPR_BASE_TAGS)
-    old_mark_nodes = _base_children(_paragraph_mark_rpr(p_el), _RPR_BASE_TAGS)
-    old_run_nodes = [_base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS) for run in paragraph.runs]
+    old_ppr_nodes = _snapshot_nodes(_base_children(p_el.find(qn("w:pPr")), _PPR_BASE_TAGS))
+    old_mark_nodes = _snapshot_nodes(_base_children(_paragraph_mark_rpr(p_el), _RPR_BASE_TAGS))
+    old_run_nodes = [
+        _snapshot_nodes(_base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS))
+        for run in paragraph.runs
+    ]
 
     _apply_paragraph_profile(paragraph, profile, strip_red=strip_red)
 
@@ -443,14 +504,29 @@ def _restore_table_style_tracked(target_tbl, reference_tbl, author: str, date: s
             ))
         return marks
 
-    old_tblpr = _base_children(tbl_el.find(qn("w:tblPr")), TBLPR_ORDER)
-    old_trpr = [_base_children(row._tr.find(qn("w:trPr")), TRPR_ORDER) for row in target_tbl.rows]
+    old_tblpr = _snapshot_nodes(_base_children(tbl_el.find(qn("w:tblPr")), TBLPR_ORDER))
+    old_trpr = [
+        _snapshot_nodes(_base_children(row._tr.find(qn("w:trPr")), TRPR_ORDER))
+        for row in target_tbl.rows
+    ]
     old_tcpr = [
-        [_base_children(cell._tc.find(qn("w:tcPr")), tcpr_tags) for cell in get_unique_row_cells(row)]
+        [
+            _snapshot_nodes(_base_children(cell._tc.find(qn("w:tcPr")), tcpr_tags))
+            for cell in get_unique_row_cells(row)
+        ]
         for row in target_tbl.rows
     ]
     old_marks = [
-        [_cell_marks(cell) for cell in get_unique_row_cells(row)]
+        [
+            [
+                (
+                    _snapshot_nodes(mark_nodes),
+                    [_snapshot_nodes(run_nodes) for run_nodes in run_groups],
+                )
+                for mark_nodes, run_groups in _cell_marks(cell)
+            ]
+            for cell in get_unique_row_cells(row)
+        ]
         for row in target_tbl.rows
     ]
 
@@ -766,10 +842,14 @@ def _merge_diff_kind(target_tbl, reference_tbl) -> List[str]:
 def execute_review_plan(
     review_plan: Dict[str, Any],
     output_docx_path: str,
+    snapshot_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Apply the review plan: restore formatting, write tracked text revisions, anchor comments,
     turn on track changes, and save the reviewable document.
+
+    A revision snapshot is written next to the output (pass `snapshot_path=""` to skip it,
+    e.g. when a caller publishes the document through a transaction first).
     """
     ref_doc = docx.Document(review_plan["reference_docx"])
     tgt_doc = docx.Document(review_plan["target_docx"])
@@ -956,6 +1036,10 @@ def execute_review_plan(
 
     tgt_doc.save(output_docx_path)
 
+    snapshot_report = None
+    if snapshot_path != "":
+        snapshot_report = write_review_snapshot(output_docx_path, snapshot_path=snapshot_path or None)
+
     return {
         "output_docx": output_docx_path,
         "format_restored": applied_format,
@@ -967,6 +1051,8 @@ def execute_review_plan(
         "revision_count": tracked,
         "track_changes_enabled": bool(review_plan.get("track_changes", True)),
         "review_mode": "TRACKED_CHANGES",
+        "snapshot_path": (snapshot_report or {}).get("snapshot_path"),
+        "snapshot_revision_count": (snapshot_report or {}).get("revision_count", 0),
     }
 
 
@@ -985,65 +1071,376 @@ def _part_xml_bytes(docx_path: str, part_name: str) -> Optional[bytes]:
             return None
 
 
-def _iter_revision_nodes(root):
+def iter_revision_marks(root):
+    """Yield `(node, kind)` for every revision mark; kind is `"text"` or `"format"`."""
     for node in root.iter():
-        if node.tag.rsplit("}", 1)[-1] in ("ins", "del"):
+        tag = _local_name(node.tag)
+        if tag in ("ins", "del"):
+            yield node, "text"
+        elif tag in _FORMAT_CHANGE_TAGS:
+            yield node, "format"
+
+
+def _iter_revision_nodes(root):
+    """Text revisions only (`w:ins` / `w:del`); kept for callers of the older API."""
+    for node, kind in iter_revision_marks(root):
+        if kind == "text":
             yield node
 
 
-def list_revisions(docx_path: str) -> List[Dict[str, Any]]:
-    """List Word revisions across document, headers, footers, footnotes and endnotes."""
-    revisions: List[Dict[str, Any]] = []
+def _node_path(root, target) -> Optional[List[int]]:
+    """Child-index path from `root` to `target`, or None when `target` is outside `root`."""
+    path: List[int] = []
+    node = target
+    while node is not root:
+        parent = node.getparent() if node is not None else None
+        if parent is None:
+            return None
+        path.append(parent.index(node))
+        node = parent
+    path.reverse()
+    return path
+
+
+def _find_by_path(root, path):
+    """Resolve a `_node_path()` result back to the element, or None when it moved."""
+    node = root
+    for index in path or []:
+        try:
+            node = node[int(index)]
+        except (IndexError, TypeError, ValueError):
+            return None
+    return node
+
+
+def _paragraph_anchor_text(node) -> str:
+    """Text of the owning paragraph, excluding the revision mark itself."""
+    parent = node
+    while parent is not None and _local_name(parent.tag) != "p":
+        parent = parent.getparent()
+    if parent is None:
+        return ""
+    chunks: List[str] = []
+
+    def _collect(el):
+        for child in el:
+            if child is node:
+                continue
+            if _local_name(child.tag) in ("t", "delText"):
+                chunks.append(child.text or "")
+            else:
+                _collect(child)
+
+    _collect(parent)
+    return "".join(chunks).strip()[:120]
+
+
+def _iter_revision_parts(docx_path: str):
+    """Yield `(part_name, root)` for every Word part that can carry revisions."""
     with zipfile.ZipFile(docx_path) as archive:
         for name in archive.namelist():
             if not name.startswith("word/") or not name.endswith(".xml") or name.endswith("settings.xml"):
                 continue
             try:
-                root = etree.fromstring(archive.read(name))
+                yield name, etree.fromstring(archive.read(name))
             except etree.XMLSyntaxError:
                 continue
-            for node in _iter_revision_nodes(root):
-                revision_type = node.tag.rsplit("}", 1)[-1]
-                text_nodes = node.findall(".//" + qn("w:t")) if revision_type == "ins" else node.findall(".//" + qn("w:delText"))
-                revisions.append({
-                    "part": name,
-                    "revision_id": node.get(qn("w:id")),
-                    "type": revision_type,
-                    "author": node.get(qn("w:author")),
-                    "date": node.get(qn("w:date")),
-                    "text": "".join((item.text or "") for item in text_nodes),
-                })
+
+
+def list_revisions(docx_path: str, include_format: bool = False) -> List[Dict[str, Any]]:
+    """List Word revisions across document, headers, footers, footnotes and endnotes.
+
+    Set `include_format=True` to also list tracked formatting revisions (`w:*PrChange`)
+    in the same shape; every entry carries `kind` (`"text"` or `"format"`).
+    """
+    revisions: List[Dict[str, Any]] = []
+    for name, root in _iter_revision_parts(docx_path):
+        for node, kind in iter_revision_marks(root):
+            if kind == "format":
+                if include_format:
+                    revisions.append(_format_revision_entry(name, node))
+                continue
+            revision_type = _local_name(node.tag)
+            text_nodes = node.findall(".//" + qn("w:t")) if revision_type == "ins" else node.findall(".//" + qn("w:delText"))
+            revisions.append({
+                "part": name,
+                "kind": "text",
+                "revision_id": node.get(qn("w:id")),
+                "type": revision_type,
+                "author": node.get(qn("w:author")),
+                "date": node.get(qn("w:date")),
+                "text": "".join((item.text or "") for item in text_nodes),
+            })
     return revisions
+
+
+def _format_revision_entry(part_name: str, node) -> Dict[str, Any]:
+    tag = _local_name(node.tag)
+    wrapper_name = _FORMAT_CHANGE_WRAPPERS.get(tag)
+    wrapper = node.find(qn(f"w:{wrapper_name}")) if wrapper_name else None
+    # v3.4 wrote the old properties flat on the change node; keep reading
+    # those files and say so instead of pretending they are schema-valid.
+    property_nodes = list(wrapper) if wrapper is not None else list(node)
+    return {
+        "part": part_name,
+        "kind": "format",
+        "revision_id": node.get(qn("w:id")),
+        "type": tag,
+        "author": node.get(qn("w:author")),
+        "date": node.get(qn("w:date")),
+        "wrapper_tag": wrapper_name,
+        "legacy_flat_mark": bool(wrapper_name and wrapper is None),
+        "old_properties": [_local_name(child.tag) for child in property_nodes],
+    }
 
 
 def list_format_revisions(docx_path: str) -> List[Dict[str, Any]]:
     """List tracked formatting revisions (`w:*PrChange`) with their pre-change properties."""
     revisions: List[Dict[str, Any]] = []
-    with zipfile.ZipFile(docx_path) as archive:
-        for name in archive.namelist():
-            if not name.startswith("word/") or not name.endswith(".xml") or name.endswith("settings.xml"):
-                continue
-            try:
-                root = etree.fromstring(archive.read(name))
-            except etree.XMLSyntaxError:
-                continue
-            for node in root.iter():
-                tag = _local_name(node.tag)
-                if tag not in _FORMAT_CHANGE_TAGS:
-                    continue
-                revisions.append({
-                    "part": name,
-                    "revision_id": node.get(qn("w:id")),
-                    "type": tag,
-                    "author": node.get(qn("w:author")),
-                    "date": node.get(qn("w:date")),
-                    "old_properties": [_local_name(child.tag) for child in node],
-                })
+    for name, root in _iter_revision_parts(docx_path):
+        for node, kind in iter_revision_marks(root):
+            if kind == "format":
+                revisions.append(_format_revision_entry(name, node))
     return revisions
+
+
+# ---------------------------------------------------------------------------
+# Revision snapshot (restore support for accepted/rejected revisions)
+# ---------------------------------------------------------------------------
+
+REVIEW_SNAPSHOT_SCHEMA_VERSION = "1.0"
+
+
+def review_snapshot_path(docx_path: str) -> str:
+    """Default snapshot location: `<stem>.review_snapshot.json` next to the document."""
+    base, _ext = os.path.splitext(os.path.abspath(docx_path))
+    return base + ".review_snapshot.json"
+
+
+def build_review_snapshot(docx_path: str) -> Dict[str, Any]:
+    """Capture every revision mark with a locator and its serialized XML.
+
+    accept/reject throws the mark away, so without this capture `restore_revision`
+    would have nothing to rebuild the mark from.
+    """
+    revisions: List[Dict[str, Any]] = []
+    for name, root in _iter_revision_parts(docx_path):
+        for node, kind in iter_revision_marks(root):
+            parent = node.getparent()
+            if parent is None:
+                continue
+            entry: Dict[str, Any] = {
+                "revision_id": node.get(qn("w:id")),
+                "kind": kind,
+                "type": _local_name(node.tag),
+                "part": name,
+                "author": node.get(qn("w:author")),
+                "date": node.get(qn("w:date")),
+                "parent_path": _node_path(root, parent) or [],
+                "parent_tag": _local_name(parent.tag),
+                "index_in_parent": parent.index(node),
+                "anchor_text": _paragraph_anchor_text(node),
+                "mark_xml": etree.tostring(node, encoding="unicode"),
+            }
+            if kind == "format":
+                format_entry = _format_revision_entry(name, node)
+                entry["wrapper_tag"] = format_entry["wrapper_tag"]
+                entry["old_properties"] = format_entry["old_properties"]
+                entry["legacy_flat_mark"] = format_entry["legacy_flat_mark"]
+            revisions.append(entry)
+    return {
+        "schema_version": REVIEW_SNAPSHOT_SCHEMA_VERSION,
+        "source_docx": os.path.abspath(docx_path),
+        "generated_at": _now_iso(),
+        "revision_count": len(revisions),
+        "revisions": revisions,
+    }
+
+
+def write_review_snapshot(docx_path: str, snapshot_path: Optional[str] = None) -> Dict[str, Any]:
+    """Write the revision snapshot for `docx_path` and report where it went."""
+    target = snapshot_path or review_snapshot_path(docx_path)
+    snapshot = build_review_snapshot(docx_path)
+    os.makedirs(os.path.dirname(os.path.abspath(target)) or ".", exist_ok=True)
+    with open(target, "w", encoding="utf-8") as handle:
+        json.dump(snapshot, handle, ensure_ascii=False, indent=2)
+    return {
+        "snapshot_path": os.path.abspath(target),
+        "revision_count": snapshot["revision_count"],
+    }
+
+
+def _restore_revision_from_snapshot(
+    docx_path: str,
+    output_docx_path: str,
+    revision_id: str,
+    snapshot_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Rebuild one revision mark from `review_snapshot.json`, verifying the location."""
+    snapshot_file = snapshot_path or review_snapshot_path(docx_path)
+    result: Dict[str, Any] = {
+        "output_docx": None,
+        "revision_id": str(revision_id),
+        "action": "restore",
+        "kind": None,
+        "type": None,
+        "changed": 0,
+        "snapshot_path": snapshot_file,
+        "transaction": None,
+    }
+    if not os.path.isfile(snapshot_file):
+        result["status"] = "SNAPSHOT_MISSING"
+        return result
+    with open(snapshot_file, "r", encoding="utf-8") as handle:
+        snapshot = json.load(handle)
+    entry = next(
+        (item for item in snapshot.get("revisions", [])
+         if str(item.get("revision_id")) == str(revision_id)),
+        None,
+    )
+    if entry is None:
+        result["status"] = "SNAPSHOT_MISSING"
+        return result
+    result["kind"] = entry.get("kind")
+    result["type"] = entry.get("type")
+
+    with zipfile.ZipFile(docx_path) as source:
+        payloads = {name: source.read(name) for name in source.namelist()}
+        infos = {name: source.getinfo(name) for name in source.namelist()}
+    part = entry.get("part")
+    if part not in payloads:
+        result["status"] = "LOCATION_LOST"
+        return result
+    try:
+        root = etree.fromstring(payloads[part])
+        mark = etree.fromstring(entry["mark_xml"].encode("utf-8"))
+    except (etree.XMLSyntaxError, KeyError):
+        result["status"] = "SNAPSHOT_INVALID"
+        return result
+
+    parent = _find_by_path(root, entry.get("parent_path") or [])
+    if parent is None or _local_name(parent.tag) != entry.get("parent_tag"):
+        result["status"] = "LOCATION_LOST"
+        return result
+    index = int(entry.get("index_in_parent") or 0)
+    parent.insert(min(max(index, 0), len(parent)), mark)
+    payloads[part] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+    tx = DocumentTransaction(docx_path, output_docx_path, task_mode="REVISION_RESTORE")
+    audit: Dict[str, Any] = {}
+    try:
+        with tx:
+            with zipfile.ZipFile(tx.stage(), "w") as target:
+                for name, payload in payloads.items():
+                    target.writestr(infos[name], payload)
+            restored_ids = {
+                str(item["revision_id"])
+                for item in list_revisions(tx.temp_path, include_format=True)
+            }
+            if str(revision_id) not in restored_ids:
+                tx.abort("RESTORE_FAILED")
+                result["status"] = "RESTORE_FAILED"
+                result["transaction"] = tx.record()
+                return result
+            audit = audit_review_integrity(tx.temp_path)
+            tx.record_qa(audit)
+            tx.commit()
+    except (TransactionPreflightError, TransactionAborted) as exc:
+        result["status"] = "RESTORE_FAILED"
+        result["error"] = str(exc)
+        result["issues"] = [item["detail"] for item in audit.get("issues", [])]
+        result["transaction"] = tx.record()
+        return result
+
+    result.update(
+        status="RESTORED",
+        changed=1,
+        output_docx=output_docx_path,
+        transaction=tx.record(),
+    )
+    return result
+
+
+
+def _apply_text_revision(node, action: str) -> None:
+    """Accept, reject or revert one `w:ins` / `w:del` mark in place."""
+    revision_type = _local_name(node.tag)
+    parent = node.getparent()
+    if action == "accept":
+        if revision_type == "ins":
+            index = parent.index(node)
+            for child in list(node):
+                parent.insert(index, child)
+                index += 1
+        parent.remove(node)
+    elif action in ("reject", "restore"):
+        if revision_type == "ins":
+            parent.remove(node)
+        else:
+            index = parent.index(node)
+            for child in list(node):
+                for text_node in child.iter(qn("w:delText")):
+                    text_node.tag = qn("w:t")
+                parent.insert(index, child)
+                index += 1
+            parent.remove(node)
+    else:
+        raise ValueError(f"Unsupported revision action: {action}")
+
+
+def _insert_property_in_order(parent, node, base_tags) -> None:
+    """Insert one property node at its schema position (before any tag that sorts later)."""
+    name = _local_name(node.tag)
+    rank = base_tags.index(name) if name in base_tags else len(base_tags)
+    for child in list(parent):
+        child_name = _local_name(child.tag)
+        child_rank = base_tags.index(child_name) if child_name in base_tags else len(base_tags)
+        if child_rank > rank:
+            parent.insert(parent.index(child), node)
+            return
+    parent.append(node)
+
+
+def _apply_format_revision(node, action: str) -> bool:
+    """Accept, reject or revert one `w:*PrChange` mark in place.
+
+    accept keeps the properties currently in effect and drops the mark.
+    reject / restore rebuilds the pre-change properties stored inside the mark, then
+    drops it. `sectPrChange` is reported as unsupported instead of being half-applied.
+    """
+    tag = _local_name(node.tag)
+    base_tags = _format_change_base_tags(tag)
+    if base_tags is None:
+        return False
+    if action not in ("accept", "reject", "restore"):
+        raise ValueError(f"Unsupported revision action: {action}")
+
+    parent = node.getparent()
+    if action == "accept":
+        parent.remove(node)
+        return True
+
+    wrapper_name = _FORMAT_CHANGE_WRAPPERS.get(tag)
+    wrapper = node.find(qn(f"w:{wrapper_name}")) if wrapper_name else None
+    # Flat marks written before v3.5 keep the old properties directly on the mark.
+    old_nodes = list(wrapper) if wrapper is not None else [
+        child for child in node if _local_name(child.tag) in base_tags
+    ]
+
+    for child in list(parent):
+        if _local_name(child.tag) in base_tags:
+            parent.remove(child)
+    for old_node in old_nodes:
+        _insert_property_in_order(parent, copy.deepcopy(old_node), base_tags)
+    parent.remove(node)
+    return True
 
 
 def _rewrite_revision(docx_path: str, output_docx_path: str, revision_id: str, action: str) -> Dict[str, Any]:
     changed = 0
+    matched_kind: Optional[str] = None
+    matched_type: Optional[str] = None
+    format_unsupported = 0
     with zipfile.ZipFile(docx_path) as source:
         payloads = {name: source.read(name) for name in source.namelist()}
         infos = {name: source.getinfo(name) for name in source.namelist()}
@@ -1054,49 +1451,78 @@ def _rewrite_revision(docx_path: str, output_docx_path: str, revision_id: str, a
             root = etree.fromstring(payload)
         except etree.XMLSyntaxError:
             continue
-        for node in list(_iter_revision_nodes(root)):
+        for node, kind in list(iter_revision_marks(root)):
             if node.get(qn("w:id")) != str(revision_id):
                 continue
-            revision_type = node.tag.rsplit("}", 1)[-1]
-            parent = node.getparent()
-            if action == "accept":
-                if revision_type == "ins":
-                    index = parent.index(node)
-                    for child in list(node):
-                        parent.insert(index, child)
-                        index += 1
-                parent.remove(node)
-            elif action == "reject":
-                if revision_type == "ins":
-                    parent.remove(node)
+            matched_kind = kind
+            matched_type = _local_name(node.tag)
+            if kind == "format":
+                if _apply_format_revision(node, action):
+                    changed += 1
                 else:
-                    index = parent.index(node)
-                    for child in list(node):
-                        for text_node in child.iter(qn("w:delText")):
-                            text_node.tag = qn("w:t")
-                        parent.insert(index, child)
-                        index += 1
-                    parent.remove(node)
-            elif action == "restore":
-                if revision_type == "ins":
-                    parent.remove(node)
-                else:
-                    index = parent.index(node)
-                    for child in list(node):
-                        for text_node in child.iter(qn("w:delText")):
-                            text_node.tag = qn("w:t")
-                        parent.insert(index, child)
-                        index += 1
-                    parent.remove(node)
-            else:
-                raise ValueError(f"Unsupported revision action: {action}")
+                    format_unsupported += 1
+                continue
+            _apply_text_revision(node, action)
             changed += 1
         if changed:
             payloads[name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    with zipfile.ZipFile(output_docx_path, "w") as target:
-        for name, payload in payloads.items():
-            target.writestr(infos[name], payload)
-    return {"output_docx": output_docx_path, "revision_id": str(revision_id), "action": action, "changed": changed}
+    if changed == 0:
+        # Nothing was rewritten, so no output file is produced: a copy at the requested
+        # path would be indistinguishable from a successful revision action.
+        return {
+            "output_docx": None,
+            "revision_id": str(revision_id),
+            "action": action,
+            "kind": matched_kind,
+            "type": matched_type,
+            "status": "UNSUPPORTED_REVISION_TYPE" if format_unsupported else "NOT_FOUND",
+            "changed": 0,
+            "transaction": None,
+        }
+
+    tx = DocumentTransaction(docx_path, output_docx_path, task_mode=f"REVISION_{action.upper()}")
+    try:
+        with tx:
+            with zipfile.ZipFile(tx.stage(), "w") as target:
+                for name, payload in payloads.items():
+                    target.writestr(infos[name], payload)
+            tx.record_qa(audit_review_integrity(tx.temp_path))
+            tx.commit()
+    except TransactionPreflightError as exc:
+        return {
+            "output_docx": None,
+            "revision_id": str(revision_id),
+            "action": action,
+            "kind": matched_kind,
+            "type": matched_type,
+            "status": "PREFLIGHT_FAILED",
+            "changed": 0,
+            "error": str(exc),
+            "transaction": tx.record(),
+        }
+    except TransactionAborted as exc:
+        return {
+            "output_docx": None,
+            "revision_id": str(revision_id),
+            "action": action,
+            "kind": matched_kind,
+            "type": matched_type,
+            "status": "QA_FAILED",
+            "changed": 0,
+            "error": str(exc),
+            "transaction": tx.record(),
+        }
+
+    return {
+        "output_docx": output_docx_path,
+        "revision_id": str(revision_id),
+        "action": action,
+        "kind": matched_kind,
+        "type": matched_type,
+        "status": "APPLIED",
+        "changed": changed,
+        "transaction": tx.record(),
+    }
 
 
 def accept_revision(docx_path: str, output_docx_path: str, revision_id: str) -> Dict[str, Any]:
@@ -1107,8 +1533,26 @@ def reject_revision(docx_path: str, output_docx_path: str, revision_id: str) -> 
     return _rewrite_revision(docx_path, output_docx_path, revision_id, "reject")
 
 
-def restore_revision(docx_path: str, output_docx_path: str, revision_id: str) -> Dict[str, Any]:
-    return _rewrite_revision(docx_path, output_docx_path, revision_id, "restore")
+def restore_revision(
+    docx_path: str,
+    output_docx_path: str,
+    revision_id: str,
+    snapshot_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Undo a review decision for one revision.
+
+    While the mark still exists in the document this reverts it in place (the pre-v3.5
+    behaviour). Once accept/reject has removed the mark, the mark is rebuilt from
+    `review_snapshot.json`; without a snapshot the call reports `SNAPSHOT_MISSING` and
+    writes nothing instead of guessing.
+    """
+    present = {str(item["revision_id"]) for item in list_revisions(docx_path, include_format=True)}
+    if str(revision_id) in present:
+        result = _rewrite_revision(docx_path, output_docx_path, revision_id, "restore")
+        if result["changed"]:
+            result["status"] = "REVERTED_PENDING"
+        return result
+    return _restore_revision_from_snapshot(docx_path, output_docx_path, revision_id, snapshot_path)
 
 
 def audit_review_integrity(docx_path: str) -> Dict[str, Any]:
@@ -1154,6 +1598,31 @@ def audit_review_integrity(docx_path: str) -> Dict[str, Any]:
     duplicate_ids = [rid for rid, count in seen_ids.items() if count > 1]
     if duplicate_ids:
         issues.append(f"duplicate revision ids: {duplicate_ids}")
+
+    # Package-wide checks: every *PrChange must carry its schema container, and a
+    # revision id may not be reused across parts (accept/reject matches by id only,
+    # so a reused id silently rewrites more than one revision).
+    revision_parts: Dict[str, set] = {}
+    for part_name, part_root in _iter_revision_parts(docx_path):
+        for el in part_root.iter():
+            tag = _local_name(el.tag)
+            if tag not in ("ins", "del") and tag not in _FORMAT_CHANGE_TAGS:
+                continue
+            raw_id = el.get(qn("w:id"))
+            if not raw_id:
+                continue
+            revision_parts.setdefault(raw_id, set()).add(part_name)
+            if tag in _FORMAT_CHANGE_TAGS:
+                wrapper_name = _FORMAT_CHANGE_WRAPPERS.get(tag)
+                containers = [child for child in el if _local_name(child.tag) == wrapper_name]
+                if len(containers) != 1:
+                    issues.append(
+                        f"{tag}[{raw_id}] in {part_name} must contain exactly one "
+                        f"<w:{wrapper_name}>, found {len(containers)}"
+                    )
+    cross_part_ids = {rid: sorted(parts) for rid, parts in revision_parts.items() if len(parts) > 1}
+    if cross_part_ids:
+        issues.append(f"revision ids reused across parts: {sorted(cross_part_ids)}")
 
     referenced_comment_ids = {
         el.get(qn("w:id"))

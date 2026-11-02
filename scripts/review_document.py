@@ -5,6 +5,7 @@ CLI entrypoint: Template-Driven REVIEW Mode (v3.1).
 
 Builds a review plan against a reference template, applies it with Word tracked changes,
 native comments, and an audit report so a human can accept or reject every text change.
+The reviewed document is staged and only published after review + package QA.
 
 Usage:
     python scripts/review_document.py --reference <template.docx> --target <draft.docx> \
@@ -26,11 +27,16 @@ if ROOT_DIR not in sys.path:
 
 from engine import (
     REVIEW_AUTHOR_DEFAULT,
+    DocumentTransaction,
+    PENDING_HUMAN_REVIEW_CODES,
+    TransactionAborted,
+    TransactionPreflightError,
     audit_docx_package_integrity,
     audit_review_integrity,
     build_review_plan,
     execute_review_plan,
     install_auto_cleanup,
+    write_review_snapshot,
 )
 
 
@@ -43,6 +49,7 @@ def main() -> int:
     parser.add_argument("--author", default=REVIEW_AUTHOR_DEFAULT, help="Revision and comment author")
     parser.add_argument("--revisions", default="", help="Optional JSON list of text revisions")
     parser.add_argument("--report", default="", help="Optional review_report.json output path")
+    parser.add_argument("--snapshot", default="", help="Optional review_snapshot.json output path (default: next to the deliverable)")
     parser.add_argument("--plan-out", default="", help="Optional review_plan.json output path")
     parser.add_argument("--plan-only", action="store_true", help="Only emit the review plan")
     args = parser.parse_args()
@@ -73,9 +80,59 @@ def main() -> int:
             )
         return 0
 
-    execution = execute_review_plan(plan, args.out)
-    review_qa = audit_review_integrity(args.out)
-    package_qa = audit_docx_package_integrity(args.out)
+    tx = DocumentTransaction(args.target, args.out, task_mode="REVIEW")
+    execution = {}
+    review_qa = {}
+    package_qa = {}
+    snapshot_report = None
+    try:
+        with tx:
+            # The snapshot must describe the published file, so it is written after commit.
+            execution = execute_review_plan(plan, tx.stage(), snapshot_path="")
+            review_qa = audit_review_integrity(tx.temp_path)
+            package_qa = audit_docx_package_integrity(tx.temp_path)
+            # Placeholders kept on purpose wait for a human decision in REVIEW mode.
+            tx.record_qa(
+                review_qa,
+                package_qa,
+                pending_codes=PENDING_HUMAN_REVIEW_CODES,
+                qa_report_path=args.report or None,
+            )
+            tx.commit()
+        snapshot_report = write_review_snapshot(tx.output_path, snapshot_path=args.snapshot or None)
+    except TransactionPreflightError as exc:
+        report = {
+            "schema_version": "3.1",
+            "task_mode": "REVIEW",
+            "reference_docx": args.reference,
+            "target_docx": args.target,
+            "output_docx": args.out,
+            "error": str(exc),
+            "passed": False,
+            "transaction": tx.record(),
+        }
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 2
+    except TransactionAborted as exc:
+        report = {
+            "schema_version": "3.1",
+            "task_mode": "REVIEW",
+            "reference_docx": args.reference,
+            "target_docx": args.target,
+            "output_docx": args.out,
+            "author": args.author,
+            "summary": plan["summary"],
+            "execution": execution,
+            "review_qa": review_qa,
+            "package_qa_passed": package_qa.get("passed", False),
+            "error": str(exc),
+            "qa_status": tx.qa_status,
+            "passed": False,
+            "transaction": tx.record(),
+        }
+        _write_report(args.report, report)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1
 
     report = {
         "schema_version": "3.1",
@@ -88,15 +145,22 @@ def main() -> int:
         "execution": execution,
         "review_qa": review_qa,
         "package_qa_passed": package_qa["passed"],
-        "passed": bool(review_qa["passed"] and package_qa["passed"]),
+        "qa_status": tx.qa_status,
+        "snapshot": snapshot_report,
+        "passed": bool(review_qa["passed"] and package_qa["passed"] and tx.committed),
+        "transaction": tx.record(),
     }
-    if args.report:
-        os.makedirs(os.path.dirname(os.path.abspath(args.report)), exist_ok=True)
-        with open(args.report, "w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2)
-
+    _write_report(args.report, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["passed"] else 1
+
+
+def _write_report(path: str, report: dict) -> None:
+    if not path:
+        return
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
