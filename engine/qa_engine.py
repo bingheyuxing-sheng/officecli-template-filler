@@ -763,7 +763,8 @@ def check_font_availability(font_names) -> Dict[str, Any]:
     }
 
 
-def _convert_docx_to_pdf(soffice_bin: str, docx_path: str, out_dir: str) -> Optional[str]:
+def _convert_docx_to_pdf(soffice_bin: str, docx_path: str, out_dir: str) -> Tuple[Optional[str], Optional[str]]:
+    os.makedirs(out_dir, exist_ok=True)
     try:
         proc = subprocess.run(
             [soffice_bin, "--headless", "--convert-to", "pdf", "--outdir", out_dir, docx_path],
@@ -774,10 +775,11 @@ def _convert_docx_to_pdf(soffice_bin: str, docx_path: str, out_dir: str) -> Opti
         )
         candidate = os.path.join(out_dir, os.path.splitext(os.path.basename(docx_path))[0] + ".pdf")
         if proc.returncode == 0 and os.path.isfile(candidate):
-            return candidate
-    except Exception:
-        pass
-    return None
+            return candidate, None
+        detail = (proc.stderr or proc.stdout or "PDF output file was not created").strip()
+        return None, f"exit={proc.returncode}: {detail}"
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def run_visual_layout_qa(
@@ -860,43 +862,63 @@ def run_visual_layout_qa(
     # 3. Optional Headless PDF conversion + page-level diff if LibreOffice is available
     soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
     work_dir = output_dir or tempfile.mkdtemp(prefix="visual_qa_")
+    output_pdf_dir = os.path.join(work_dir, "output_pdf")
+    reference_pdf_dir = os.path.join(work_dir, "reference_pdf")
     pdf_generated = False
     pdf_path = None
     ref_pdf_path = None
+    pdf_conversion_errors: Dict[str, str] = {}
     page_diff_available = False
     page_count_mismatch: Optional[Tuple[int, int]] = None
     page_diffs: List[Tuple[int, float]] = []
+    page_diff_error: Optional[str] = None
+    pages_compared = 0
+    pages_total = 0
+    page_diff_partial = False
     if soffice_bin:
-        pdf_path = _convert_docx_to_pdf(soffice_bin, docx_path, work_dir)
+        pdf_path, conversion_error = _convert_docx_to_pdf(soffice_bin, docx_path, output_pdf_dir)
+        if conversion_error:
+            pdf_conversion_errors["output"] = conversion_error
         pdf_generated = pdf_path is not None
         if reference_docx_path and os.path.isfile(reference_docx_path) and pdf_generated:
-            ref_pdf_path = _convert_docx_to_pdf(soffice_bin, reference_docx_path, work_dir)
+            ref_pdf_path, conversion_error = _convert_docx_to_pdf(soffice_bin, reference_docx_path, reference_pdf_dir)
+            if conversion_error:
+                pdf_conversion_errors["reference"] = conversion_error
             if ref_pdf_path is not None:
                 try:
                     import fitz  # PyMuPDF, optional rendering dependency
-                except ImportError:
+                except ImportError as exc:
                     fitz = None
+                    page_diff_error = f"PyMuPDF unavailable: {exc}"
                 if fitz is not None:
-                    page_diff_available = True
+                    out_pdf = None
+                    ref_pdf = None
                     try:
                         out_pdf = fitz.open(pdf_path)
                         ref_pdf = fitz.open(ref_pdf_path)
                         if out_pdf.page_count != ref_pdf.page_count:
                             page_count_mismatch = (ref_pdf.page_count, out_pdf.page_count)
-                        for page_index in range(min(out_pdf.page_count, ref_pdf.page_count, 10)):
+                        pages_total = min(out_pdf.page_count, ref_pdf.page_count)
+                        pages_compared = min(pages_total, 10)
+                        page_diff_partial = pages_total > pages_compared
+                        for page_index in range(pages_compared):
                             out_pix = out_pdf[page_index].get_pixmap(matrix=fitz.Matrix(1, 1), colorspace=fitz.csGRAY)
                             ref_pix = ref_pdf[page_index].get_pixmap(matrix=fitz.Matrix(1, 1), colorspace=fitz.csGRAY)
                             if (out_pix.width, out_pix.height) != (ref_pix.width, ref_pix.height):
                                 page_diffs.append((page_index, 1.0))
                                 continue
-                            diff_count = sum(
-                                1 for a, b in zip(out_pix.samples, ref_pix.samples) if abs(a - b) > 24
-                            )
+                            diff_count = sum(1 for a, b in zip(out_pix.samples, ref_pix.samples) if abs(a - b) > 24)
                             ratio = diff_count / max(len(out_pix.samples), 1)
                             if ratio > 0.02:
                                 page_diffs.append((page_index, round(ratio, 4)))
-                    except Exception:
-                        page_diff_available = False
+                        page_diff_available = True
+                    except Exception as exc:
+                        page_diff_error = f"{type(exc).__name__}: {exc}"
+                    finally:
+                        if out_pdf is not None:
+                            out_pdf.close()
+                        if ref_pdf is not None:
+                            ref_pdf.close()
 
     # 4. Font availability: missing fonts make renderers substitute silently
     font_report = check_font_availability(_collect_declared_font_names(doc))
@@ -915,39 +937,34 @@ def run_visual_layout_qa(
                 "coverage_gaps": ["LAYOUT_FINGERPRINT_UNAVAILABLE"],
             }
 
-    structured_issues = [
-        _issue("VISUAL_LAYOUT_WARNING", "layout", item, severity="medium")
-        for item in layout_warnings
-    ]
+    structured_issues = [_issue("VISUAL_LAYOUT_WARNING", "layout", item, severity="medium") for item in layout_warnings]
     if layout_report:
         structured_issues.extend(layout_report.get("issues") or [])
     if page_count_mismatch is not None:
-        structured_issues.append(_issue(
-            "RENDER_PAGE_COUNT_MISMATCH",
-            "pdf",
-            f"reference pages={page_count_mismatch[0]}, output pages={page_count_mismatch[1]}",
-        ))
+        structured_issues.append(_issue("RENDER_PAGE_COUNT_MISMATCH", "pdf", f"reference pages={page_count_mismatch[0]}, output pages={page_count_mismatch[1]}"))
+    for page_index, ratio in page_diffs:
+        structured_issues.append(_issue("RENDER_PAGE_PIXEL_DIFF", f"pdf.page[{page_index}]", f"pixel difference ratio={ratio:.4f}", severity="medium"))
+    if page_diff_partial:
+        structured_issues.append(_issue("PDF_PAGE_DIFF_PARTIAL", "pdf", f"compared {pages_compared} of {pages_total} overlapping pages", severity="medium"))
     if font_report["checked"]:
         for font in font_report["missing"]:
-            structured_issues.append(_issue(
-                "FONT_NOT_INSTALLED",
-                f"font:{font}",
-                "font is declared in the document but not installed; renderers will substitute it",
-                severity="medium",
-            ))
+            structured_issues.append(_issue("FONT_NOT_INSTALLED", f"font:{font}", "font is declared in the document but not installed; renderers will substitute it", severity="medium"))
 
     coverage_gaps: List[str] = list((layout_report or {}).get("coverage_gaps") or [])
-    unverified_count = len(coverage_gaps)
+    if reference_docx_path is None:
+        coverage_gaps.append("REFERENCE_LAYOUT_NOT_PROVIDED")
+    elif not os.path.isfile(reference_docx_path):
+        coverage_gaps.append("REFERENCE_DOCX_NOT_FOUND")
     if not pdf_generated:
         coverage_gaps.append("RENDER_PDF_NOT_PRODUCED")
-        unverified_count += 1
     if reference_docx_path and os.path.isfile(reference_docx_path):
         if pdf_generated and ref_pdf_path is None:
             coverage_gaps.append("REFERENCE_PDF_NOT_PRODUCED")
-            unverified_count += 1
+        elif pdf_generated and ref_pdf_path and not page_diff_available:
+            coverage_gaps.append("PDF_PAGE_DIFF_UNAVAILABLE")
     if not font_report["checked"]:
         coverage_gaps.append("FONT_AVAILABILITY_UNVERIFIED")
-        unverified_count += 1
+    coverage_gaps = list(dict.fromkeys(coverage_gaps))
 
     return {
         "passed": not structured_issues,
@@ -958,10 +975,14 @@ def run_visual_layout_qa(
         "pdf_rendered": pdf_generated,
         "pdf_path": pdf_path,
         "reference_pdf_path": ref_pdf_path,
+        "pdf_conversion_errors": pdf_conversion_errors,
+        "page_diff_available": page_diff_available,
+        "page_diff_error": page_diff_error,
+        "page_diff_coverage": {"pages_compared": pages_compared, "pages_total": pages_total, "partial": page_diff_partial},
         "page_count_mismatch": page_count_mismatch,
         "page_diffs": page_diffs,
         "font_availability": font_report,
         "layout_fingerprint": layout_report,
         "coverage_gaps": coverage_gaps,
-        "unverified_count": unverified_count,
+        "unverified_count": len(coverage_gaps),
     }

@@ -9,10 +9,13 @@ table column widths and image aspect ratios.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
@@ -105,6 +108,126 @@ class TestLayoutQaSuite(unittest.TestCase):
         self.assertNotIn("机密文本内容", serialized)
         self.assertIn("paragraphs", fingerprint)
         self.assertIn("sections", fingerprint)
+    def test_layout_qa_counts_and_full_story_locations(self) -> None:
+        reference = os.path.join(self.work_dir, "story_ref.docx")
+        output = os.path.join(self.work_dir, "story_out.docx")
+        ref_doc = docx.Document()
+        ref_doc.add_paragraph("正文")
+        outer = ref_doc.add_table(rows=1, cols=1)
+        outer.cell(0, 0).add_table(rows=1, cols=1).cell(0, 0).text = "嵌套"
+        ref_doc.sections[0].header.add_paragraph("页眉")
+        ref_doc.save(reference)
+        out_doc = docx.Document(reference)
+        out_doc.add_paragraph("新增")
+        out_doc.add_table(rows=1, cols=2)
+        out_doc.save(output)
+
+        fingerprint = fingerprint_docx(reference)
+        locations = {item["location"] for item in fingerprint["paragraphs"]}
+        table_locations = {item["location"] for item in fingerprint["tables"]}
+        self.assertTrue(any(location.startswith("sec[0].header") for location in locations))
+        self.assertTrue(any(".tbl[0].r[0].c[0].tbl[0]" in location for location in table_locations))
+        report = compare_layout_fingerprints(output, reference)
+        codes = {item["code"] for item in report["issues"]}
+        self.assertIn("LAYOUT_PARAGRAPH_COUNT", codes)
+        self.assertIn("LAYOUT_TABLE_COUNT", codes)
+
+    def _run_mock_pdf_qa(self, page_count: int, output_samples: bytes, reference_samples: bytes):
+        output = self._docx("same.docx", "正文")
+        reference_dir = os.path.join(self.work_dir, "reference")
+        os.makedirs(reference_dir)
+        reference = os.path.join(reference_dir, "same.docx")
+        docx.Document(output).save(reference)
+
+        class Pixmap:
+            width = 2
+            height = 2
+
+            def __init__(self, samples):
+                self.samples = samples
+
+        class Page:
+            def __init__(self, samples):
+                self.samples = samples
+
+            def get_pixmap(self, **_kwargs):
+                return Pixmap(self.samples)
+
+        class Pdf:
+            def __init__(self, samples):
+                self.page_count = page_count
+                self.samples = samples
+                self.closed = False
+
+            def __getitem__(self, _index):
+                return Page(self.samples)
+
+            def close(self):
+                self.closed = True
+
+        opened = []
+
+        def open_pdf(path):
+            pdf = Pdf(reference_samples if "reference_pdf" in path else output_samples)
+            opened.append(pdf)
+            return pdf
+
+        fake_fitz = types.SimpleNamespace(open=open_pdf, Matrix=lambda *_args: object(), csGRAY=object())
+        conversion_dirs = []
+
+        def convert(_binary, source, destination):
+            conversion_dirs.append(destination)
+            return os.path.join(destination, os.path.splitext(os.path.basename(source))[0] + ".pdf"), None
+
+        with mock.patch("engine.qa_engine.shutil.which", return_value="soffice"), \
+                mock.patch("engine.qa_engine._convert_docx_to_pdf", side_effect=convert), \
+                mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}), \
+                mock.patch.dict(sys.modules, {"fitz": fake_fitz}):
+            report = run_visual_layout_qa(output, reference_docx_path=reference, output_dir=self.work_dir)
+        return report, conversion_dirs, opened
+
+    def test_visual_qa_pixel_issue_and_same_basename_isolation(self) -> None:
+        report, conversion_dirs, opened = self._run_mock_pdf_qa(1, bytes([255] * 4), bytes([0] * 4))
+        issue = next(item for item in report["issues"] if item["code"] == "RENDER_PAGE_PIXEL_DIFF")
+        self.assertEqual(issue["severity"], "medium")
+        self.assertTrue(report["page_diff_available"])
+        self.assertEqual(len(set(conversion_dirs)), 2)
+        self.assertTrue(all(pdf.closed for pdf in opened))
+
+    def test_visual_qa_partial_page_diff(self) -> None:
+        report, _dirs, _opened = self._run_mock_pdf_qa(11, bytes([0] * 4), bytes([0] * 4))
+        self.assertIn("PDF_PAGE_DIFF_PARTIAL", {item["code"] for item in report["issues"]})
+        self.assertEqual(report["page_diff_coverage"]["pages_compared"], 10)
+        self.assertEqual(report["page_diff_coverage"]["pages_total"], 11)
+
+    def test_visual_qa_reports_fitz_unavailable(self) -> None:
+        output = self._docx("fitz_out.docx", "正文")
+        reference = self._docx("fitz_ref.docx", "正文")
+        with mock.patch("engine.qa_engine.shutil.which", return_value="soffice"), \
+                mock.patch("engine.qa_engine._convert_docx_to_pdf", return_value=("fake.pdf", None)), \
+                mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}), \
+                mock.patch.dict(sys.modules, {"fitz": None}):
+            report = run_visual_layout_qa(output, reference_docx_path=reference)
+        self.assertFalse(report["page_diff_available"])
+        self.assertIn("PDF_PAGE_DIFF_UNAVAILABLE", report["coverage_gaps"])
+        self.assertIn("PyMuPDF unavailable", report["page_diff_error"])
+
+    def test_visual_qa_reference_coverage_and_schema_enum(self) -> None:
+        output = self._docx("no_ref.docx", "正文")
+        with mock.patch("engine.qa_engine.shutil.which", return_value=None), \
+                mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}):
+            no_reference = run_visual_layout_qa(output)
+            missing_reference = run_visual_layout_qa(output, reference_docx_path=os.path.join(self.work_dir, "missing.docx"))
+        self.assertIn("REFERENCE_LAYOUT_NOT_PROVIDED", no_reference["coverage_gaps"])
+        self.assertIn("REFERENCE_DOCX_NOT_FOUND", missing_reference["coverage_gaps"])
+        self.assertEqual(len(no_reference["coverage_gaps"]), len(set(no_reference["coverage_gaps"])))
+        schema_path = os.path.join(ROOT_DIR, "schemas", "qa_report.schema.json")
+        with open(schema_path, "r", encoding="utf-8") as handle:
+            schema = json.load(handle)
+        self.assertIn("UNVERIFIED", schema["properties"]["status"]["enum"])
+        visual_properties = schema["properties"]["visual_qa"]["properties"]
+        self.assertIn("page_diff_available", visual_properties)
+        self.assertIn("page_diff_coverage", visual_properties)
 
 
 if __name__ == "__main__":
