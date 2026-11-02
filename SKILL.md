@@ -3,9 +3,9 @@ name: officecli-template-filler
 description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v3.5.2 — 8-Mode Task Router, Transactional Delivery, Revision Lifecycle, Capability Registry, Excel Reliability, Layout Fingerprint QA, Process Ownership, Dual-Document REPAIR)
+# OfficeCLI + Python Office Document Intelligence Skill (v3.5.3 — Execution Profiles, Semantic Preflight, Staged Checkpoints, Rendering & TOC Degradation)
 
-Follow five architectural pillars across **every** `.docx` and `.xlsx` document task:
+Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
 1. **Task Router First (8 Specialized Modes & Context-Aware Web Search Policy)**:
    Always classify the user's input files and prompt into one of eight execution modes (`GENERATE`, `POLISH`, `REPAIR`, `REVIEW`, `MERGE`, `REFORMAT`, `EXCEL_GENERATE`, `PROOFREAD`) via `engine.docx_parser.route_document_task()` before taking action. Web search is **enabled by default ONLY for `GENERATE` / `EXCEL_GENERATE`** when domain standards or public institution facts are needed, and **disabled by default for `REPAIR`, `REVIEW`, `POLISH`, `MERGE`, `REFORMAT`, and `PROOFREAD`** (unless the user explicitly requests external fact verification).
@@ -15,13 +15,15 @@ Follow five architectural pillars across **every** `.docx` and `.xlsx` document 
    - **`LIGHT_CONFIRM`**: Minor optional slots or low-impact formatting choices exist; present a compact 1–2 item summary with smart defaults.
    - **`FULL_CONFIRM`**: Unsearchable internal facts exist in `GENERATE`/`EXCEL_GENERATE` (e.g., project leader name, unannounced partner companies, internal approval IDs); present a consolidated Pre-Write Confirmation Card once with one-click normative defaults.
    - **`HOLD_AND_ASK`**: High-risk `L4` structural unsupported elements (e.g., SmartArt/OLE/Chart binary data mutation, password-protected VBA macros) or conflicting dual-document structures are detected; pause and ask the user how to handle those specific regions before writing.
-3. **Template Compatibility Level Classification (`L1`–`L4`)**:
+3. **Execution Profile Gate (`FAST`, `STANDARD`, `FULL`)**:
+   For `GENERATE` and `EXCEL_GENERATE`, choose the workload before writing. Ask once with the compact choices **快速填专业内容 / 标准完整成稿 / 含图表精修** unless the user already selected a profile. `FAST` replaces confirmed placeholders only and does not rebuild tables or images; `STANDARD` fills all supported paragraphs and native tables and runs semantic plus mathematical QA; `FULL` additionally redraws placeholder/sample images, rebuilds schedule visuals when required, performs staged rendering, and runs multi-pass visual QA. The profile changes scope, never safety: Package QA, SSOT validation, transaction commit, and honest `coverage_gaps` reporting remain mandatory in all profiles.
+4. **Template Compatibility Level Classification (`L1`–`L4`)**:
    Every template is automatically profiled into `L1` (Standard), `L2` (Moderately Complex), `L3` (Complex Styled), or `L4` (Manual Confirmation Required) via `engine.docx_parser.assess_template_compatibility_level()` and output as a formal `DocumentSpec` (`schemas/document_spec.schema.json`).
-4. **Modular, Unit-Tested Python Engine (`engine/` + `scripts/`) — Never Reinvent Ad-Hoc Helpers**:
+5. **Modular, Unit-Tested Python Engine (`engine/` + `scripts/`) — Never Reinvent Ad-Hoc Helpers**:
    All core OOXML, Decimal SSOT, Table, Image, Excel, Repair, Process Guard, and QA algorithms reside in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/`. Never write ad-hoc destructive `set_par_text` or `taskkill /F /IM` commands.
    **Validation never uses `assert`**: `python -O` strips assertions, so every quality gate raises a real exception instead — `SSOTValidationError` from `engine.ssot_engine` and `QAValidationError` from `engine.qa_engine`. Pass `raise_on_failure=False` to `audit_format_and_text_qa()` when a structured `{"passed": false, "issues": [...]}` report is preferred over an exception.
    **Universal process cleanup (applies to ALL eight modes, not only red-text QA)**: the cleanup is automatic, not a manual step. Every `scripts/*.py` entrypoint calls `install_auto_cleanup()` on startup, which snapshots live `editor_sdk.exe` identities `(pid, image, creation time)` and registers an exit hook that terminates only the instances the task can prove it spawned. A candidate whose creation time cannot be read is reported in `unreleased_pids` instead of being killed on a guess, and each task writes `officecli_editor_sdk_cleanup_<task_id>.json` (plus the shared latest log) so concurrent tasks never overwrite each other's evidence. WorkBuddy's sandbox keeps `editor_sdk.exe` alive after an agent turn, which is exactly what leaves the DOCX locked in WPS, so never skip this and never ask the user to run a cleanup command.
-5. **Zero Unintended Formatting Delta + Package & Visual QA (with honest coverage reporting)**:
+6. **Zero Unintended Formatting Delta + Package & Visual QA (with honest coverage reporting)**:
    Deliver documents that preserve every unmapped style, run property, `<w:proofErr>` node, complex cell structure, shared image `rId`, and Excel formula, verified by `audit_docx_package_integrity()`, `audit_format_and_text_qa()`, `run_visual_layout_qa()`, and `audit_excel_formula_and_style_qa()`.
    This is a guarantee about **unintended** changes only. Never claim 100% byte-identical rendering versus Word/WPS: list every unsupported object in `coverage_gaps` and never treat "not detected" as "passed".
    Font size is verified per run against the template: always call `audit_format_and_text_qa(..., reference_docx_path=template_path)` (or `scripts/run_qa.py output.docx --reference template.docx`). The effective size cascade is run `w:sz` -> character style -> paragraph style -> `w:docDefaults`; without the template the baseline falls back to the output's own dominant size and `size_baseline_source` says so, which cannot prove anything for a document that drifted uniformly.
@@ -247,7 +249,7 @@ Rules:
 1. `--plan-only` is allowed for internal inspection only. It must never be the final step of a REVIEW task.
 2. If the analysis produced a findings list (for example a Markdown checklist), convert each actionable item into a `revisions.json` entry and run `review_document.py`; do not ship the checklist instead of the document.
 3. Items you cannot express as a text replacement become native comments with `ADD_REVIEW_COMMENT`, so the human sees them inline in Word.
-4. Format-only repairs (font, size, table structure) are applied directly because tracked changes cannot represent them; say so in the handoff, then point the user at the `.docx`.
+4. Format-only repairs (font, size, paragraph properties, and supported table properties) must be paired with native `w:*PrChange` formatting revisions. Unsupported or structurally unsafe changes remain comments or `manual_required`; never apply them silently.
 5. Final response format: link the `.docx`, list counts of revisions and comments, and name the file that opens in revision mode. Do not paste the Markdown report in place of the file.
 
 ---
@@ -278,9 +280,31 @@ Also read `routing.capability` from Step 1 before executing anything:
 | `enabled: false`, `reason: CAPABILITY_NOT_AVAILABLE` | The mode is routed but not implemented (`REFORMAT` / `POLISH` / `MERGE`). Stop and tell the user the capability is missing — do not substitute another script. |
 | `task_mode: UNSUPPORTED_INPUT` | At least one input is `.pdf` / `.doc` / `.wps` / `.et` or another unsupported container. Report `unsupported_files` plus `supported_formats` and stop; `inspect_document.py` exits with code 2 for this verdict. |
 
-### Step 3: Conditional Research & 4-Tier Confirmation Gate
+#### Step 2A: Template Semantic Preflight (before research or writing)
+
+For curriculum/education templates, supplement the structural `DocumentSpec` with a semantic preflight and a repair plan. This is orchestration logic; do not rewrite the OOXML engine to implement it.
+
+Check all of the following across body text, native tables, headers/footers, textboxes, field results, and image labels detectable by OCR or surrounding captions:
+
+- education level and vocabulary are consistent (`本科` / `专科` / `高职` / `中职`);
+- TOC headings match actual body headings and heading order;
+- course names/codes are consistent across graduation requirements, curriculum matrix, credit allocation, and teaching schedule;
+- credit/hour totals, required/elective splits, theory/practice splits, and semester subtotals close mathematically;
+- semester count and schedule columns agree everywhere;
+- images containing `***`, `XXXX`, generic labels, or another major's examples are marked `NEEDS_REDRAW`, never preserved as normal artwork;
+- stale field results or template page numbers are recorded as `TOC_STALE`, not accepted as current.
+
+Emit a structured `semantic_preflight` object with `issues`, `repair_plan`, `image_actions`, `toc_status`, and `blocking_conflicts`. Any conflict that changes business meaning enters `HOLD_AND_ASK`; deterministic template residue enters the selected execution profile. A preflight with unexamined stories or images is `UNVERIFIED`, not passed.
+
+#### Step 2B: Curriculum SSOT Specialization
+
+When the template is a curriculum plan, build one `curriculum_ssot` payload on top of `build_ssot_master_data()` and derive every dependent artifact from it: graduation requirements, course-to-outcome matrix, credit/hour allocation, semester subtotals, and the teaching schedule. Use `Decimal` throughout. Validate total credits, total hours, required/elective, theory/practice, category totals, semester totals, and all cross-table references before document mutation. Never independently hardcode the same course or total in multiple outputs.
+
+### Step 3: Conditional Research, Execution Profile & Confirmation Gate
 - Follow the routed `web_search_policy` (`ENABLED` for `GENERATE`, `DISABLED_BY_DEFAULT` for `REPAIR`/`POLISH`/`MERGE`/`REFORMAT`).
-- Apply the routed Confirmation Tier (`SKIP`, `LIGHT_CONFIRM`, `FULL_CONFIRM`, or `HOLD_AND_ASK`).
+- For `GENERATE` / `EXCEL_GENERATE`, select exactly one execution profile before writing: `FAST` (**快速填专业内容**), `STANDARD` (**标准完整成稿**, default), or `FULL` (**含图表精修**). If the user already chose one, do not ask again.
+- Apply the routed Confirmation Tier (`SKIP`, `LIGHT_CONFIRM`, `FULL_CONFIRM`, or `HOLD_AND_ASK`) in the same consolidated prompt. Profile choice and missing-fact confirmation must not become two separate interruptions.
+- `FAST` may leave unsupported tables/images untouched only when each omission is listed in `coverage_gaps`; it may never claim a complete final draft. `STANDARD` fills all supported native tables. `FULL` is required when placeholder/sample images or a schedule visual must be redrawn.
 
 ### Step 4: Execute Mode-Specific Engine Pipeline
 
@@ -335,6 +359,27 @@ Every entrypoint ends with a `transaction` object:
       --revisions "$TEMP/revisions.json" --report "$TEMP/proofread_report.json"
   ```
   Same deliverable contract as REVIEW: a `.docx` in revision mode plus its snapshot. Only explicit text fixes are written as `w:ins`/`w:del`; judgement calls and data questions stay as comments. Never invent numeric corrections — leave them for the human unless the same value is consistent across all occurrences.
+
+#### Step 4A: Staged Checkpoints and Minimal Retry Scope
+
+For `STANDARD` and `FULL`, persist and validate four transaction-scoped checkpoints in order:
+
+1. `content` — body text, headings, placeholders, and semantic preflight repairs;
+2. `tables` — all SSOT-derived native tables and cross-table totals;
+3. `images` — replacements/redraws and image integrity (`FULL`; otherwise explicitly skipped with coverage);
+4. `toc` — field state and page-number handling.
+
+Each checkpoint records `input_sha256`, `output_sha256`, `qa_status`, `issues`, and `coverage_gaps`. A failed stage restarts from the most recent valid checkpoint, not from the original template, and never redoes a successful earlier stage. Checkpoints are internal transaction artifacts; only the final committed Office file is delivered.
+
+#### Step 4B: Rendering and TOC Degradation Chain
+
+Use one bounded rendering attempt per stage; do not manually retry the same file in place.
+
+1. Render an independent working copy under `TaskResourceGuard` with a single configured timeout.
+2. On timeout or renderer failure, close only task-owned handles/processes, record the exact failure, and fall back to OOXML/package/layout-fingerprint QA.
+3. If Word or LibreOffice field refresh is available, refresh TOC fields on the working copy, then verify heading entries and rendered page count before commit.
+4. If no compatible field-refresh engine exists, never preserve known-stale template page numbers as if current. Keep/update the TOC field with `w:updateFields=true` and set `toc_status: PENDING_FIELD_UPDATE`; if an internal pagination estimate is supplied, label it `ESTIMATED` and state that Word/WPS pagination may differ.
+5. Rendering or TOC checks that did not run must create `coverage_gaps` and produce `UNVERIFIED`; repeated ad-hoc retries are forbidden.
 
 ### Step 5: Mandatory Package, Format, Formula & Visual QA
 ```powershell
@@ -395,5 +440,6 @@ with TaskResourceGuard(task_id=task_id) as guard:
         guard.release_all()
 
 cleanup = read_auto_cleanup_log()  # report this in the final answer
-assert cleanup.get("verified", False), cleanup
+if not cleanup.get("verified", False):
+    raise RuntimeError(f"OfficeCLI cleanup could not be verified: {cleanup}")
 ```

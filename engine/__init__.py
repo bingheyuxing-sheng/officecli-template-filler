@@ -131,7 +131,7 @@ from .transaction import (
 )
 from .layout_qa import compare_layout_fingerprints, fingerprint_docx
 
-__version__ = "3.5.2"
+__version__ = "3.5.3"
 
 __all__ = [
     "__version__",
