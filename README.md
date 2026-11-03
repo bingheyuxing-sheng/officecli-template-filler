@@ -171,8 +171,8 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
-| v3.5.7 | 源码当前 `main` | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
-| v3.5.6 | 源码历史 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
+| v3.5.7 | [Release v3.5.7](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.7) | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
+| v3.5.6 | 已并入 v3.5.7 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
 | v3.5.5 | [Release v3.5.5](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.5) | REVIEW 修订 ID 唯一性修复、修订/批注感知的版面 QA、全链路功能验证 |
 | v3.5.4 | [Release v3.5.4](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.4) | 进程所有权收紧（无 spawn 证明不终止）、GENERATE/REPAIR 事务 QA 补齐、QA 状态诚实性修正 |
 | v3.5.3 | [Release v3.5.3](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.3) | FAST/STANDARD/FULL、培养方案语义预检、分阶段检查点、渲染与目录降级（编排层） |
