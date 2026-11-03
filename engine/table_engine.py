@@ -77,6 +77,16 @@ def _cell_valign(cell):
     return v_align.get(qn("w:val")) if v_align is not None else None
 
 
+def _normalize_size_value(value) -> Optional[str]:
+    """Normalize a half-point size for set comparison; `None` when unavailable."""
+    if value is None:
+        return None
+    try:
+        return str(int(str(value).strip()))
+    except (TypeError, ValueError):
+        return str(value).strip() or None
+
+
 def _row_height(row):
     trPr = row._tr.find(qn("w:trPr"))
     if trPr is None:
@@ -247,18 +257,28 @@ def table_style_signature(tbl) -> Dict[str, Any]:
                         if node is not None:
                             cell_signature["tcMar"][side] = (node.get(qn("w:w")), node.get(qn("w:type")))
             signature["cells"].append(cell_signature)
-            paragraph_styles = []
+            cell_style_set = set()
             for paragraph in cell.paragraphs:
                 runs = [run for run in paragraph.runs if (run.text or "").strip()]
-                if not runs:
-                    font = resolve_style_sz_and_font(paragraph, fallback_font=None, fallback_sz=None)
-                    paragraph_styles.append((font[0], font[1], None, None))
-                    continue
                 for run in runs:
                     ascii_font, east_asia = resolve_run_effective_font(run, paragraph)
                     size = resolve_run_effective_sz(run, paragraph)
-                    paragraph_styles.append((ascii_font, east_asia, size, bool(run.bold)))
-            signature["cell_text_styles"].append((row_index, col_index, tuple(paragraph_styles)))
+                    # Chinese cells are governed by eastAsia; falling back to ascii avoids
+                    # flagging a legitimate Latin/number font as a Chinese-font drift.
+                    font_key = east_asia or ascii_font
+                    cell_style_set.add(
+                        (
+                            (font_key or "").strip(),
+                            _normalize_size_value(size),
+                            bool(run.bold),
+                        )
+                    )
+            # A filled output cell compared against an empty template cell is content,
+            # not a style anomaly. Store `()` for empty cells and compare only when both
+            # sides carry text. A set also makes run segmentation irrelevant.
+            signature["cell_text_styles"].append(
+                (row_index, col_index, tuple(sorted(cell_style_set, key=str)))
+            )
 
     return signature
 
@@ -273,6 +293,7 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
 
     out_rows = out_sig.get("row_count")
     ref_rows = ref_sig.get("row_count")
+    rows_comparable = out_rows is not None and ref_rows is not None and out_rows == ref_rows
     if out_rows is not None and ref_rows is not None and out_rows != ref_rows:
         # Reported only: adding/removing rows changes business content and is never
         # applied by `restore_table_style_from_reference`.
@@ -346,6 +367,8 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
     for row_index, (out_entry, ref_entry) in enumerate(
         zip(out_sig.get("row_heights") or [], ref_sig.get("row_heights") or [])
     ):
+        if not rows_comparable:
+            break
         out_height = _height_value(out_entry)
         ref_height = _height_value(ref_entry)
         if not ref_height:
@@ -374,6 +397,8 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
     ref_cells = {(item["row"], item["cell"]): item for item in ref_sig.get("cells", [])}
     out_cells = {(item["row"], item["cell"]): item for item in out_sig.get("cells", [])}
     for position, ref_cell in ref_cells.items():
+        if not rows_comparable:
+            break
         out_cell = out_cells.get(position)
         if out_cell is None:
             continue
@@ -383,8 +408,14 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
 
     output_cells = {(row, col): styles for row, col, styles in out_sig.get("cell_text_styles", [])}
     for row, col, ref_styles in ref_sig.get("cell_text_styles", []):
+        if not rows_comparable:
+            break
         out_styles = output_cells.get((row, col))
         if out_styles is None:
+            continue
+        # Empty template cell -> filled output cell is a content change, not a style
+        # anomaly. Only compare cells that both sides populate.
+        if not out_styles or not ref_styles:
             continue
         if out_styles != ref_styles:
             issues.append(("table_cell_font_or_size", table_index, row, col, out_styles, ref_styles))

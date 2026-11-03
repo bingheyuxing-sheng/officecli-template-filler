@@ -6,6 +6,33 @@
 
 ---
 
+## v3.5.7
+
+**主题：REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 渲染路径（P1）**
+
+- REFORMAT 执行器：新增 `engine/reformat_engine.py` 与 `scripts/reformat_document.py`。`build_reformat_plan()` 按语义锚点对齐段落/表格，产出结构化差异清单（`current` / `reference_value` / `action` / `reason` / `confidence`）；`execute_reformat_plan()` 只应用 `AUTO_FIX`，每处变更写入 Word 原生格式修订（`w:rPrChange` / `w:pPrChange` / `w:tblPrChange` / `w:trPrChange` / `w:tcPrChange`），人工可逐条接受/拒绝。
+- 差异分类：`AUTO_FIX`（匹配且安全）、`REVIEW`（混合 Run / 加粗变化 / 行数漂移）、`KEEP`（新增段落/表格，不与模板硬比）、`UNSUPPORTED`（列数不一致）。plan-only 模式不写任何输出；apply 模式走事务，包完整性 QA 通过且仍有待审项时状态为 `PENDING_HUMAN_REVIEW`。
+- 能力注册表：`REFORMAT` 启用（handler `scripts/reformat_document.py`），不再报 `CAPABILITY_NOT_AVAILABLE`；`POLISH` / `MERGE` 仍为声明但禁用。
+- PDF 渲染路径：新增 `engine/pdf_backend.py`，自动探测 WPS `kwpsconvert.exe word2pdf`（Windows 优先）与 LibreOffice `soffice`，`OFFICECLI_PDF_BACKEND` 可强制指定。转换在临时副本上进行，避免源文件被预览进程锁定导致失败。
+- 页数测量：优先 PyMuPDF，缺失时用 WPS `pdfinfo` 读取真实页数；`run_visual_layout_qa()` 报告 `pdf_backend` / `page_count_source` / `page_count_available`，页数检查无法执行时记 `PDF_PAGE_COUNT_UNVERIFIED` 而非沉默。实测：模板 43 页、成品 81 页，`RENDER_PAGE_COUNT_MISMATCH` 可用（STYLE_GUIDE 下为 medium）。
+- WPS 失败显式化：未登录/VIP 缺失返回 `WPS_VIP_REQUIRED`（exit 100/101），写入 `pdf_conversion_errors`，不静默降级。
+- 实测（培养方案样例）：差异清单 37 条（29 字体、3 行数、2 表主导字号、1 加粗、1 单元格、1 新表），自动可修 2 条，其余进入 REVIEW/KEEP，均为可读的 current→reference 条目。
+- 测试：新增 `tests/test_reformat_and_pdf.py` 7 项（WPS 转换/pdfinfo/VIP 错误/无后端、计划内容、修订写入、plan-only 不落盘），全量 126 项通过。
+
+## v3.5.6
+
+**主题：路由角色化、语义对齐 QA、严重级门禁、字体名归一与文件锁报告（P0 可信度修复）**
+
+- 路由：`.docx` + `.xlsx` 不再无条件判 `MERGE`。生成意图下 `.docx` 为模板、`.xlsx` 记入 `data_sources` 并路由 `GENERATE`；修改意图（按模板修改格式/对齐/改格式）路由 `REFORMAT`；显式合并意图或无意图多源输入才保持 `MERGE`；双 `.docx` + “按模板修复格式”仍为 `REPAIR`。
+- 语义对齐：新增 `engine/alignment.py`，段落按文本锚点 + 标题级别匹配，表格按表题 + 首行 + 列数 + 网格几何匹配。未匹配项标为 `NEW_CONTENT` / `NEW_TABLE`，不再拿模板的相邻段落/表格硬比。
+- QA 配置：新增 `comparison_profile`（`REPLICA` / `STYLE_GUIDE`）。GENERATE 默认 `STYLE_GUIDE`，REPAIR/REVIEW 用 `REPLICA`；`run_qa.py --profile auto|replica|style-guide --task-mode ...` 会回显实际 profile。
+- 误报修复：格式 QA 在 `STYLE_GUIDE` 下跳过全局字号白名单，改为与匹配段落/表格比较；表格单元格样式改为“非空文本样式集合”，空单元格→填内容不再报 `table_cell_font_or_size`；行数不同时跳过行级单元格/行高比较。
+- 严重级门禁：只有 `high` 是硬失败；`medium`/`low` 进入 `warnings`，`PASSED` 可带警告；`coverage_gaps` 仍为 `UNVERIFIED`。本次样例的 2209 条 hard failure 降为 0 条硬失败（格式 6 条警告、版面 45 条警告）。
+- 字体可用性：中文字体名与 Windows 英文注册名做归一映射（黑体↔SimHei、仿宋↔FangSong、宋体↔SimSun、Courier↔Courier New），修掉“已安装却报缺失”的误报。
+- 文件锁：`DocumentTransaction` 捕获 `PermissionError` 返回 `OUTPUT_FILE_LOCKED` + `lock_info.editor_sdk_pids` + 处置提示；`cleanup_editor_sdk.py --kill-pid <pid> --confirm` 校验镜像名与启动时间后只终止该 PID，不做全局 `/IM`。
+- 文档：修正 `render_document.py` 的 PDF 能力说明；明确 `RENDER_PDF_NOT_PRODUCED` 需要 LibreOffice；注明 OfficeCLI HTML 预览不处理分节、页数不可信。
+- 测试：新增 8 项 P0 回归测试（路由、语义对齐、严重级、字体别名、文件锁），全量 119 项通过。
+
 ## v3.5.5
 
 **主题：REVIEW 修订 ID 唯一性与修订感知版面 QA（全链路验证发现并修复）**

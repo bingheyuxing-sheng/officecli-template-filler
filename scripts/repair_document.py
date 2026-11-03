@@ -70,6 +70,7 @@ def main() -> int:
                 docx_path=tx.temp_path,
                 reference_docx_path=args.reference,
                 raise_on_failure=False,
+                comparison_profile="REPLICA",
             )
             tx.record_qa(pkg_qa, fmt_qa)
             tx.commit()

@@ -25,6 +25,8 @@ from engine import (
     audit_excel_formula_and_style_qa,
     audit_review_integrity,
     install_auto_cleanup,
+    resolve_comparison_profile,
+    split_issues,
 )
 
 
@@ -51,18 +53,16 @@ def _collect(report: dict) -> tuple:
 
 
 def resolve_report_status(issues: list, coverage_gaps: list, unverified_count: int, review: bool) -> tuple:
-    """Fold sections into one of the four statuses; a missing check always beats PASS/PENDING."""
-    pending = [item for item in issues if item["code"] in PENDING_HUMAN_REVIEW_CODES]
-    real_failures = [item for item in issues if item["code"] not in PENDING_HUMAN_REVIEW_CODES]
-    strict_failures = real_failures if review else issues
-    if strict_failures:
-        return "FAILED", strict_failures, pending
-    status = "PENDING_HUMAN_REVIEW" if issues else "PASSED"
-    # Honest-reporting rule: a missing check can never count as a pass, and it also
-    # outranks intentional placeholder residue waiting for a human.
-    if unverified_count or coverage_gaps:
-        status = "UNVERIFIED"
-    return status, strict_failures, pending
+    """Fold sections into one status; only high-severity issues are hard failures."""
+    pending_codes = PENDING_HUMAN_REVIEW_CODES if review else ()
+    blocking, _warnings, pending = split_issues(issues, pending_codes)
+    if blocking:
+        return "FAILED", blocking, pending
+    if coverage_gaps or unverified_count:
+        return "UNVERIFIED", blocking, pending
+    if pending:
+        return "PENDING_HUMAN_REVIEW", blocking, pending
+    return "PASSED", blocking, pending
 
 
 def main() -> int:
@@ -72,12 +72,29 @@ def main() -> int:
     parser.add_argument("--output", dest="output_alias", default="", help="Alias for the positional file path")
     parser.add_argument("--reference", default="", help="Optional reference/template .docx baseline for size and visual QA")
     parser.add_argument("--review", action="store_true", help="Also audit tracked-change and comment integrity for REVIEW outputs")
+    parser.add_argument(
+        "--profile",
+        default="auto",
+        choices=("auto", "replica", "style-guide"),
+        help="Comparison semantics: replica preserves template order; style-guide treats the template as a style source",
+    )
+    parser.add_argument(
+        "--task-mode",
+        default="",
+        help="Task mode that produced the file (GENERATE / REPAIR / REVIEW ...). Used when --profile=auto",
+    )
     parser.add_argument("--out", "--report", dest="out", default="", help="Optional output JSON report path")
     args = parser.parse_args()
 
     fpath = args.output_alias or args.file_path
     if not fpath:
         parser.error("an output file path is required (positional, --output)")
+
+    comparison_profile = resolve_comparison_profile(
+        args.profile,
+        task_mode=args.task_mode,
+        reference_provided=bool(args.reference),
+    )
 
     if fpath.lower().endswith((".xlsx", ".xlsm")):
         excel_qa = audit_excel_formula_and_style_qa(fpath)
@@ -91,8 +108,13 @@ def main() -> int:
             docx_path=fpath,
             reference_docx_path=args.reference or None,
             raise_on_failure=False,
+            comparison_profile=comparison_profile,
         )
-        vis_qa = run_visual_layout_qa(fpath, reference_docx_path=args.reference or None)
+        vis_qa = run_visual_layout_qa(
+            fpath,
+            reference_docx_path=args.reference or None,
+            comparison_profile=comparison_profile,
+        )
         report = {
             "package_integrity": pkg_qa,
             "format_and_text_qa": fmt_qa,
@@ -106,12 +128,18 @@ def main() -> int:
     status, strict_failures, pending = resolve_report_status(
         issues, coverage_gaps, unverified_count, args.review
     )
+    _blocking, warnings, _pending = split_issues(
+        issues, PENDING_HUMAN_REVIEW_CODES if args.review else ()
+    )
 
     report.update({
         "status": status,
         "passed": status == "PASSED",
         "passed_or_pending": status in ("PASSED", "PENDING_HUMAN_REVIEW", "UNVERIFIED"),
+        "comparison_profile": comparison_profile,
         "issues": issues,
+        "warnings": warnings,
+        "warning_count": len(warnings),
         "coverage_gaps": coverage_gaps,
         "unverified_count": unverified_count,
         "hard_failure_count": len(strict_failures),

@@ -131,8 +131,17 @@ from .transaction import (
     PENDING_HUMAN_REVIEW_CODES,
 )
 from .layout_qa import compare_layout_fingerprints, fingerprint_docx
+from .qa_policy import (
+    COMPARISON_PROFILE_REPLICA,
+    COMPARISON_PROFILE_STYLE_GUIDE,
+    resolve_comparison_profile,
+    split_issues,
+)
+from .alignment import align_paragraphs, align_tables
+from .pdf_backend import find_pdf_backend, convert_docx_to_pdf, pdf_page_count
+from .reformat_engine import build_reformat_plan, execute_reformat_plan
 
-__version__ = "3.5.5"
+__version__ = "3.5.7"
 
 __all__ = [
     "__version__",
@@ -234,4 +243,15 @@ __all__ = [
     "PENDING_HUMAN_REVIEW_CODES",
     "compare_layout_fingerprints",
     "fingerprint_docx",
+    "COMPARISON_PROFILE_REPLICA",
+    "COMPARISON_PROFILE_STYLE_GUIDE",
+    "resolve_comparison_profile",
+    "split_issues",
+    "align_paragraphs",
+    "align_tables",
+    "find_pdf_backend",
+    "convert_docx_to_pdf",
+    "pdf_page_count",
+    "build_reformat_plan",
+    "execute_reformat_plan",
 ]

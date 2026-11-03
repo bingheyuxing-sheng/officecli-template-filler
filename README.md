@@ -52,8 +52,9 @@ pip install -r requirements.txt
 
 可选组件：
 
-- **LibreOffice**（`soffice`）：用于 PDF 渲染、Excel 重算、版面视觉 QA；缺失时相关检查标记为 `UNVERIFIED`。
-- **PyMuPDF**（`pip install pymupdf`）：用于 PDF 页面级差异比对。
+- **PyMuPDF**（`pip install pymupdf`）：用于 PDF 页面级差异比对（可选；缺失时页数改用 WPS `pdfinfo`）。
+- **WPS Office**（Windows，可选）：`kwpsconvert.exe word2pdf` 提供 PDF 转换、`pdfinfo` 提供真实页数；需要登录 WPS 账号并有 VIP，否则报 `WPS_VIP_REQUIRED`。
+- **LibreOffice**（可选，`soffice`）：WPS 缺失时的 PDF 转换后备，也用于 Excel 重算；缺失时相关检查标记为 `UNVERIFIED`。
 
 ### 2. 作为 Agent Skill 使用
 
@@ -71,6 +72,10 @@ python scripts/generate_document.py --template template.docx --data payload.json
 # 按模板修复格式（双文档 REPAIR）
 python scripts/repair_document.py --reference template.docx --broken broken.docx --out repaired.docx
 
+# 按模板对齐格式（REFORMAT：先看差异清单，再应用为带修订的 .docx）
+python scripts/reformat_document.py --reference template.docx --target draft.docx --plan-out plan.json --plan-only
+python scripts/reformat_document.py --reference template.docx --target draft.docx --out formatted.docx
+
 # 审阅：输出可在 Word/WPS 中以修订模式打开的 .docx
 python scripts/review_document.py --reference template.docx --target draft.docx \
     --revisions revisions.json --out reviewed.docx
@@ -79,7 +84,7 @@ python scripts/review_document.py --reference template.docx --target draft.docx 
 python scripts/generate_excel.py --template book.xlsx --data payload.json --out book_filled.xlsx
 
 # 完整 QA（DOCX 包完整性 + 字体字号 + 表格 + 视觉 + 修订结构）
-python scripts/run_qa.py output.docx --reference template.docx
+python scripts/run_qa.py output.docx --reference template.docx --profile style-guide --task-mode GENERATE
 ```
 
 ---
@@ -94,8 +99,10 @@ python scripts/run_qa.py output.docx --reference template.docx
 | `REVIEW` | 参考模板 + 待审文档 | **带修订与批注的 `.docx`**，供人工逐条确认 |
 | `PROOFREAD` | 单个 `.docx` | **带修订与批注的 `.docx`**，校对错别字与数据问题 |
 | `POLISH` | 单个草稿 | 措辞优化、版式保持（执行入口规划中） |
-| `REFORMAT` | 单个或多个 `.docx` + 排版意图 | 统一字体字号与版式 |
-| `MERGE` | 多个来源（含 `.docx` + `.xlsx` 混合） | 汇总文档 |
+| `REFORMAT` | 参考模板 + 待调整文档（1–2 个 `.docx`）+ 排版意图 | **格式差异清单 + 带 `w:*PrChange` 修订的 `.docx`**，人工逐条接受/拒绝 |
+| `MERGE` | 显式合并/汇总意图，或多个同格式来源 | 汇总文档 |
+
+> `.docx` + `.xlsx` 不再自动判 `MERGE`：生成意图下 `.xlsx` 作为 `data_sources` 数据源，主模式为 `GENERATE`；只有显式合并意图或无意图多源输入才走 `MERGE`。
 
 ---
 
@@ -105,14 +112,17 @@ python scripts/run_qa.py output.docx --reference template.docx
 
 | 状态 | 含义 | 交付策略 |
 |---|---|---|
-| `PASSED` | 所有要求的检查均已完成并通过 | 可交付 |
+| `PASSED` | 没有 `high` 级问题；`medium` / `low` 级问题列在 `warnings`，不阻断交付 | 可交付，需向用户说明警告项 |
 | `PENDING_HUMAN_REVIEW` | 仅剩有意留给人工的占位项 | 可交付，需说明待确认项 |
 | `UNVERIFIED` | 存在无法执行或覆盖不足的检查 | **不得声称通过**，须说明缺口 |
-| `FAILED` | 存在明确错误 | 不可交付 |
+| `FAILED` | 存在 `high` 级问题 | 不可交付 |
 
 报告同时包含：
 
 - `issues`：结构化问题（`code` / `location` / `detail` / `severity`）
+- `warnings` / `warning_count`：`medium` / `low` 级建议项
+- `comparison_profile`：`STYLE_GUIDE`（生成，按语义锚点对齐）或 `REPLICA`（修复/审核，按模板顺序）
+- `alignment`：匹配/新增/删除的段落与表格
 - `coverage_gaps`：未能覆盖的检查项
 - `unverified_count`：未验证数量
 
@@ -151,7 +161,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前基线：**111 项测试全部通过**（v3.5.5）。
+当前基线：**126 项测试全部通过**（v3.5.7）。
 
 ---
 
@@ -161,6 +171,8 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v3.5.7 | 源码当前 `main` | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
+| v3.5.6 | 源码历史 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
 | v3.5.5 | [Release v3.5.5](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.5) | REVIEW 修订 ID 唯一性修复、修订/批注感知的版面 QA、全链路功能验证 |
 | v3.5.4 | [Release v3.5.4](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.4) | 进程所有权收紧（无 spawn 证明不终止）、GENERATE/REPAIR 事务 QA 补齐、QA 状态诚实性修正 |
 | v3.5.3 | [Release v3.5.3](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.3) | FAST/STANDARD/FULL、培养方案语义预检、分阶段检查点、渲染与目录降级（编排层） |

@@ -96,8 +96,21 @@ def route_document_task(
 
     xlsx_files = [f for f in norm_files if f.lower().endswith((".xlsx", ".xlsm"))]
     docx_files = [f for f in norm_files if f.lower().endswith((".docx", ".docm"))]
+
     review_keywords = ("审核", "审阅", "修订", "留痕", "review", "track changes", "tracked changes", "按模板修正")
-    merge_keywords = ("合并", "汇总", "merge", "combine", "consolidate")
+    merge_keywords = ("合并", "汇总", "整合", "拼接", "merge", "combine", "consolidate")
+    create_keywords = (
+        "生成", "编制", "编写", "起草", "新建", "制作", "创建", "写一份", "写个",
+        "produce", "create", "draft", "generate",
+    )
+    modify_keywords = (
+        "修改", "调整", "对齐", "统一", "套用", "改格式", "格式修改", "重新排版",
+        "排版规范", "格式统一", "转换版式", "reformat", "convert style",
+        "restyle", "normalize formatting",
+    )
+    # "按模板" alone is ambiguous: "按模板生成" is GENERATE, "按模板修改格式" is REFORMAT.
+    # A template phrase only becomes a REFORMAT signal when no create verb is present.
+    template_phrases = ("按模板", "根据模板", "照模板", "套模板", "模板格式", "模板样式")
     reformat_keywords = (
         "转换", "重构版式", "重新排版", "统一字体", "统一字号", "排版规范",
         "格式统一", "reformat", "convert style", "restyle", "normalize formatting",
@@ -110,16 +123,47 @@ def route_document_task(
 
     is_review = any(k in intent_lower for k in review_keywords)
     is_merge = any(k in intent_lower for k in merge_keywords)
+    is_create = any(k in intent_lower for k in create_keywords)
+    has_modify = any(k in intent_lower for k in modify_keywords)
+    has_template_phrase = any(k in intent_lower for k in template_phrases)
     is_reformat = any(k in intent_lower for k in reformat_keywords)
     is_polish = any(k in intent_lower for k in polish_keywords)
     is_repair = any(k in intent_lower for k in repair_keywords)
     is_proofread = any(k in intent_lower for k in proofread_keywords)
+    is_reformat = (
+        is_reformat
+        or has_modify
+        or (has_template_phrase and not is_create and not is_repair and not is_proofread and not is_polish)
+    )
 
-    if len(docx_files) >= 2 and is_review:
+    input_roles = []
+    data_sources = []
+    secondary_actions = []
+
+    # Role-aware routing: an .xlsx accompanying a .docx template is usually a data source,
+    # not a second document to merge. Only an explicit merge request keeps MERGE.
+    if is_review and len(docx_files) >= 2:
         task_mode = "REVIEW"
-    elif is_merge or (len(xlsx_files) >= 2) or (docx_files and xlsx_files):
-        # Multi-source work belongs to MERGE regardless of which formats are involved.
+    elif is_merge:
         task_mode = "MERGE"
+    elif docx_files and xlsx_files:
+        intent_known = (
+            is_create or is_reformat or is_proofread or is_polish or is_repair or has_template_phrase
+        )
+        if not intent_known:
+            # No intent signal at all: keep the legacy safe default for multi-source input.
+            task_mode = "MERGE"
+        else:
+            data_sources = list(xlsx_files)
+            if is_reformat and not is_create:
+                task_mode = "REFORMAT"
+            else:
+                task_mode = "GENERATE"
+            if is_reformat and is_create:
+                secondary_actions.append("REFORMAT")
+    elif len(xlsx_files) >= 2:
+        task_mode = "EXCEL_GENERATE"
+        data_sources = list(xlsx_files[1:])
     elif len(docx_files) >= 2:
         task_mode = "REFORMAT" if is_reformat else "REPAIR"
     elif len(docx_files) == 1:
@@ -142,18 +186,49 @@ def route_document_task(
     else:
         task_mode = "GENERATE"
 
+    for path in docx_files:
+        role = "merge_source" if task_mode == "MERGE" else "template"
+        input_roles.append({"path": path, "role": role})
+    for path in xlsx_files:
+        if path in data_sources:
+            role = "data_source"
+        elif task_mode == "MERGE":
+            role = "merge_source"
+        else:
+            role = "template"
+        input_roles.append({"path": path, "role": role})
+
     if task_mode in ("REPAIR", "REVIEW", "POLISH", "REFORMAT", "MERGE", "PROOFREAD"):
         web_search_policy = "DISABLED_BY_DEFAULT"
     else:
         web_search_policy = "ON_DEMAND_PUBLIC_STANDARDS_ONLY"
 
+    capability = get_capability(task_mode)
+    secondary_capabilities = [
+        {"task_mode": mode, "capability": get_capability(mode)}
+        for mode in secondary_actions
+    ]
+
     return {
         "task_mode": task_mode,
+        "primary_mode": task_mode,
+        "secondary_actions": secondary_actions,
+        "secondary_capabilities": secondary_capabilities,
         "input_files": norm_files,
         "docx_files": docx_files,
         "xlsx_files": xlsx_files,
+        "data_sources": data_sources,
+        "input_roles": input_roles,
+        "intent_features": {
+            "create": is_create,
+            "modify": has_modify,
+            "template_phrase": has_template_phrase,
+            "merge": is_merge,
+            "review": is_review,
+            "reformat": is_reformat,
+        },
         "web_search_policy": web_search_policy,
-        "capability": get_capability(task_mode),
+        "capability": capability,
     }
 
 

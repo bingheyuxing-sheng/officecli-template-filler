@@ -29,6 +29,9 @@ import os
 import uuid
 from typing import Any, Dict, Iterable, Optional, Tuple
 
+from .qa_policy import split_issues
+from .process_guard import list_process_pids
+
 QA_PASSED = "PASSED"
 QA_PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
 QA_UNVERIFIED = "UNVERIFIED"
@@ -108,12 +111,11 @@ def resolve_qa_status(
         if report.get("passed") is False:
             reported_failure = True
 
-    hard_issues = [item for item in issues if item["code"] not in set(pending_codes)]
-    pending_issues = [item for item in issues if item["code"] in set(pending_codes)]
+    hard_issues, warnings, pending_issues = split_issues(issues, pending_codes)
 
     if QA_FAILED in explicit_status or hard_issues:
         return QA_FAILED
-    if reported_failure and not pending_issues:
+    if reported_failure and not pending_issues and not warnings:
         return QA_FAILED
     if QA_PENDING_HUMAN_REVIEW in explicit_status or pending_issues:
         return QA_PENDING_HUMAN_REVIEW
@@ -155,6 +157,7 @@ class DocumentTransaction:
         self.committed = False
         self.abort_reason: Optional[str] = None
         self.commit_skipped_reason: Optional[str] = None
+        self.lock_info: Optional[Dict[str, Any]] = None
 
         self._preflighted = False
         self._finished = False
@@ -294,6 +297,22 @@ class DocumentTransaction:
             # The final path is only ever complete content, never a partial write.
             os.replace(self.temp_path, self.pending_path)
             os.replace(self.pending_path, self.output_path)
+        except PermissionError as exc:
+            # A preview process (WPS editor_sdk.exe, Explorer preview, ...) can hold the
+            # final path. Report the actionable facts instead of a bare traceback.
+            self.lock_info = {
+                "code": "OUTPUT_FILE_LOCKED",
+                "output_path": self.output_path,
+                "error": str(exc),
+                "editor_sdk_pids": list_process_pids("editor_sdk.exe"),
+                "hint": (
+                    "Close the preview that holds the file, or run "
+                    "`python scripts/cleanup_editor_sdk.py --list` and then "
+                    "`--kill-pid <pid> --confirm` for the preview process you own."
+                ),
+            }
+            self.abort("OUTPUT_FILE_LOCKED")
+            raise TransactionAborted("OUTPUT_FILE_LOCKED", self.record())
         except OSError as exc:
             self.abort(f"COMMIT_FAILED: {exc}")
             raise TransactionAborted(f"COMMIT_FAILED: {exc}", self.record())
@@ -335,6 +354,7 @@ class DocumentTransaction:
             "committed": self.committed,
             "commit_skipped_reason": self.commit_skipped_reason,
             "abort_reason": self.abort_reason,
+            "lock_info": self.lock_info,
             "staged_path": None if self._finished else self.temp_path,
             "qa_report_path": self.qa_report_path,
             "input_sha256": self.input_sha256,
