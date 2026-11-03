@@ -582,6 +582,25 @@ def _restore_table_style_tracked(target_tbl, reference_tbl, author: str, date: s
     return True, added
 
 
+def create_revision_id_allocator(doc):
+    """Public helper for REFORMAT apply: allocate ids above every existing revision."""
+    return _RevisionIdAllocator(_scan_existing_revision_ids(doc))
+
+
+def apply_paragraph_profile_tracked(paragraph, profile, *, strip_red: bool, author: str, date: str, ids) -> int:
+    """Public wrapper: restore a paragraph profile with native Word format revisions."""
+    return _apply_paragraph_profile_tracked(
+        paragraph, profile, strip_red=strip_red, author=author, date=date, ids=ids
+    )
+
+
+def restore_table_style_tracked(target_tbl, reference_tbl, *, author: str, date: str, ids) -> Tuple[bool, int]:
+    """Public wrapper: restore table style with native Word format revisions."""
+    return _restore_table_style_tracked(
+        target_tbl, reference_tbl, author=author, date=date, ids=ids
+    )
+
+
 # ---------------------------------------------------------------------------
 # Native Word comments
 # ---------------------------------------------------------------------------

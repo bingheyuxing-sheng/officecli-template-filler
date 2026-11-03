@@ -45,6 +45,7 @@ class TestRouterCapabilitiesSuite(unittest.TestCase):
             "EXCEL_GENERATE": "scripts/generate_excel.py",
             "REPAIR": "scripts/repair_document.py",
             "REVIEW": "scripts/review_document.py",
+            "REFORMAT": "scripts/reformat_document.py",
         }
         for mode, handler in expected_handlers.items():
             capability = get_capability(mode)
@@ -53,7 +54,7 @@ class TestRouterCapabilitiesSuite(unittest.TestCase):
             self.assertIsNone(capability["reason"])
             self.assertEqual(require_capability(mode)["task_mode"], mode)
 
-        for mode in ("REFORMAT", "POLISH", "MERGE"):
+        for mode in ("POLISH", "MERGE"):
             capability = get_capability(mode)
             self.assertFalse(capability["enabled"], mode)
             self.assertEqual(capability["reason"], "CAPABILITY_NOT_AVAILABLE")
@@ -67,8 +68,8 @@ class TestRouterCapabilitiesSuite(unittest.TestCase):
         docx_path = os.path.join(self.work_dir, "draft.docx")
         routing = route_document_task([docx_path], "统一字体和字号重新排版")
         self.assertEqual(routing["task_mode"], "REFORMAT")
-        self.assertFalse(routing["capability"]["enabled"])
-        self.assertEqual(routing["capability"]["reason"], "CAPABILITY_NOT_AVAILABLE")
+        self.assertTrue(routing["capability"]["enabled"])
+        self.assertIsNone(routing["capability"]["reason"])
 
         generate = route_document_task([docx_path], "按模板生成一份方案")
         self.assertTrue(generate["capability"]["enabled"])

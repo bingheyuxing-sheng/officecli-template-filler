@@ -25,7 +25,13 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from engine import EditorSdkSession, list_process_pids
+from engine import (
+    EditorSdkSession,
+    TaskResourceGuard,
+    list_process_pids,
+    process_image_name,
+    process_start_ticks,
+)
 
 
 def _default_state_path() -> str:
@@ -39,17 +45,64 @@ DEFAULT_STATE = _default_state_path()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Stop editor_sdk instances spawned by this task.")
+    parser = argparse.ArgumentParser(description="Inspect and release editor_sdk instances for this task.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--start", action="store_true", help="Record the pre-task SDK PID snapshot")
     group.add_argument("--stop", action="store_true", help="Terminate SDKs spawned after the snapshot")
     group.add_argument("--list", action="store_true", help="List current editor_sdk PIDs")
+    group.add_argument(
+        "--kill-pid",
+        type=int,
+        default=0,
+        help="Terminate one explicitly named editor_sdk PID (requires --confirm)",
+    )
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Confirm that the user explicitly approved terminating the --kill-pid process",
+    )
     parser.add_argument("--state", default=DEFAULT_STATE, help="Snapshot file shared by --start and --stop")
     args = parser.parse_args()
 
     if args.list:
         print(json.dumps({"editor_sdk_pids": list_process_pids("editor_sdk.exe")}, ensure_ascii=False))
         return 0
+
+    if args.kill_pid:
+        pid = int(args.kill_pid)
+        image = process_image_name(pid) or ""
+        identity = process_start_ticks(pid)
+        if not args.confirm:
+            print(json.dumps({
+                "error": "EXPLICIT_CONFIRMATION_REQUIRED",
+                "pid": pid,
+                "image": image,
+                "hint": "Re-run with --confirm only after the user approved terminating this PID.",
+            }, ensure_ascii=False, indent=2))
+            return 2
+        if os.path.basename(image).lower() != "editor_sdk.exe" or identity is None:
+            print(json.dumps({
+                "error": "PID_IDENTITY_MISMATCH",
+                "pid": pid,
+                "image": image,
+                "start_ticks": identity,
+                "expected_image": "editor_sdk.exe",
+            }, ensure_ascii=False, indent=2))
+            return 3
+        terminated = TaskResourceGuard._terminate_single_pid(
+            pid, expected_name="editor_sdk.exe", expected_ticks=identity
+        )
+        still_running = TaskResourceGuard._is_pid_running(pid, expected_name="editor_sdk.exe")
+        print(json.dumps({
+            "pid": pid,
+            "image": image,
+            "start_ticks": identity,
+            "ownership_source": "explicit_pid_with_user_confirmation",
+            "terminated": bool(terminated),
+            "still_running": bool(still_running),
+            "verified": bool(terminated and not still_running),
+        }, ensure_ascii=False, indent=2))
+        return 0 if terminated and not still_running else 1
 
     if args.start:
         baseline = list_process_pids("editor_sdk.exe")

@@ -302,18 +302,30 @@ fmt_qa = audit_format_and_text_qa(
     forbidden_substrings=["请在此填写", "示例数据"],
     docx_path="output.docx",
     reference_docx_path="template.docx",  # required to prove the output matches the template's sizes, fonts and tables
+    comparison_profile="STYLE_GUIDE",     # GENERATE: align by text/heading/caption anchors
 )
 assert fmt_qa["passed"], (fmt_qa["size_anomalies"], fmt_qa["font_anomalies"], fmt_qa["table_style_anomalies"])
-print(fmt_qa["size_baseline_source"], fmt_qa["template_sizes"], fmt_qa["template_fonts"])
+print(fmt_qa["comparison_profile"], fmt_qa["size_baseline_source"], fmt_qa["template_sizes"], fmt_qa["template_fonts"])
 
-vis_qa = run_visual_layout_qa("output.docx", reference_docx_path="template.docx")
+vis_qa = run_visual_layout_qa(
+    "output.docx",
+    reference_docx_path="template.docx",
+    comparison_profile="STYLE_GUIDE",
+)
 assert vis_qa["passed"], vis_qa["layout_warnings"]
 ```
 
-`font_anomalies` reports runs whose resolved Chinese font is absent from the template, and
-`table_style_anomalies` reports per-table grid/layout/border drift. When a table was regenerated
-at a uniformly larger size, that drift appears as `table_dominant_size` and the old
-document-wide size allowlist could never catch it.
+`STYLE_GUIDE` is for GENERATE: added/removed paragraphs and new tables are reported as
+`NEW_CONTENT` / `NEW_TABLE` in `alignment`, not compared to an unrelated neighbour.
+`REPLICA` is for REPAIR/REVIEW, where preserving the template's paragraph/table order is the contract.
+Only `high` severity issues make `passed` false; `medium` / `low` findings are returned in
+`warnings` and remain visible without blocking delivery.
+
+`font_anomalies` reports runs whose resolved Chinese font differs from the matched template
+paragraph, and `table_style_anomalies` reports per-table grid/layout/border drift. When a table was
+regenerated at a uniformly larger size, that drift appears as `table_dominant_size` and the old
+document-wide size allowlist could never catch it. A new table with no template counterpart is
+reported as `NEW_TABLE`, not as style drift.
 
 Every QA function returns machine-readable issues so callers never parse prose:
 
@@ -322,12 +334,57 @@ Every QA function returns machine-readable issues so callers never parse prose:
   "passed": False,
   "issues": [{"code": "FONT_SIZE_ANOMALY", "location": "table_dominant_size[0]",
               "detail": "...", "severity": "high"}],
+  "warnings": [{"code": "LAYOUT_POSITION_DRIFT", "location": "body.p[3]", "detail": "...", "severity": "medium"}],
+  "warning_count": 1,
+  "comparison_profile": "STYLE_GUIDE",
+  "alignment": {"matched_paragraphs": 194, "new_paragraphs": [35], "new_tables": [10]},
   "coverage_gaps": [],
   "unverified_count": 0,
 }
 ```
 
 `scripts/run_qa.py` flattens all sections into a top-level `status`
-(`PASSED` / `FAILED` / `PENDING_HUMAN_REVIEW`), `issues`, `coverage_gaps`,
+(`PASSED` / `FAILED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED`), `issues`, `warnings`,
+`warning_count`, `comparison_profile`, `alignment`, `coverage_gaps`,
 `unverified_count`, `hard_failure_count` and `pending_human_review_count`.
+Use `--profile style-guide --task-mode GENERATE` for generated documents and
+`--profile replica --task-mode REPAIR/REVIEW` when template order must be preserved.
 `PENDING_HUMAN_REVIEW` means only intentional placeholder residue remains under `--review`.
+
+## REFORMAT: semantic diff plan and tracked apply
+
+```python
+from engine import build_reformat_plan, execute_reformat_plan
+
+plan = build_reformat_plan("template.docx", "draft.docx", strip_red=False)
+print(plan["summary"])   # total_diffs / auto_fix / review_required / keep / unsupported
+
+# Every entry is readable: where, what changed, what the template says, why the action.
+for diff in plan["diffs"][:5]:
+    print(diff["target"], diff["property"], diff["current"], "->", diff["reference_value"], diff["action"])
+
+# Apply only AUTO_FIX entries; every change becomes a native w:*PrChange revision.
+result = execute_reformat_plan(plan, "formatted.docx", author="OfficeCLI REFORMAT")
+print(result["applied_actions"], result["format_revision_count"], result["unresolved_actions"])
+```
+
+Actions: `AUTO_FIX` (matched paragraph/table, safe), `REVIEW` (mixed runs / bold /
+row-count drift), `KEEP` (new content with no template counterpart), `UNSUPPORTED`
+(column-count mismatch). The output opens in Word/WPS revision mode; run
+`audit_review_integrity()` and `run_qa.py --profile replica` on it before delivery.
+
+## PDF conversion and page counts
+
+```python
+from engine import find_pdf_backend, convert_docx_to_pdf, pdf_page_count
+
+backend = find_pdf_backend()   # {"name": "wps"|"libreoffice"|"none", "executable": ...}
+pdf, error, used = convert_docx_to_pdf("output.docx", out_dir, backend)
+count, source, error = pdf_page_count(pdf, backend)   # pymupdf -> wps_pdfinfo -> pdfinfo
+```
+
+WPS (`kwpsconvert.exe word2pdf` / `pdfinfo`) is preferred on Windows; LibreOffice is the
+fallback. `OFFICECLI_PDF_BACKEND=wps|libreoffice|none` overrides detection. A WPS
+account without VIP fails with `WPS_VIP_REQUIRED` in `pdf_conversion_errors` — never
+silently fall back to the OfficeCLI HTML preview for pagination, because it does not
+honor section breaks and its page count is not a pagination measurement.

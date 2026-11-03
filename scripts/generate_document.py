@@ -74,6 +74,7 @@ def main() -> int:
                     docx_path=tx.temp_path,
                     reference_docx_path=args.template,
                     raise_on_failure=False,
+                    comparison_profile="STYLE_GUIDE",
                 )
                 tx.record_qa(package_qa, qa_report)
                 release_office_file_locks(guard=guard)

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shutil
 import subprocess
 import tempfile
@@ -35,9 +36,12 @@ import docx
 from docx.oxml.ns import qn
 
 from .ooxml_utils import RED_HEX_SET, TOKEN_PATTERN, is_red_run, iter_all_document_paragraphs_with_Wait_context
+from .qa_policy import resolve_comparison_profile, split_issues
+from .pdf_backend import find_pdf_backend, convert_docx_to_pdf, pdf_page_count
 from .style_engine import resolve_run_effective_sz, resolve_run_effective_font
 from .table_engine import table_style_signature, compare_table_style
 from .image_engine import verify_docx_images_integrity
+from .alignment import align_paragraphs, align_tables
 
 
 class QAValidationError(ValueError):
@@ -58,12 +62,15 @@ def _red_issues(red_residuals) -> List[Dict[str, Any]]:
     return [_issue("RED_TEXT_RESIDUAL", str(item[0]), item[1]) for item in red_residuals]
 
 
-def _size_issues(size_anomalies) -> List[Dict[str, Any]]:
+def _size_issues(size_anomalies, comparison_profile: str = "REPLICA") -> List[Dict[str, Any]]:
     issues = []
     for anomaly in size_anomalies:
         kind = anomaly[0]
         location = f"{kind}[{anomaly[1]}]" if len(anomaly) > 1 else kind
-        issues.append(_issue("FONT_SIZE_ANOMALY", location, anomaly))
+        severity = "high"
+        if comparison_profile == "STYLE_GUIDE" and kind in ("table_dominant_size", "table"):
+            severity = "medium"
+        issues.append(_issue("FONT_SIZE_ANOMALY", location, anomaly, severity=severity))
     return issues
 
 
@@ -76,12 +83,21 @@ def _font_issues(font_anomalies) -> List[Dict[str, Any]]:
     return issues
 
 
-def _table_issues(table_style_anomalies) -> List[Dict[str, Any]]:
+def _table_issues(table_style_anomalies, comparison_profile: str = "REPLICA") -> List[Dict[str, Any]]:
     issues = []
     for anomaly in table_style_anomalies:
         kind = anomaly[0]
         location = f"{kind}[{anomaly[1]}]" if len(anomaly) > 1 else kind
-        issues.append(_issue("TABLE_STYLE_ANOMALY", location, anomaly))
+        severity = "high"
+        if kind == "table_row_count":
+            severity = "low"
+        elif kind in ("table_row_height", "table_header_height"):
+            severity = "medium"
+        elif kind == "table_cell_font_or_size" and comparison_profile == "STYLE_GUIDE":
+            severity = "medium"
+        elif kind == "table_cell_property" and comparison_profile == "STYLE_GUIDE":
+            severity = "medium"
+        issues.append(_issue("TABLE_STYLE_ANOMALY", location, anomaly, severity=severity))
     return issues
 
 
@@ -401,6 +417,32 @@ def _table_dominant_font(tbl) -> Optional[Tuple[str, str]]:
     return _dominant_font(_font_text_weights(list(_table_pairs(tbl))))
 
 
+def _paragraph_size_set(paragraph) -> Set[str]:
+    return set(_size_text_weights([(paragraph, run) for run in paragraph.runs]))
+
+
+def _paragraph_dominant_size(paragraph) -> Optional[str]:
+    return _dominant_size(_size_text_weights([(paragraph, run) for run in paragraph.runs]))
+
+
+def _paragraph_font_keys(paragraph) -> Set[str]:
+    keys = set()
+    for (_ascii, east_asia), _weight in _font_text_weights([(paragraph, run) for run in paragraph.runs]).items():
+        key = (east_asia or _ascii or "").strip()
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _paragraph_dominant_font_key(paragraph) -> Optional[str]:
+    weights = _font_text_weights([(paragraph, run) for run in paragraph.runs])
+    for (ascii_font, east_asia), _weight in sorted(weights.items(), key=lambda item: item[1], reverse=True):
+        key = (east_asia or ascii_font or "").strip()
+        if key:
+            return key
+    return None
+
+
 def _table_pagination_issues(tbl, ref_tbl, table_index: int) -> List[Dict[str, Any]]:
     """
     Compare row-level pagination attributes that tracked changes cannot express.
@@ -445,6 +487,7 @@ def audit_format_and_text_qa(
     docx_path: Optional[str] = None,
     reference_docx_path: Optional[str] = None,
     raise_on_failure: bool = True,
+    comparison_profile: str = "REPLICA",
 ) -> Dict[str, Any]:
     """
     Verify:
@@ -479,6 +522,16 @@ def audit_format_and_text_qa(
     reference_font_inventory: Set[Tuple[str, str]] = set()
     reference_body_font = None
     reference_tables: List[Any] = []
+    profile = resolve_comparison_profile(
+        comparison_profile, reference_provided=bool(reference_docx_path)
+    )
+    paragraph_matches: Dict[int, int] = {}
+    new_paragraphs: List[int] = []
+    removed_paragraphs: List[int] = []
+    new_tables: List[int] = []
+    removed_tables: List[int] = []
+    matched_reference_tables: Dict[int, Any] = {}
+    ref_doc = None
     if reference_docx_path and os.path.isfile(reference_docx_path):
         ref_doc = docx.Document(reference_docx_path)
         reference_inventory = _document_size_inventory(ref_doc)
@@ -489,6 +542,17 @@ def audit_format_and_text_qa(
             _font_text_weights([(p, r) for p, r in _body_run_pairs(ref_doc) if not _is_heading_like(p)])
         )
         reference_tables = list(ref_doc.tables)
+        paragraph_alignment = align_paragraphs(doc.paragraphs, ref_doc.paragraphs)
+        paragraph_matches = dict(paragraph_alignment["matches"])
+        new_paragraphs = list(paragraph_alignment["unmatched_output"])
+        removed_paragraphs = list(paragraph_alignment["unmatched_reference"])
+        table_alignment = align_tables(doc.tables, ref_doc.tables)
+        matched_reference_tables = {
+            out_index: reference_tables[ref_index]
+            for out_index, ref_index in table_alignment["matches"].items()
+        }
+        new_tables = list(table_alignment["unmatched_output"])
+        removed_tables = list(table_alignment["unmatched_reference"])
 
     if expected_body_sz is not None:
         baseline_sz = _normalize_sz(expected_body_sz) or str(expected_body_sz).strip()
@@ -523,6 +587,23 @@ def audit_format_and_text_qa(
 
         heading_like = _is_heading_like(p)
         plain_body = _is_plain_body_style(p)
+        if profile == "STYLE_GUIDE" and ref_doc is not None:
+            ref_index = paragraph_matches.get(i)
+            if ref_index is None:
+                # New content has no template paragraph to compare against; its style is
+                # validated by the style guide role, not by an unrelated neighbour.
+                continue
+            ref_paragraph = ref_doc.paragraphs[ref_index]
+            out_dominant = _paragraph_dominant_size(p)
+            ref_dominant = _paragraph_dominant_size(ref_paragraph)
+            if out_dominant and ref_dominant and out_dominant != ref_dominant:
+                size_anomalies.append(("body_p", i, out_dominant, ref_dominant, txt[:30]))
+            out_font = _paragraph_dominant_font_key(p)
+            ref_fonts = _paragraph_font_keys(ref_paragraph)
+            if out_font and ref_fonts and out_font not in ref_fonts and not heading_like:
+                font_anomalies.append(("body_p", i, out_font, sorted(ref_fonts), txt[:30]))
+            continue
+
         for r in p.runs:
             run_text = (r.text or "").strip()
             if not run_text:
@@ -543,7 +624,7 @@ def audit_format_and_text_qa(
                     font_anomalies.append(("body_p", i, east_asia, sorted(known_east_asia), run_text[:30]))
 
     for t_i, tbl in enumerate(doc.tables):
-        ref_tbl = reference_tables[t_i] if t_i < len(reference_tables) else None
+        ref_tbl = matched_reference_tables.get(t_i)
         for r_i, row in enumerate(tbl.rows):
             for c_i, cell in enumerate(row.cells):
                 txt = cell.text.strip()
@@ -552,19 +633,20 @@ def audit_format_and_text_qa(
                         text_residuals.append(("table", t_i, r_i, c_i, sub))
                 for tok in TOKEN_PATTERN.findall(txt):
                     text_residuals.append(("table_token", t_i, r_i, c_i, tok))
-                for p in cell.paragraphs:
-                    for r in p.runs:
-                        run_text = (r.text or "").strip()
-                        if not run_text:
-                            continue
-                        run_sz = _normalize_sz(resolve_run_effective_sz(r, p))
-                        if run_sz is None:
-                            continue
-                        if reference_inventory:
-                            if run_sz not in reference_inventory:
-                                size_anomalies.append(("table_not_in_template", t_i, r_i, c_i, run_sz, run_text[:30]))
-                        elif table_baseline and run_sz != table_baseline and not _is_heading_like(p):
-                            size_anomalies.append(("table", t_i, r_i, c_i, run_sz, table_baseline, run_text[:30]))
+                if profile == "REPLICA" or not reference_docx_path:
+                    for p in cell.paragraphs:
+                        for r in p.runs:
+                            run_text = (r.text or "").strip()
+                            if not run_text:
+                                continue
+                            run_sz = _normalize_sz(resolve_run_effective_sz(r, p))
+                            if run_sz is None:
+                                continue
+                            if reference_inventory:
+                                if run_sz not in reference_inventory:
+                                    size_anomalies.append(("table_not_in_template", t_i, r_i, c_i, run_sz, run_text[:30]))
+                            elif table_baseline and run_sz != table_baseline and not _is_heading_like(p):
+                                size_anomalies.append(("table", t_i, r_i, c_i, run_sz, table_baseline, run_text[:30]))
 
         if ref_tbl is not None:
             # Compare against the same table instead of a document-wide allowlist: a table
@@ -584,7 +666,7 @@ def audit_format_and_text_qa(
             )
             pagination_anomalies.extend(_table_pagination_issues(tbl, ref_tbl, t_i))
 
-    if reference_tables and len(doc.tables) < len(reference_tables):
+    if profile == "REPLICA" and reference_tables and len(doc.tables) < len(reference_tables):
         table_style_anomalies.append(("table_count", len(doc.tables), len(reference_tables)))
 
     for idx, t_el in enumerate(doc.element.body.xpath(".//w:t")):
@@ -617,25 +699,39 @@ def audit_format_and_text_qa(
 
     issues: List[Dict[str, Any]] = []
     issues.extend(_red_issues(red_Wait_residuals))
-    issues.extend(_size_issues(size_anomalies))
+    issues.extend(_size_issues(size_anomalies, profile))
     issues.extend(_font_issues(font_anomalies))
-    issues.extend(_table_issues(table_style_anomalies))
+    issues.extend(_table_issues(table_style_anomalies, profile))
     issues.extend(pagination_anomalies)
     issues.extend(_text_issues(text_residuals))
     issues.extend(_issue("XML_SPACE_MISSING", "w:t", item) for item in missing_space_preserve)
     issues.extend(_issue("DUPLICATE_OOXML_ID", item[0], item[1]) for item in duplicate_ids)
 
-    if issues and raise_on_failure:
+    blocking, warnings, _pending = split_issues(issues)
+
+    if blocking and raise_on_failure:
         raise QAValidationError(
-            "Format QA failed with %d issue(s):\n" % len(issues)
+            "Format QA failed with %d blocking issue(s) (%d total):\n" % (len(blocking), len(issues))
             + "\n".join(
                 f"{item['code']} at {item['location']}: {item['detail']}" for item in issues[:10]
             )
         )
 
     return {
-        "passed": not issues,
+        "passed": not blocking,
         "issues": issues,
+        "structured_issues": issues,
+        "warnings": warnings,
+        "warning_count": len(warnings),
+        "blocking_issue_count": len(blocking),
+        "comparison_profile": profile,
+        "alignment": {
+            "matched_paragraphs": len(paragraph_matches),
+            "new_paragraphs": new_paragraphs,
+            "removed_paragraphs": removed_paragraphs,
+            "new_tables": new_tables,
+            "removed_tables": removed_tables,
+        },
         "red_residuals": red_Wait_residuals,
         "size_anomalies": size_anomalies,
         "font_anomalies": font_anomalies,
@@ -684,6 +780,49 @@ def _collect_declared_font_names(doc) -> Set[str]:
                 if value and not value.lower().endswith("theme"):
                     fonts.add(value)
     return fonts
+
+
+_FONT_SUFFIX_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+# Windows registers many CJK families under their English name (SimHei, FangSong,
+# SimSun) while documents declare the Chinese family name. Without an alias table,
+# `黑体` is reported missing even though SimHei is installed.
+_FONT_ALIASES = {
+    "simhei": "黑体",
+    "黑体": "黑体",
+    "simsun": "宋体",
+    "宋体": "宋体",
+    "songtisc": "宋体",
+    "stsong": "宋体",
+    "fangsong": "仿宋",
+    "仿宋": "仿宋",
+    "fangsong_gb2312": "仿宋_gb2312",
+    "仿宋_gb2312": "仿宋_gb2312",
+    "kaiti": "楷体",
+    "楷体": "楷体",
+    "microsoftyahei": "微软雅黑",
+    "微软雅黑": "微软雅黑",
+    "stzhongsong": "华文中宋",
+    "华文中宋": "华文中宋",
+    "stfangsong": "华文仿宋",
+    "华文仿宋": "华文仿宋",
+    # Legacy Word family names that Windows exposes under their modern alias.
+    "courier": "couriernew",
+    "couriernew": "couriernew",
+}
+
+
+def _canonical_font_name(name: str) -> str:
+    value = str(name or "").strip().lower()
+    value = _FONT_SUFFIX_RE.sub("", value)
+    parts = [part.strip() for part in re.split(r"[&,，]", value) if part.strip()]
+    for part in parts or [value]:
+        compact = re.sub(r"\s+", "", part)
+        if compact in _FONT_ALIASES:
+            return _FONT_ALIASES[compact]
+        # Keep the first family for multi-name entries (`SimHei & SimHei UI`).
+        return compact
+    return ""
 
 
 def _installed_font_names() -> Tuple[Set[str], str]:
@@ -749,11 +888,8 @@ def check_font_availability(font_names) -> Dict[str, Any]:
             "requested": requested,
         }
 
-    def _has(font: str) -> bool:
-        needle = font.lower()
-        return any(needle in candidate for candidate in installed)
-
-    missing = [font for font in requested if not _has(font)]
+    installed_canonical = {_canonical_font_name(name) for name in installed}
+    missing = [font for font in requested if _canonical_font_name(font) not in installed_canonical]
     return {
         "checked": True,
         "source": source,
@@ -786,6 +922,7 @@ def run_visual_layout_qa(
     docx_path: str,
     reference_docx_path: Optional[str] = None,
     output_dir: Optional[str] = None,
+    comparison_profile: str = "REPLICA",
 ) -> Dict[str, Any]:
     """
     Visual Layout QA Module (v3.0):
@@ -805,6 +942,7 @@ def run_visual_layout_qa(
             printable_width_twips = int(sec0.page_width.twips - sec0.left_margin.twips - sec0.right_margin.twips)
 
     ref_table_widths: Dict[int, int] = {}
+    output_to_reference_table: Dict[int, int] = {}
     if reference_docx_path and os.path.isfile(reference_docx_path):
         try:
             ref_doc = docx.Document(reference_docx_path)
@@ -814,6 +952,7 @@ def run_visual_layout_qa(
                     for gc in rtbl._tbl.xpath("./w:tblGrid/w:gridCol")
                     if (gc.get(qn("w:w")) or "").isdigit()
                 )
+            output_to_reference_table = align_tables(doc.tables, ref_doc.tables)["matches"]
         except Exception:
             pass
 
@@ -824,8 +963,10 @@ def run_visual_layout_qa(
             w_val = gc.get(qn("w:w"))
             if w_val and w_val.isdigit():
                 total_grid_twips += int(w_val)
-        # Skip false-positive overflow if table width matches the reference template's own grid width
-        if t_idx in ref_table_widths and ref_table_widths[t_idx] == total_grid_twips:
+        # Skip false-positive overflow if table width matches the template table this
+        # output table was actually aligned to (not merely the same list index).
+        ref_index = output_to_reference_table.get(t_idx)
+        if ref_index is not None and ref_table_widths.get(ref_index) == total_grid_twips:
             continue
         if total_grid_twips > printable_width_twips * 1.08:
             layout_warnings.append(
@@ -859,8 +1000,12 @@ def run_visual_layout_qa(
                 except Exception:
                     pass
 
-    # 3. Optional Headless PDF conversion + page-level diff if LibreOffice is available
-    soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
+    # 3. PDF conversion (WPS word2pdf preferred on Windows, LibreOffice otherwise)
+    profile = resolve_comparison_profile(
+        comparison_profile, reference_provided=bool(reference_docx_path)
+    )
+    backend = find_pdf_backend()
+    pdf_backend_name = backend.get("name") or "none"
     work_dir = output_dir or tempfile.mkdtemp(prefix="visual_qa_")
     output_pdf_dir = os.path.join(work_dir, "output_pdf")
     reference_pdf_dir = os.path.join(work_dir, "reference_pdf")
@@ -869,19 +1014,40 @@ def run_visual_layout_qa(
     ref_pdf_path = None
     pdf_conversion_errors: Dict[str, str] = {}
     page_diff_available = False
+    page_count_available = False
+    page_count_source: Optional[str] = None
+    page_count_error: Optional[str] = None
     page_count_mismatch: Optional[Tuple[int, int]] = None
     page_diffs: List[Tuple[int, float]] = []
     page_diff_error: Optional[str] = None
     pages_compared = 0
     pages_total = 0
     page_diff_partial = False
-    if soffice_bin:
-        pdf_path, conversion_error = _convert_docx_to_pdf(soffice_bin, docx_path, output_pdf_dir)
+    if pdf_backend_name != "none":
+        if pdf_backend_name == "libreoffice":
+            pdf_path, conversion_error = _convert_docx_to_pdf(
+                backend.get("executable"), docx_path, output_pdf_dir
+            )
+            used_backend = "libreoffice"
+        else:
+            pdf_path, conversion_error, used_backend = convert_docx_to_pdf(
+                docx_path, output_pdf_dir, backend
+            )
+        pdf_backend_name = used_backend or pdf_backend_name
         if conversion_error:
             pdf_conversion_errors["output"] = conversion_error
         pdf_generated = pdf_path is not None
         if reference_docx_path and os.path.isfile(reference_docx_path) and pdf_generated:
-            ref_pdf_path, conversion_error = _convert_docx_to_pdf(soffice_bin, reference_docx_path, reference_pdf_dir)
+            if pdf_backend_name == "libreoffice":
+                ref_pdf_path, conversion_error = _convert_docx_to_pdf(
+                    backend.get("executable"), reference_docx_path, reference_pdf_dir
+                )
+                used_backend = "libreoffice"
+            else:
+                ref_pdf_path, conversion_error, used_backend = convert_docx_to_pdf(
+                    reference_docx_path, reference_pdf_dir, backend
+                )
+            pdf_backend_name = used_backend or pdf_backend_name
             if conversion_error:
                 pdf_conversion_errors["reference"] = conversion_error
             if ref_pdf_path is not None:
@@ -896,6 +1062,8 @@ def run_visual_layout_qa(
                     try:
                         out_pdf = fitz.open(pdf_path)
                         ref_pdf = fitz.open(ref_pdf_path)
+                        page_count_available = True
+                        page_count_source = "pymupdf"
                         if out_pdf.page_count != ref_pdf.page_count:
                             page_count_mismatch = (ref_pdf.page_count, out_pdf.page_count)
                         pages_total = min(out_pdf.page_count, ref_pdf.page_count)
@@ -920,6 +1088,18 @@ def run_visual_layout_qa(
                         if ref_pdf is not None:
                             ref_pdf.close()
 
+    # Page count does not need PyMuPDF: WPS pdfinfo returns the real pagination.
+    if pdf_generated and ref_pdf_path and page_count_mismatch is None:
+        out_count, out_source, out_error = pdf_page_count(pdf_path, backend)
+        ref_count, ref_source, ref_error = pdf_page_count(ref_pdf_path, backend)
+        page_count_source = out_source or ref_source
+        if out_count is not None and ref_count is not None:
+            page_count_available = True
+            if out_count != ref_count:
+                page_count_mismatch = (ref_count, out_count)
+        else:
+            page_count_error = out_error or ref_error or "PDF page count unavailable"
+
     # 4. Font availability: missing fonts make renderers substitute silently
     font_report = check_font_availability(_collect_declared_font_names(doc))
 
@@ -929,7 +1109,9 @@ def run_visual_layout_qa(
     if reference_docx_path and os.path.isfile(reference_docx_path):
         try:
             from .layout_qa import compare_layout_fingerprints
-            layout_report = compare_layout_fingerprints(docx_path, reference_docx_path)
+            layout_report = compare_layout_fingerprints(
+                docx_path, reference_docx_path, comparison_profile=comparison_profile
+            )
         except Exception:
             layout_report = {
                 "passed": False,
@@ -941,7 +1123,12 @@ def run_visual_layout_qa(
     if layout_report:
         structured_issues.extend(layout_report.get("issues") or [])
     if page_count_mismatch is not None:
-        structured_issues.append(_issue("RENDER_PAGE_COUNT_MISMATCH", "pdf", f"reference pages={page_count_mismatch[0]}, output pages={page_count_mismatch[1]}"))
+        structured_issues.append(_issue(
+            "RENDER_PAGE_COUNT_MISMATCH",
+            "pdf",
+            f"reference pages={page_count_mismatch[0]}, output pages={page_count_mismatch[1]}",
+            severity="high" if profile == "REPLICA" else "medium",
+        ))
     for page_index, ratio in page_diffs:
         structured_issues.append(_issue("RENDER_PAGE_PIXEL_DIFF", f"pdf.page[{page_index}]", f"pixel difference ratio={ratio:.4f}", severity="medium"))
     if page_diff_partial:
@@ -962,22 +1149,33 @@ def run_visual_layout_qa(
             coverage_gaps.append("REFERENCE_PDF_NOT_PRODUCED")
         elif pdf_generated and ref_pdf_path and not page_diff_available:
             coverage_gaps.append("PDF_PAGE_DIFF_UNAVAILABLE")
+        if pdf_generated and ref_pdf_path and not page_count_available:
+            coverage_gaps.append("PDF_PAGE_COUNT_UNVERIFIED")
     if not font_report["checked"]:
         coverage_gaps.append("FONT_AVAILABILITY_UNVERIFIED")
     coverage_gaps = list(dict.fromkeys(coverage_gaps))
+    blocking, warnings, _pending = split_issues(structured_issues)
 
     return {
-        "passed": not structured_issues,
+        "passed": not blocking,
         "issues": structured_issues,
         "structured_issues": structured_issues,
+        "warnings": warnings,
+        "warning_count": len(warnings),
+        "blocking_issue_count": len(blocking),
+        "comparison_profile": profile,
         "printable_width_twips": printable_width_twips,
         "layout_warnings": layout_warnings,
         "pdf_rendered": pdf_generated,
+        "pdf_backend": pdf_backend_name,
         "pdf_path": pdf_path,
         "reference_pdf_path": ref_pdf_path,
         "pdf_conversion_errors": pdf_conversion_errors,
         "page_diff_available": page_diff_available,
         "page_diff_error": page_diff_error,
+        "page_count_available": page_count_available,
+        "page_count_source": page_count_source,
+        "page_count_error": page_count_error,
         "page_diff_coverage": {"pages_compared": pages_compared, "pages_total": pages_total, "partial": page_diff_partial},
         "page_count_mismatch": page_count_mismatch,
         "page_diffs": page_diffs,

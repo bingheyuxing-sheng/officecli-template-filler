@@ -20,7 +20,7 @@ TASK_CAPABILITIES: Dict[str, Dict[str, Any]] = {
     "EXCEL_GENERATE": {"handler": "scripts/generate_excel.py", "enabled": True},
     "REPAIR": {"handler": "scripts/repair_document.py", "enabled": True},
     "REVIEW": {"handler": "scripts/review_document.py", "enabled": True},
-    "REFORMAT": {"handler": "scripts/reformat_document.py", "enabled": False},
+    "REFORMAT": {"handler": "scripts/reformat_document.py", "enabled": True},
     "POLISH": {"handler": "scripts/polish_document.py", "enabled": False},
     "MERGE": {"handler": "scripts/merge_documents.py", "enabled": False},
     "PROOFREAD": {"handler": "scripts/proofread_document.py", "enabled": True},
