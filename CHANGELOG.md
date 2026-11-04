@@ -6,6 +6,42 @@
 
 ---
 
+## v3.5.8
+
+**主题：内容真值与图片真值（修复"假成功/假通过"，补齐评审指出的两个最大盲区）**
+
+### 图片：两处"假成功"已修复
+
+- **SVG 双嵌入残留**：Word 2016+ 插入图标/SVG 时写成 `<a:blip>`（栅格兜底）+ `<asvg:svgBlip>`（真正渲染的 SVG）。旧逻辑只换 `_blob`/`r:embed`，SVG 引用残留，Word 仍显示旧图却报告成功。现在替换时移除 `svgBlip` 扩展（`adjustments: ["svg_fallback_removed"]`），兜底图成为唯一来源。
+- **矢量图静默跳过校验**：`verify_docx_images_integrity()` 现在把 SVG/EMF/WMF 记入 `coverage_gaps: VECTOR_IMAGE_UNVERIFIED`，并上抛到 `package_integrity.coverage_gaps` → 整体 `UNVERIFIED`；替换结果携带 `verification: "unverified_vector"`。不再"既不报错也不报缺口"。
+- **VML 图片替换**：WPS 页眉 logo、公章、老模板常用 `w:pict` / `v:imagedata`，此前完全不支持。现在走同一套共享引用安全路径（`reference_kind: "vml"`）：独占时原位替换，共享时新建 part 并重绑 `r:id`。
+- **引用计数补全**：`count_image_part_references()` 同时统计 `a:blip`、`asvg:svgBlip`、`v:imagedata` 三种引用，避免共享图被误判为独占而破坏其他位置。
+- **裁剪框与显示框**：替换时清除 `a:srcRect`（旧裁剪会切掉新图主体）；新增 `fit_mode="fit_image"` 按新图比例重算 `wp:extent`，`preserve_frame`（默认）保留原框并报告。
+- **外部链接图片**：`r:link` 不再静默跳过，`EXTERNAL_IMAGE_LINK` 列出所属部件与目标，提示分发会丢图。
+
+### 内容：引擎级一致性校验
+
+- 新增 `engine/consistency_qa.py`，`run_qa.py` 默认执行（`--no-content-qa` 关闭）：
+  - `CONTENT_VALUE_CONFLICT`（high）：正文与表格对同一"总计类"标签给出不同数值；
+  - `CONTENT_SUBTOTAL_MISMATCH`（high）：表尾合计行 ≠ 上方各行之和（逐列 Decimal 比对）；
+  - `CONTENT_LABEL_VALUE_VARIANCE`（medium）：同一非总计标签在正文/跨表出现少量不同值；
+  - `CONTENT_TERM_DRIFT`（medium）：名称列中同一实体两种写法（张伟/张玮）；
+  - `CONTENT_DATE_FORMAT_MIXED` / `CONTENT_UNIT_STYLE_MIXED`（low）：日期与金额单位写法混用。
+- 报告返回 `label_values`（抽取出的 `label → value` 与位置），让"比了什么"可审计。
+- `audit_fact_sources()`：SSOT `facts` 缺少 `source` 报 `FACT_SOURCE_MISSING`（high）；`UNVERIFIED` / `MODEL_GENERATED` 计入未验证事实。
+- `find_numeric_occurrences()`：PROOFREAD 输出同一数值的全部出现位置与上下文，作为人工判定证据。
+
+### 诚实性修正
+
+- SKILL.md 不再声称可识别"图片内文字"：引擎无 OCR，改为记录 `OCR_UNAVAILABLE`。
+- README 已知限制更正：REFORMAT 已有独立入口；补充 OCR、图表重绘、矢量图校验三项真实边界。
+- 文档测试数更正为当前值（111 → 138）。
+
+### 验证
+
+- 实测（培养方案样例）：内容 QA 抽取 256 个 `label → value`，命中 0 条误报；示例构造的合计错误与正文/表格冲突均被 high 级捕获。
+- 新增 `tests/test_content_and_image_truth.py` 12 项（SVG 双嵌入、引用计数、矢量缺口、VML 替换、裁剪/显示框、合计闭合、正文↔表格冲突、逐行数值不误报、名称漂移、事实溯源、数值出现位置）。全量 **138 项通过**。
+
 ## v3.5.7
 
 **主题：REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 渲染路径（P1）**

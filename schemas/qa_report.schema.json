@@ -80,7 +80,9 @@
         "duplicate_para_ids": { "type": "array", "items": { "type": "string" } },
         "duplicate_docpr_ids": { "type": "array", "items": { "type": "string" } },
         "missing_space_preserve": { "type": "integer" },
-        "image_integrity": { "type": "object" }
+        "image_integrity": { "type": "object" },
+        "coverage_gaps": { "type": "array", "items": { "type": "string" } },
+        "unverified_count": { "type": "integer", "minimum": 0 }
       }
     },
     "format_and_text_qa": {
@@ -111,6 +113,10 @@
         "pdf_conversion_errors": { "type": "object", "additionalProperties": { "type": "string" } },
         "page_diff_available": { "type": "boolean" },
         "page_diff_error": { "type": ["string", "null"] },
+        "pdf_backend": { "type": "string", "enum": ["wps", "libreoffice", "none"] },
+        "page_count_available": { "type": "boolean" },
+        "page_count_source": { "type": ["string", "null"] },
+        "page_count_error": { "type": ["string", "null"] },
         "page_diff_coverage": {
           "type": "object",
           "required": ["pages_compared", "pages_total", "partial"],
@@ -141,6 +147,32 @@
         "revision_count": { "type": "integer" },
         "comment_count": { "type": "integer" },
         "issues": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "content_qa": {
+      "type": "object",
+      "description": "Numeric and terminology cross-checks (prose vs tables, subtotal closure, name drift).",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "issues": { "type": "array", "items": { "type": "object" } },
+        "structured_issues": { "type": "array", "items": { "type": "object" } },
+        "checked_labels": { "type": "integer", "minimum": 0 },
+        "labels_found": { "type": "integer", "minimum": 0 },
+        "label_values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "value", "unit", "location"],
+            "properties": {
+              "label": { "type": "string" },
+              "value": { "type": "string" },
+              "unit": { "type": "string" },
+              "location": { "type": "string" }
+            }
+          }
+        },
+        "coverage_gaps": { "type": "array", "items": { "type": "string" } },
+        "unverified_count": { "type": "integer", "minimum": 0 }
       }
     },
     "excel_qa": {

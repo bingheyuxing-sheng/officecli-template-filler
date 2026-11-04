@@ -247,12 +247,17 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
         _issue("PACKAGE_IMAGE_INTEGRITY", "media", item) for item in image_qa.get("issues", [])
     )
 
+    # Vector images and externally linked images cannot be byte-verified: surface them as
+    # coverage gaps so the overall report becomes UNVERIFIED instead of a silent pass.
+    image_gaps = list(image_qa.get("coverage_gaps") or [])
+    package_gaps = list(dict.fromkeys(image_gaps))
+
     return {
         "passed": passed,
         "issues": structured_issues,
         "structured_issues": structured_issues,
-        "coverage_gaps": [],
-        "unverified_count": 0,
+        "coverage_gaps": package_gaps,
+        "unverified_count": len(package_gaps),
         "inspected_parts_count": len(inspected_xml_parts),
         "xml_parse_errors": xml_parse_errors,
         "dangling_relationships": dangling_rels,
