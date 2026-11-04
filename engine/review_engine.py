@@ -15,6 +15,7 @@ Nothing here uses global process killing; callers stay inside `TaskResourceGuard
 from __future__ import annotations
 
 import copy
+import difflib
 import json
 import os
 import re
@@ -32,7 +33,7 @@ from docx.oxml.ns import qn
 from docx.oxml.parser import parse_xml
 from lxml import etree
 
-from .ooxml_utils import is_red_run, iter_all_document_paragraphs_with_Wait_context
+from .ooxml_utils import TOKEN_PATTERN, is_red_run, iter_all_document_paragraphs_with_Wait_context
 from .repair_engine import (
     _apply_paragraph_profile,
     _classify_paragraph_role,
@@ -699,12 +700,79 @@ def add_paragraph_comment(
 # ---------------------------------------------------------------------------
 
 
+def _build_auto_text_diff_actions(
+    reference_doc,
+    target_doc,
+    existing_actions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Propose tracked text revisions for paragraphs aligned with the template.
+
+    Only pairs the semantic alignment treats as the same slot AND whose text is still
+    similar (>= 0.6) become revisions. A paragraph rewritten from scratch is new content,
+    not a wording correction, and must not be silently replaced.
+    """
+    from .alignment import align_paragraphs
+    from .docx_parser import match_internal_fact_slots
+
+    target_paragraphs = list(target_doc.paragraphs)
+    reference_paragraphs = list(reference_doc.paragraphs)
+    alignment = align_paragraphs(target_paragraphs, reference_paragraphs)
+    claimed = {
+        str(action.get("location_id"))
+        for action in existing_actions
+        if action.get("location_id")
+    }
+
+    actions: List[Dict[str, Any]] = []
+    for target_index, reference_index in sorted(alignment["matches"].items()):
+        location_id = f"body.p[{target_index}]"
+        if location_id in claimed:
+            continue
+        target_paragraph = target_paragraphs[target_index]
+        reference_paragraph = reference_paragraphs[reference_index]
+        target_text = (target_paragraph.text or "").strip()
+        reference_text = (reference_paragraph.text or "").strip()
+        if not target_text or not reference_text or target_text == reference_text:
+            continue
+        # Template residue and protected containers are not authoritative text: restoring
+        # them would replace real content with placeholders or disturb fields/hyperlinks.
+        if TOKEN_PATTERN.search(target_text) or TOKEN_PATTERN.search(reference_text):
+            continue
+        # A blank internal-fact field is a slot, not text to restore: never revert a value
+        # the draft legitimately filled in (e.g. 项目负责人：张三 → 项目负责人：).
+        if match_internal_fact_slots(reference_text):
+            continue
+        if any(is_red_run(run) for run in reference_paragraph.runs):
+            continue
+        if reference_paragraph._p.xpath(
+            ".//w:sdt | .//w:fldSimple | .//w:instrText | .//w:hyperlink | .//a:blip"
+        ):
+            continue
+        if difflib.SequenceMatcher(None, target_text, reference_text).ratio() < 0.6:
+            continue
+        actions.append({
+            "action_id": f"auto_text_diff_{target_index}",
+            "action_type": "TRACK_TEXT_REVISION",
+            "target": location_id,
+            "location_id": location_id,
+            "old_text": target_text,
+            "new_text": reference_text,
+            "reason": "自动比对：按模板文本修正",
+            "change_mode": "TRACKED",
+            "requires_human_review": True,
+            "risk_level": "MEDIUM",
+            "auto_generated": True,
+        })
+    return actions
+
+
 def build_review_plan(
     reference_docx_path: str,
     target_docx_path: str,
     author: str = REVIEW_AUTHOR_DEFAULT,
     text_revisions: Optional[List[Dict[str, Any]]] = None,
     comment_unresolved_placeholders: bool = True,
+    auto_text_diff: bool = False,
 ) -> Dict[str, Any]:
     """
     Diff the target document against the reference template and split the findings into
@@ -816,6 +884,11 @@ def build_review_plan(
             "risk_level": revision.get("risk_level", "MEDIUM"),
         })
 
+    auto_text_actions: List[Dict[str, Any]] = []
+    if auto_text_diff:
+        auto_text_actions = _build_auto_text_diff_actions(ref_doc, tgt_doc, actions)
+        actions.extend(auto_text_actions)
+
     return {
         "schema_version": "3.1",
         "task_mode": "REVIEW",
@@ -827,11 +900,170 @@ def build_review_plan(
             "format_restore_actions": format_count,
             "table_style_restores": len([a for a in actions if a["action_type"] == "RESTORE_TABLE_STYLE"]),
             "tracked_text_revisions": len(text_revisions or []),
+            "auto_text_diffs": len(auto_text_actions),
             "comments": comment_count,
             "total_actions": len(actions),
         },
         "actions": actions,
     }
+
+
+# ---------------------------------------------------------------------------
+# PROOFREAD auto-check
+# ---------------------------------------------------------------------------
+
+# Only unambiguous misspellings go in the lexicon. Judgement calls (的/地/得, 权力/权利,
+# 截止/截至) are deliberately absent: flagging them would create false corrections.
+_PROOFREAD_TYPO_MAP = {
+    "按装": "安装",
+    "帐号": "账号",
+    "帐户": "账户",
+    "做为": "作为",
+    "侯选": "候选",
+    "既使": "即使",
+    "部份": "部分",
+    "关健": "关键",
+    "决对": "绝对",
+    "以经": "已经",
+    "因该": "应该",
+    "在次": "再次",
+}
+_PROOFREAD_TYPO_RE = re.compile(
+    "|".join(re.escape(word) for word in sorted(_PROOFREAD_TYPO_MAP, key=len, reverse=True))
+)
+
+
+def audit_proofread_candidates(docx_path: Optional[str] = None, doc=None) -> Dict[str, Any]:
+    """Deterministic proofreading evidence: content contradictions plus typo candidates.
+
+    Nothing here decides which value is correct. Every finding is a comment the human
+    accepts or rejects; numeric corrections are never invented.
+    """
+    if doc is None:
+        doc = docx.Document(docx_path)
+
+    issues: List[Dict[str, Any]] = []
+    coverage_gaps: List[str] = []
+
+    try:
+        from .consistency_qa import audit_content_consistency
+
+        content_report = audit_content_consistency(doc=doc)
+        for issue in content_report.get("issues") or []:
+            issues.append({**issue, "source": "content_qa"})
+    except Exception as exc:  # a failed check must be reported, never treated as a pass
+        coverage_gaps.append(f"CONTENT_QA_FAILED: {exc}")
+
+    seen = set()
+    for context in iter_all_document_paragraphs_with_Wait_context(doc):
+        text = context["paragraph"].text or ""
+        if not text.strip():
+            continue
+        for match in _PROOFREAD_TYPO_RE.finditer(text):
+            wrong = match.group(0)
+            key = (context["location_id"], wrong)
+            if key in seen:
+                continue
+            seen.add(key)
+            issues.append({
+                "code": "PROOFREAD_TYPO_CANDIDATE",
+                "location": context["location_id"],
+                "detail": f"“{wrong}”疑似应为“{_PROOFREAD_TYPO_MAP[wrong]}”",
+                "severity": "low",
+                "source": "typo_lexicon",
+            })
+
+    # Duplicate headings are a structural logic problem (two sections with the same
+    # title), not a spelling issue. Only real headings participate, never TOC entries.
+    from .workflow import is_heading_paragraph
+
+    heading_locations: Dict[str, str] = {}
+    for index, paragraph in enumerate(doc.paragraphs):
+        if not is_heading_paragraph(paragraph):
+            continue
+        title = (paragraph.text or "").strip()
+        if not title:
+            continue
+        key = re.sub(r"\s+", "", title)
+        location = f"body.p[{index}]"
+        if key in heading_locations:
+            issues.append({
+                "code": "PROOFREAD_DUPLICATE_HEADING",
+                "location": location,
+                "detail": f"标题“{title}”与 {heading_locations[key]} 重复，请确认是否为重复章节",
+                "severity": "low",
+                "source": "structure",
+            })
+        else:
+            heading_locations[key] = location
+
+    try:
+        from .logic_qa import audit_logic
+
+        logic_report = audit_logic(doc)
+        issues.extend(logic_report.get("issues") or [])
+    except Exception as exc:  # a failed logic pass is a coverage gap, never a pass
+        coverage_gaps.append(f"LOGIC_QA_FAILED: {exc}")
+
+    return {
+        "passed": not issues and not coverage_gaps,
+        "issues": issues,
+        "issue_count": len(issues),
+        "coverage_gaps": coverage_gaps,
+        "unverified_count": len(coverage_gaps),
+    }
+
+
+def build_proofread_plan(
+    target_docx_path: str,
+    author: str = REVIEW_AUTHOR_DEFAULT,
+    text_revisions: Optional[List[Dict[str, Any]]] = None,
+    auto_check: bool = True,
+) -> Dict[str, Any]:
+    """PROOFREAD plan: supplied fixes are tracked edits, automated findings are comments."""
+    plan = build_review_plan(
+        target_docx_path,
+        target_docx_path,
+        author=author,
+        text_revisions=text_revisions,
+    )
+    plan["task_mode"] = "PROOFREAD"
+
+    auto_check_comments = 0
+    if auto_check:
+        audit = audit_proofread_candidates(docx_path=target_docx_path)
+        existing = {
+            (action.get("location_id"), action.get("comment"))
+            for action in plan["actions"]
+            if action.get("action_type") == "ADD_REVIEW_COMMENT"
+        }
+        for index, issue in enumerate(audit["issues"]):
+            comment = f"[自动检查:{issue.get('code')}] {issue.get('detail')}"
+            key = (issue.get("location"), comment)
+            if key in existing:
+                continue
+            plan["actions"].append({
+                "action_id": f"auto_check_{index}",
+                "action_type": "ADD_REVIEW_COMMENT",
+                "target": issue.get("location"),
+                "location_id": issue.get("location"),
+                "comment": comment,
+                "change_mode": "COMMENT",
+                "requires_human_review": True,
+                "risk_level": "MEDIUM" if issue.get("severity") == "high" else "LOW",
+                "auto_generated": True,
+            })
+            auto_check_comments += 1
+        plan["auto_check"] = {
+            "issue_count": audit["issue_count"],
+            "coverage_gaps": audit.get("coverage_gaps") or [],
+        }
+    else:
+        plan["auto_check"] = {"issue_count": 0, "coverage_gaps": [], "disabled": True}
+
+    plan["summary"]["auto_check_comments"] = auto_check_comments
+    plan["summary"]["total_actions"] = len(plan["actions"])
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -847,6 +1079,27 @@ def _find_paragraph_by_location(doc, location_id: str):
     """Resolve a `location_id` from the unified walker to its paragraph, or None."""
     for context in iter_all_document_paragraphs_with_Wait_context(doc):
         if context["location_id"] == location_id:
+            return context["paragraph"]
+    return None
+
+
+def _resolve_comment_paragraph(doc, location_id: str):
+    """Resolve a QA issue location (paragraph, header/footer or table cell) to a paragraph.
+
+    `consistency_qa` reports table cells as `body.tbl[t].r[r].c[c]` while the walker
+    addresses their paragraphs as `...c[c].p[i]`; fall back to the first paragraph in
+    that cell so the finding still gets a visible comment.
+    """
+    exact = _find_paragraph_by_location(doc, location_id)
+    if exact is not None:
+        return exact
+    contexts = list(iter_all_document_paragraphs_with_Wait_context(doc))
+    if ".p[" not in location_id:
+        for context in contexts:
+            if context["location_id"].startswith(location_id + ".p["):
+                return context["paragraph"]
+    for context in contexts:
+        if context["location_id"].startswith(location_id):
             return context["paragraph"]
     return None
 
@@ -1041,11 +1294,17 @@ def execute_review_plan(
                     added_comments += 1
 
         elif action_type == "ADD_REVIEW_COMMENT":
+            paragraph = None
+            comment_location = str(action.get("location_id") or "")
+            if comment_location:
+                paragraph = _resolve_comment_paragraph(tgt_doc, comment_location)
             p_idx = action.get("paragraph_index")
-            if p_idx is not None and p_idx < len(tgt_doc.paragraphs):
+            if paragraph is None and p_idx is not None and p_idx < len(tgt_doc.paragraphs):
+                paragraph = tgt_doc.paragraphs[p_idx]
+            if paragraph is not None:
                 comments = comments or _CommentsStore(tgt_doc)
                 add_paragraph_comment(
-                    tgt_doc.paragraphs[p_idx],
+                    paragraph,
                     action.get("comment", ""),
                     author=author,
                     date=date,
@@ -1055,7 +1314,7 @@ def execute_review_plan(
                 action_results.append({
                     "action_id": action.get("action_id"),
                     "status": "APPLIED",
-                    "target": f"body.p[{p_idx}]",
+                    "target": comment_location or f"body.p[{p_idx}]",
                     "revision_ids": [],
                     "format_revision_ids": [],
                 })

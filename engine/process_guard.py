@@ -634,3 +634,14 @@ def read_auto_cleanup_log() -> Dict[str, Any]:
             return json.load(handle)
     except (OSError, ValueError):
         return {}
+
+
+def current_cleanup_log_path() -> str:
+    """Path of the log the active auto-cleanup session will write on exit.
+
+    A file-lock failure happens before that log exists, so callers need the path of the
+    task-scoped file that will hold the PID evidence, not the shared fallback name.
+    """
+    if _auto_cleanup_session is not None:
+        return task_cleanup_log_path(_auto_cleanup_session.task_id)
+    return AUTO_CLEANUP_LOG

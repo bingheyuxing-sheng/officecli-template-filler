@@ -33,6 +33,9 @@
 | **8 种任务路由** | `GENERATE` / `POLISH` / `REPAIR` / `REVIEW` / `MERGE` / `REFORMAT` / `EXCEL_GENERATE` / `PROOFREAD`，按输入文件与意图自动分类；尚未实现的 `POLISH` / `MERGE` 返回 `CAPABILITY_NOT_AVAILABLE` |
 | **内容真值 QA** | 正文↔表格数值冲突、表内合计闭合、名称拼写漂移、日期/单位写法混用；事实条目强制 `source` 溯源 |
 | **图片完整性** | 栅格图 MIME 匹配替换、SVG 双嵌入清理、VML（`w:pict`）图片替换、裁剪框清除、矢量图显式报告未验证 |
+| **按角色定位图片** | `find_images(role="logo" / "stamp" / "qr" / "illustration")`，每条都给出判定依据；多个匹配时拒绝替换 |
+| **可选 OCR** | 装了 RapidOCR / PaddleOCR / Tesseract 就能读图内文字并报占位残留；没装则明确 `OCR_UNAVAILABLE` |
+| **图形重绘** | `render_chart_image()` 从数据渲染表格/柱状/饼图为 PNG，再走标准替换通道；缺 matplotlib 或中文字体时返回明确状态 |
 | **模板兼容性分级** | `L1`–`L4`：从标准模板到 OLE / SmartArt / Chart / OMML 等只读保护区 |
 | **非破坏式改写** | 保留未映射的样式、`<w:proofErr>`、书签、域代码、共享图片 `rId`，不重建整篇文档 |
 | **Word 原生修订** | 文字改动写 `<w:ins>` / `<w:del>`，格式改动写 `w:*PrChange`，判断类问题写 `w:comment` |
@@ -163,7 +166,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前基线：**138 项测试全部通过**（v3.5.8）。
+当前基线：**186 项测试全部通过**（v3.5.9）。
 
 ---
 
@@ -173,6 +176,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v3.5.9 | [Release v3.5.9](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.9) | 按角色定位图片、可选 OCR、图形重绘、流程闭环（MUST_ASK_USER、自动文字 diff、校对自动检查、SSOT 证据）与 workflow 编排辅助 |
 | v3.5.8 | [Release v3.5.8](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.8) | 内容真值 QA（数值冲突/合计闭合/名称漂移）、SVG 双嵌入修复、VML 图片替换、矢量图显式未验证、事实溯源校验 |
 | v3.5.7 | [Release v3.5.7](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.7) | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
 | v3.5.6 | 已并入 v3.5.7 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
@@ -189,8 +193,8 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 已知限制
 
 - `POLISH` / `MERGE` 目前没有独立执行入口，路由返回 `CAPABILITY_NOT_AVAILABLE`，不再让 Agent 自行挑选脚本。
-- 图片内文字不做 OCR：`semantic_preflight` 只能依赖图片标题与周边正文判断占位图，无法识别图内的 `***`/`XXXX`。需要使用 OCR 时请自行抽取后作为文本输入。
-- 图表/示意图重绘（`render_chart_image` 类工具）不在引擎内：`FULL` 档的"重绘占位图"是编排层要求，引擎只提供替换通道。
+- 图片内文字需要额外安装 OCR 后端（RapidOCR / PaddleOCR / Tesseract）；未安装时 `run_qa.py --ocr` 报 `OCR_UNAVAILABLE`，默认不执行这一项。
+- 图形重绘需要 matplotlib，中文标签还需要本机 CJK 字体；缺失时返回 `RENDER_BACKEND_UNAVAILABLE` / `CJK_FONT_UNAVAILABLE`，不会输出乱码图。
 - SVG/EMF/WMF 等矢量图无法字节级校验，替换后只能报告 `VECTOR_IMAGE_UNVERIFIED`，渲染结果需人工或 PDF 比对确认。
 - Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象不会被 `openpyxl` 保留：`inspect_excel_objects()` 会预检，`generate_excel.py` 默认以 `OBJECT_LOSS_RISK` 拒绝执行，需显式加 `--allow-object-loss`。
 - 版面 QA 使用 DOCX 版面指纹（字体、字号、对齐、缩进、表格列宽、图片比例），不承诺逐像素一致；像素级比对仍需本机 LibreOffice + PyMuPDF。

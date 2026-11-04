@@ -251,15 +251,21 @@ def check_table_subtotals(document) -> List[Dict[str, Any]]:
             if total_value is None:
                 continue
             parts: List[Decimal] = []
-            for row in data_rows:
+            for row_index, row in enumerate(data_rows):
                 cell_text = (row.cells[column_index].text or "").replace(",", "").strip() if column_index < len(row.cells) else ""
                 if not cell_text:
                     continue
                 if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?", cell_text):
+                    if row_index == 0:
+                        # Ordinary tables carry a header row (指标 | 数值); it is a label
+                        # row, not a broken data row, so skip it instead of giving up.
+                        continue
                     parts = []
                     break
                 value = _to_decimal(cell_text)
                 if value is None:
+                    if row_index == 0:
+                        continue
                     parts = []
                     break
                 parts.append(value)

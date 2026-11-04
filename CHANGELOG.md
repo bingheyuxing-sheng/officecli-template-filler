@@ -6,6 +6,56 @@
 
 ---
 
+## v3.5.9
+
+**主题：按角色定位图片、可选 OCR、图形重绘管线、流程闭环与编排辅助（完成评审剩余 P1/P2 项）**
+
+### 图片入口
+
+- `find_images(doc, role=None)`：遍历全部 story 部件，返回 `role` / `evidence` / `owner_part` / `paragraph_index` / `blip_index` / 像素尺寸 / caption。角色判定基于结构信号：页眉页脚 → `logo`（正方形且主色偏红 → `stamp`）、小尺寸方形灰度正文图 → `qr`、caption 含「示意图/流程图/二维码」→ `illustration`/`qr`、大尺寸正文图 → `illustration`。
+- `replace_image_by_role()`：只替换唯一匹配项；匹配到 0 个或多个时抛错并列出全部候选位置，避免静默替换错图。
+- 修复：`find_images` 对 `w:hdr`/`w:ftr` 根节点改用 `.//w:p`（`.//w:hdr//w:p` 永远匹配不到根节点，此前页眉图片会被漏掉）。
+
+### 可选 OCR
+
+- 新增 `engine/ocr_engine.py`：依次探测 `rapidocr_onnxruntime` → `paddleocr` → `pytesseract` + `tesseract`，把三种完全不同的返回结构统一成文本。
+- `audit_image_text()` 输出 `PLACEHOLDER_TEXT_IN_IMAGE`（medium），覆盖 `***`、`XXXX`、`___`、`待填写`、`示例文本`、`此处插入`；矢量部件记 `VECTOR_IMAGE_OCR_UNSUPPORTED`。
+- 无后端时返回 `coverage_gaps: ["OCR_UNAVAILABLE"]` 且 `unverified_count: 1`，不谎报通过。
+- `run_qa.py --ocr` 显式启用该段；默认不执行，避免无谓依赖。
+
+### 图形重绘
+
+- 新增 `engine/chart_render.py`：`render_chart_image(spec, out_path)` 支持 `table` / `bar` / `pie`，200 dpi 输出 PNG，可接 `replace_image_by_role()` 走标准替换通道（共享引用与 MIME 规则依然生效）。
+- 显式状态而非坏图：`INVALID_SPEC`、`RENDER_BACKEND_UNAVAILABLE`（无 matplotlib）、`CJK_FONT_UNAVAILABLE`（中文标签但无 CJK 字体）。只有 `RENDERED` 才产生文件。
+
+### 文档结构
+
+- `SKILL.md` 拆分：引擎实现细节与逐版本演进移入 `references/engine-internals.md`，主文件保留路由、工作流、QA 门禁与图片操作指引。体积 64.7KB → 约 41KB，Agent 上下文开销明显下降。
+- 新增 Step 3A「Working with pictures」：按角色定位、OCR 启用方式、图形重绘的降级处理。
+
+### 流程闭环与引擎缺口
+
+- `MUST_ASK_USER`：`extract_document_spec()` 识别空白内部事实字段（负责人、联系电话、编号等），产出 `internal_fact` 槽位，确认门不再拿不到数据源。
+- `REVIEW`：`build_review_plan(auto_text_diff=True)` 自动生成模板↔草稿文字修订；跳过占位符、红字、空内部事实字段与 SDT/域/超链接/图片容器。`review_document.py` 默认开启，`--no-auto-text-diff` 关闭。
+- `PROOFREAD`：`audit_proofread_candidates()` / `build_proofread_plan()` 把内容冲突、错别字、重复标题与逻辑检查写成批注；`--no-auto-check` 关闭。批注可锚定段落、页眉页脚与表格单元格。
+- `SSOT`：`SSOTValidationError` 携带 `code / metric / locations / values` 与 `as_dict()`。
+- 包完整性：新增 `w:proofErr` 配对检查 `PACKAGE_PROOFERR_UNBALANCED`（medium）。
+- 文件锁：`OUTPUT_FILE_LOCKED.lock_info.cleanup_log` 指向当前任务的清理日志。
+- 图形重绘失败结果统一带 `needs_redraw: true`。
+- 合计检查支持表头行：首行非数字时跳过表头，不再放弃整列。
+
+### 编排与逻辑辅助
+
+- 新增 `engine/workflow.py`：`resolve_confirmation_gate()`、`resolve_execution_profile()` / `profile_requirements()`、`WorkflowCheckpointStore`、`assess_toc()` / `toc_degradation_chain()`、`run_visual_qa_rounds()`。
+- 新增 `engine/logic_qa.py`：重复段落、空章节、编号跳号、日期区间倒挂。
+- 新增 `engine/research.py`：研究策略、查询计划、事实来源校验。
+
+### 验证
+
+- 新增 `tests/test_image_roles_ocr_render.py` 11 项：角色分类与证据、按角色过滤、歧义拒绝替换、按角色替换成功、占位模式匹配、无后端缺口、注入 reader 检出占位文字、OCR 未验证态、非法 spec、无渲染后端、无 CJK 字体拒绝出图。
+- 新增 `tests/test_doc_gap_closure.py` 13 项、`tests/test_workflow.py` 15 项、`tests/test_research_logic.py` 9 项。
+- 全量 **186 项测试通过**。
+
 ## v3.5.8
 
 **主题：内容真值与图片真值（修复"假成功/假通过"，补齐评审指出的两个最大盲区）**

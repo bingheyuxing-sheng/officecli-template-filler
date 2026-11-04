@@ -22,6 +22,7 @@ from engine import (
     audit_docx_package_integrity,
     audit_format_and_text_qa,
     audit_content_consistency,
+    audit_image_text,
     run_visual_layout_qa,
     audit_excel_formula_and_style_qa,
     audit_review_integrity,
@@ -31,7 +32,7 @@ from engine import (
 )
 
 
-SECTION_KEYS = ("package_integrity", "format_and_text_qa", "content_qa", "visual_qa", "review_qa", "excel_qa")
+SECTION_KEYS = ("package_integrity", "format_and_text_qa", "content_qa", "image_text_qa", "visual_qa", "review_qa", "excel_qa")
 
 # Placeholder residue is intentional in REVIEW mode: it waits for a human decision.
 PENDING_HUMAN_REVIEW_CODES = {"TEMPLATE_TEXT_RESIDUAL"}
@@ -90,6 +91,11 @@ def main() -> int:
         action="store_true",
         help="Skip numeric/term consistency checks (content_qa section)",
     )
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="OCR pictures to detect placeholder text inside images (requires an OCR backend)",
+    )
     args = parser.parse_args()
 
     fpath = args.output_alias or args.file_path
@@ -130,6 +136,10 @@ def main() -> int:
             # Content truth: numeric conflicts, subtotal closure, term drift. A high
             # severity finding here is a content error, not a formatting opinion.
             report["content_qa"] = audit_content_consistency(doc=doc)
+        if args.ocr:
+            # Image-internal text is out of scope without an OCR backend; asking for it
+            # explicitly turns a missing backend into OCR_UNAVAILABLE (UNVERIFIED).
+            report["image_text_qa"] = audit_image_text(fpath)
         if args.review:
             report["review_qa"] = audit_review_integrity(fpath)
 

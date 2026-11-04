@@ -30,7 +30,7 @@ import uuid
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 from .qa_policy import split_issues
-from .process_guard import list_process_pids
+from .process_guard import current_cleanup_log_path, list_process_pids
 
 QA_PASSED = "PASSED"
 QA_PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
@@ -305,6 +305,7 @@ class DocumentTransaction:
                 "output_path": self.output_path,
                 "error": str(exc),
                 "editor_sdk_pids": list_process_pids("editor_sdk.exe"),
+                "cleanup_log": current_cleanup_log_path(),
                 "hint": (
                     "Close the preview that holds the file, or run "
                     "`python scripts/cleanup_editor_sdk.py --list` and then "

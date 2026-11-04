@@ -48,6 +48,31 @@ TASK_MODES = (
 )
 
 
+# Internal, unsearchable facts. A template that leaves one of these fields blank cannot be
+# filled from public sources, so the confirmation gate must ask the user (MUST_ASK_USER).
+_INTERNAL_FACT_LABELS = (
+    "项目负责人姓名", "项目负责人", "企业负责人", "部门负责人", "负责人",
+    "项目总监", "项目经理", "编制单位", "编制人", "审核人", "审定人", "批准人",
+    "签发人", "经办人", "联系电话", "联系方式", "项目编号", "合同编号",
+    "文件编号", "内部编号", "档案号", "学号", "工号", "身份证号",
+)
+_INTERNAL_FACT_LABEL_RE = re.compile(
+    r"(" + "|".join(
+        re.escape(label) for label in sorted(_INTERNAL_FACT_LABELS, key=len, reverse=True)
+    ) + r")\s*[：:]\s*(?:[_\*＊]{2,}|[Xx]{3,}|待填(?:写)?|待定|暂无|[（(]\s*[)）])?\s*$"
+)
+
+
+def match_internal_fact_slots(text: str) -> List[str]:
+    """Return internal-fact labels whose value is left blank at the end of a line."""
+    labels: List[str] = []
+    for line in (text or "").splitlines() or [""]:
+        match = _INTERNAL_FACT_LABEL_RE.search(line.strip())
+        if match:
+            labels.append(match.group(1))
+    return list(dict.fromkeys(labels))
+
+
 def route_document_task(
     input_files: List[str],
     user_intent: str = "",
@@ -419,6 +444,18 @@ def extract_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
                 "matched_text": logical_text.strip()[:120],
                 "confirmation_tier": "PROTECTED_DO_NOT_TOUCH",
             })
+        else:
+            # Blank internal-fact fields (负责人 / 联系电话 / 内部编号 ...) are exactly the
+            # slots no public search can resolve, so they carry the explicit MUST_ASK_USER
+            # tier instead of being silently left empty or invented.
+            for label in match_internal_fact_slots(logical_text):
+                candidate_hits.append({
+                    "location_id": loc_id,
+                    "scope": scope,
+                    "candidate_type": "internal_fact",
+                    "matched_text": label,
+                    "confirmation_tier": "MUST_ASK_USER",
+                })
 
         # Check inline/anchored drawings & non-text objects
         blips = p_el.xpath(".//a:blip")

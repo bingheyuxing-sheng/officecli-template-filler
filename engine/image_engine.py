@@ -251,6 +251,193 @@ def _vml_imagedata(paragraph) -> List[Any]:
     return [node for node in paragraph._p.iter() if _local_name(node) == "imagedata"]
 
 
+IMAGE_ROLES = ("logo", "stamp", "qr", "illustration", "photo")
+
+_ROLE_CAPTION_HINTS = {
+    "illustration": ("示意图", "流程图", "结构图", "框架图", "框图", "图1", "图一", "图示"),
+    "qr": ("二维码", "扫码", "QR"),
+}
+
+
+def _dominant_color(image) -> str:
+    """Coarse hue bucket for a small thumbnail: red / grayscale / color."""
+    try:
+        small = image.convert("RGB").resize((32, 32))
+        width, height = small.size
+        pixels = [small.getpixel((x, y)) for y in range(height) for x in range(width)]
+    except Exception:
+        return "unknown"
+    red = green = blue = 0
+    colorful = 0
+    for r, g, b in pixels:
+        red += r
+        green += g
+        blue += b
+        if max(r, g, b) - min(r, g, b) > 40:
+            colorful += 1
+    total = max(len(pixels), 1)
+    if colorful / total < 0.15:
+        return "grayscale"
+    if red / total > green / total * 1.35 and red / total > blue / total * 1.35:
+        return "red"
+    return "color"
+
+
+def _guess_role(in_header: bool, width: int, height: int, color: str, caption: str) -> Tuple[str, str]:
+    """Return `(role, evidence)` from cheap structural signals — never from pixels alone."""
+    caption_lower = (caption or "").lower()
+    for role, hints in _ROLE_CAPTION_HINTS.items():
+        for hint in hints:
+            if hint in caption or hint.lower() in caption_lower:
+                return role, f"caption contains '{hint}'"
+
+    aspect = (width / float(height)) if height else 0.0
+    square = 0.9 <= aspect <= 1.1
+    if in_header:
+        if square and min(width, height) <= 400 and color == "red":
+            return "stamp", "header image, square and predominantly red"
+        return "logo", "header/footer image"
+    if square and min(width, height) <= 400 and color == "grayscale":
+        return "qr", "square, small, grayscale"
+    if width >= 400 or height >= 300:
+        return "illustration", "large body image"
+    return "photo", "body image"
+
+
+def find_images(doc, role: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Locate pictures by role instead of by `blip_index`.
+
+    Business tasks reference "the logo", "the stamp", "the QR code" far more often than
+    "paragraph 12, second blip". Each entry reports the structural evidence behind its
+    guess so a wrong guess is visible rather than silently applied.
+
+    `role` filters to one of `logo` / `stamp` / `qr` / `illustration` / `photo`;
+    `None` returns every image. VML pictures are included with `reference_kind: "vml"`.
+    """
+    if role is not None and role not in IMAGE_ROLES:
+        raise ValueError(f"role must be one of {IMAGE_ROLES} or None, got {role!r}")
+
+    results: List[Dict[str, Any]] = []
+    story_parts = _iter_story_parts(doc)
+
+    from docx.text.paragraph import Paragraph
+
+    for part in story_parts:
+        element = getattr(part, "element", None)
+        if element is None:
+            continue
+        partname = str(getattr(part, "partname", ""))
+        in_header = "header" in partname.lower() or "footer" in partname.lower()
+
+        # `.//w:p` works for w:body, w:hdr and w:ftr roots alike (a header root is w:hdr
+        # itself, so `.//w:hdr//w:p` would never match).
+        for paragraph_index, paragraph_element in enumerate(element.xpath(".//w:p")):
+            paragraph = Paragraph(paragraph_element, part)
+            caption = (paragraph.text or "").strip()
+
+            for blip_index, blip in enumerate(paragraph._p.xpath(".//a:blip")):
+                r_id = blip.get(qn("r:embed"))
+                if not r_id or r_id not in part.rels or part.rels[r_id].is_external:
+                    continue
+                image_part = part.rels[r_id].target_part
+                blob = getattr(image_part, "blob", b"")
+                try:
+                    with Image.open(io.BytesIO(blob)) as im:
+                        width, height = im.size
+                        color = _dominant_color(im)
+                except Exception:
+                    width = height = 0
+                    color = "unknown"
+                guessed, evidence = _guess_role(in_header, width, height, color, caption)
+                entry = {
+                    "role": guessed,
+                    "evidence": evidence,
+                    "reference_kind": "blip",
+                    "owner_part": partname,
+                    "paragraph_index": paragraph_index,
+                    "blip_index": blip_index,
+                    "rId": r_id,
+                    "partname": str(image_part.partname),
+                    "content_type": getattr(image_part, "content_type", ""),
+                    "width_px": width,
+                    "height_px": height,
+                    "caption": caption[:80],
+                }
+                if role is None or role == guessed:
+                    results.append(entry)
+
+            for blip_index, imagedata in enumerate(_vml_imagedata(paragraph)):
+                r_id = imagedata.get(qn("r:id")) or imagedata.get(qn("r:embed"))
+                if not r_id or r_id not in part.rels or part.rels[r_id].is_external:
+                    continue
+                image_part = part.rels[r_id].target_part
+                blob = getattr(image_part, "blob", b"")
+                try:
+                    with Image.open(io.BytesIO(blob)) as im:
+                        width, height = im.size
+                        color = _dominant_color(im)
+                except Exception:
+                    width = height = 0
+                    color = "unknown"
+                guessed, evidence = _guess_role(in_header, width, height, color, caption)
+                entry = {
+                    "role": guessed,
+                    "evidence": evidence,
+                    "reference_kind": "vml",
+                    "owner_part": partname,
+                    "paragraph_index": paragraph_index,
+                    "blip_index": blip_index,
+                    "rId": r_id,
+                    "partname": str(image_part.partname),
+                    "content_type": getattr(image_part, "content_type", ""),
+                    "width_px": width,
+                    "height_px": height,
+                    "caption": caption[:80],
+                }
+                if role is None or role == guessed:
+                    results.append(entry)
+
+    return results
+
+
+def replace_image_by_role(doc, role: str, new_image_path: str, **options) -> Dict[str, Any]:
+    """
+    Replace the single image whose role matches. Refuses to act when the match is
+    ambiguous — replacing the wrong logo silently is worse than asking.
+    """
+    matches = find_images(doc, role=role)
+    if not matches:
+        raise ValueError(f"No image matched role={role!r}")
+    if len(matches) > 1:
+        locations = [f"{item['owner_part']}#p{item['paragraph_index']}/b{item['blip_index']}" for item in matches]
+        raise ValueError(f"{len(matches)} images matched role={role!r}: {locations}; refine the target")
+    entry = matches[0]
+    paragraph = None
+    part = None
+    for candidate in _iter_story_parts(doc):
+        if str(getattr(candidate, "partname", "")) != entry["owner_part"]:
+            continue
+        part = candidate
+        paragraphs = candidate.element.xpath(".//w:p")
+        if entry["paragraph_index"] < len(paragraphs):
+            paragraph = paragraphs[entry["paragraph_index"]]
+        break
+    if paragraph is None or part is None:
+        raise ValueError(f"Could not resolve paragraph for role={role!r}")
+
+    # Reuse the paragraph-level replacement path by wrapping the raw w:p element.
+    from docx.text.paragraph import Paragraph
+
+    wrapped = Paragraph(paragraph, doc.part if "document" in entry["owner_part"] else part)
+    result = replace_inline_image_in_paragraph(
+        doc, wrapped, new_image_path, blip_index=entry["blip_index"], **options
+    )
+    result["role"] = role
+    result["matched"] = entry
+    return result
+
+
 def _replace_vml_image(
     doc,
     paragraph,

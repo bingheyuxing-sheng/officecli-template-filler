@@ -351,6 +351,30 @@ Use `--profile style-guide --task-mode GENERATE` for generated documents and
 `--profile replica --task-mode REPAIR/REVIEW` when template order must be preserved.
 `PENDING_HUMAN_REVIEW` means only intentional placeholder residue remains under `--review`.
 
+## Pictures by role, OCR and figures
+
+```python
+from engine import find_images, replace_image_by_role, render_chart_image, audit_image_text
+
+find_images(doc)                      # [{role, evidence, owner_part, paragraph_index, blip_index, ...}]
+find_images(doc, role="logo")         # logo / stamp / qr / illustration / photo
+
+# Raises ValueError when the role matches zero or several pictures.
+replace_image_by_role(doc, "illustration", "new.png", fit_mode="fit_image")
+
+# Optional OCR: returns coverage_gaps=["OCR_UNAVAILABLE"] when no backend is installed.
+report = audit_image_text("output.docx")
+
+result = render_chart_image({"kind": "bar", "categories": ["2024"], "series": {"招生": [120]}}, "chart.png")
+if result["status"] != "RENDERED":
+    # RENDER_BACKEND_UNAVAILABLE / CJK_FONT_UNAVAILABLE / INVALID_SPEC
+    print(result["status"], result.get("detail"))
+```
+
+Role detection is structural (header/footer, size, aspect, dominant hue, caption keywords), so
+each result states its `evidence`. Figure rendering needs matplotlib, and Chinese labels need an
+installed CJK font; both conditions return an explicit status rather than a broken image.
+
 ## REFORMAT: semantic diff plan and tracked apply
 
 ```python
