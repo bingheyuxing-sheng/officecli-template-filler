@@ -52,6 +52,11 @@ def main() -> int:
     parser.add_argument("--snapshot", default="", help="Optional review_snapshot.json output path (default: next to the deliverable)")
     parser.add_argument("--plan-out", default="", help="Optional review_plan.json output path")
     parser.add_argument("--plan-only", action="store_true", help="Only emit the review plan")
+    parser.add_argument(
+        "--no-auto-text-diff",
+        action="store_true",
+        help="Disable automatic template-vs-draft text diff (only --revisions become tracked edits)",
+    )
     args = parser.parse_args()
 
     revisions = []
@@ -64,6 +69,7 @@ def main() -> int:
         args.target,
         author=args.author,
         text_revisions=revisions,
+        auto_text_diff=not args.no_auto_text_diff,
     )
     if args.plan_out:
         os.makedirs(os.path.dirname(os.path.abspath(args.plan_out)), exist_ok=True)

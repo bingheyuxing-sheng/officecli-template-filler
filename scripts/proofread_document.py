@@ -33,7 +33,7 @@ from engine import (
     TransactionPreflightError,
     audit_docx_package_integrity,
     audit_review_integrity,
-    build_review_plan,
+    build_proofread_plan,
     execute_review_plan,
     install_auto_cleanup,
     write_review_snapshot,
@@ -49,6 +49,11 @@ def main() -> int:
     parser.add_argument("--revisions", default="", help="JSON list of text revisions")
     parser.add_argument("--report", default="", help="Optional proofread_report.json path")
     parser.add_argument("--snapshot", default="", help="Optional review_snapshot.json path")
+    parser.add_argument(
+        "--no-auto-check",
+        action="store_true",
+        help="Disable automatic content/typo checks (only --revisions and placeholder comments remain)",
+    )
     args = parser.parse_args()
 
     revisions = []
@@ -57,11 +62,12 @@ def main() -> int:
             revisions = json.load(handle)
 
     # Reference == target: proofreading never restores a template's formatting.
-    plan = build_review_plan(
-        args.target,
+    # Automated content/typo findings become review comments, never silent edits.
+    plan = build_proofread_plan(
         args.target,
         author=args.author,
         text_revisions=revisions,
+        auto_check=not args.no_auto_check,
     )
 
     tx = DocumentTransaction(args.target, args.out, task_mode="PROOFREAD")
@@ -109,6 +115,7 @@ def main() -> int:
         "target_docx": args.target,
         "output_docx": args.out,
         "author": args.author,
+        "auto_check": plan.get("auto_check"),
         "execution": execution,
         "review_qa": review_qa,
         "package_qa": package_qa,

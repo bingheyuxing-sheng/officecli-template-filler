@@ -21,7 +21,35 @@ class SSOTValidationError(ValueError):
 
     This must never be an `assert`: `python -O` strips assertions, so a totals check written
     as `assert` silently accepts wrong numbers in optimized mode.
+
+    The error carries structured evidence (`metric`, `locations`, `values`) so a caller can
+    report which metric failed, where the conflicting entries live, and both values instead
+    of only a prose message.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "SSOT_VALIDATION_FAILED",
+        metric: Optional[str] = None,
+        locations: Optional[List[str]] = None,
+        values: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.metric = metric
+        self.locations = list(locations or [])
+        self.values = dict(values or {})
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": str(self),
+            "metric": self.metric,
+            "locations": self.locations,
+            "values": self.values,
+        }
 
 
 ROUNDING_MODES = {
@@ -278,14 +306,34 @@ def build_ssot_master_data(
                 rounding=rounding_mode,
             )
             if actual != expected:
+                part_values = {
+                    key: str(_extract_field_decimal(rec, key)) for key in part_keys
+                }
+                locations: List[str] = []
+                for key in list(part_keys) + [total_key]:
+                    where = rec.get(f"{key}_location") or rec.get("location") or rec.get("location_id")
+                    locations.append(f"{key}@{where}" if where else f"{key}@{rec_label}")
                 raise SSOTValidationError(
-                    f"Part-sum mismatch in {rec_label}: {total_key}={actual} != sum({part_keys})={expected}"
+                    f"Part-sum mismatch in {rec_label}: {total_key}={actual} != sum({part_keys})={expected}",
+                    code="SSOT_PART_SUM_MISMATCH",
+                    metric=total_key,
+                    locations=locations,
+                    values={
+                        "actual": str(actual),
+                        "expected": str(expected),
+                        **part_values,
+                    },
                 )
         for field_name, max_chars in (char_Length_caps or {}).items():
             val_str = str(rec.get(field_name, "") or "")
             if val_str and len(val_str) > max_chars:
+                where = rec.get(f"{field_name}_location") or rec.get("location") or rec.get("location_id")
                 raise SSOTValidationError(
-                    f"Field '{field_name}' too long ({len(val_str)} > {max_chars} chars) in {rec_label}"
+                    f"Field '{field_name}' too long ({len(val_str)} > {max_chars} chars) in {rec_label}",
+                    code="SSOT_FIELD_TOO_LONG",
+                    metric=field_name,
+                    locations=[where or rec_label],
+                    values={"length": len(val_str), "max_length": max_chars},
                 )
 
     # 2. Aggregation with exact Decimal
@@ -321,7 +369,11 @@ def build_ssot_master_data(
         actual_dec = to_decimal(grand.get(f"{nf}_decimal", grand.get(nf, 0)))
         if actual_dec < min_dec:
             raise SSOTValidationError(
-                f"Grand total '{nf}' ({actual_dec}) < required minimum {min_dec}"
+                f"Grand total '{nf}' ({actual_dec}) < required minimum {min_dec}",
+                code="SSOT_MIN_TOTAL_VIOLATION",
+                metric=nf,
+                locations=[f"grand.{nf}"],
+                values={"actual": str(actual_dec), "minimum": str(min_dec)},
             )
 
     # 4. Ratio rules with explicit unit bounds and zero-denominator handling
@@ -359,13 +411,21 @@ def build_ssot_master_data(
             min_r = parse_ratio_bound(rule["min_ratio"], rule_name=r_name)
             if ratio_fraction < min_r:
                 raise SSOTValidationError(
-                    f"Ratio '{r_name}' ({ratio_fraction:.4f}) < minimum {min_r:.4f}"
+                    f"Ratio '{r_name}' ({ratio_fraction:.4f}) < minimum {min_r:.4f}",
+                    code="SSOT_RATIO_BELOW_MINIMUM",
+                    metric=r_name,
+                    locations=[f"ratio.{r_name}"],
+                    values={"actual": str(ratio_fraction), "minimum": str(min_r)},
                 )
         if rule.get("max_ratio") is not None:
             max_r = parse_ratio_bound(rule["max_ratio"], rule_name=r_name)
             if ratio_fraction > max_r:
                 raise SSOTValidationError(
-                    f"Ratio '{r_name}' ({ratio_fraction:.4f}) > maximum {max_r:.4f}"
+                    f"Ratio '{r_name}' ({ratio_fraction:.4f}) > maximum {max_r:.4f}",
+                    code="SSOT_RATIO_ABOVE_MAXIMUM",
+                    metric=r_name,
+                    locations=[f"ratio.{r_name}"],
+                    values={"actual": str(ratio_fraction), "maximum": str(max_r)},
                 )
 
     return {

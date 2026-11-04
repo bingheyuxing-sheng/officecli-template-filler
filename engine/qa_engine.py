@@ -126,12 +126,15 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
     duplicate_para_ids: List[str] = []
     duplicate_docpr_ids: List[str] = []
     missing_space_preserve: int = 0
+    proof_err_unbalanced: List[str] = []
     inspected_xml_parts: List[str] = []
 
     W14_PARA_ID = "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"
     R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
     R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
     W_T = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
+    W_PROOF_ERR = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}proofErr"
+    W_TYPE = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type"
     WP_DOCPR = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}docPr"
     XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 
@@ -190,6 +193,24 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
 
             part_rels = rels_map_by_part.get(name, {})
 
+            # Spell/grammar markers must be balanced: an orphan spellEnd (or an unclosed
+            # spellStart) is the kind of OOXML hygiene damage that only shows up as odd
+            # behaviour in Word, so it is checked here instead of being silently carried.
+            proof_err_balance: Dict[str, int] = {}
+            for marker in root.iter(W_PROOF_ERR):
+                marker_type = str(marker.get(W_TYPE) or "").lower()
+                if marker_type.endswith("start"):
+                    prefix = marker_type[:-5]
+                    proof_err_balance[prefix] = proof_err_balance.get(prefix, 0) + 1
+                elif marker_type.endswith("end"):
+                    prefix = marker_type[:-3]
+                    proof_err_balance[prefix] = proof_err_balance.get(prefix, 0) - 1
+                    if proof_err_balance[prefix] < 0:
+                        proof_err_unbalanced.append(f"{name}: orphan {marker_type}")
+            for prefix, balance in sorted(proof_err_balance.items()):
+                if balance > 0:
+                    proof_err_unbalanced.append(f"{name}: {balance} unclosed {prefix}Start")
+
             for elem in root.iter():
                 # Check paraId uniqueness across story parts
                 pid = elem.get(W14_PARA_ID)
@@ -246,6 +267,10 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
     structured_issues.extend(
         _issue("PACKAGE_IMAGE_INTEGRITY", "media", item) for item in image_qa.get("issues", [])
     )
+    structured_issues.extend(
+        _issue("PACKAGE_PROOFERR_UNBALANCED", "w:proofErr", item, "medium")
+        for item in proof_err_unbalanced
+    )
 
     # Vector images and externally linked images cannot be byte-verified: surface them as
     # coverage gaps so the overall report becomes UNVERIFIED instead of a silent pass.
@@ -265,6 +290,7 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
         "duplicate_para_ids": duplicate_para_ids,
         "duplicate_docpr_ids": duplicate_docpr_ids,
         "missing_space_preserve": missing_space_preserve,
+        "proof_err_unbalanced": proof_err_unbalanced,
         "image_integrity": image_qa,
     }
 

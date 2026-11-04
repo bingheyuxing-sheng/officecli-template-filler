@@ -72,7 +72,6 @@ def _add_svg_blip(docx_path: str, work_dir: str) -> str:
                     f"</a:ext></a:extLst>"
                 )
                 blip.append(extension)
-                data = document.element.xml.encode("utf-8") if False else data
                 # Serialize the modified document part only (the rest of the package is untouched).
                 from lxml import etree
 
