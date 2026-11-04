@@ -173,7 +173,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
-| v3.5.8 | 源码当前 `main` | 内容真值 QA（数值冲突/合计闭合/名称漂移）、SVG 双嵌入修复、VML 图片替换、矢量图显式未验证、事实溯源校验 |
+| v3.5.8 | [Release v3.5.8](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.8) | 内容真值 QA（数值冲突/合计闭合/名称漂移）、SVG 双嵌入修复、VML 图片替换、矢量图显式未验证、事实溯源校验 |
 | v3.5.7 | [Release v3.5.7](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.7) | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
 | v3.5.6 | 已并入 v3.5.7 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
 | v3.5.5 | [Release v3.5.5](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.5) | REVIEW 修订 ID 唯一性修复、修订/批注感知的版面 QA、全链路功能验证 |
