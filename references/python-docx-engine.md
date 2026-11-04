@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) {
     pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 }
 
-# Run the full engine unit test suite (111 tests across engine, transaction, review lifecycle,
+# Run the full engine unit test suite (138 tests across engine, transaction, review lifecycle,
 # table signatures, router capabilities, Excel reliability, layout QA, process ownership and proofread)
 python -m unittest discover -s tests -p "test_*.py" -v
 ```

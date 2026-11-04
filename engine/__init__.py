@@ -140,8 +140,14 @@ from .qa_policy import (
 from .alignment import align_paragraphs, align_tables
 from .pdf_backend import find_pdf_backend, convert_docx_to_pdf, pdf_page_count
 from .reformat_engine import build_reformat_plan, execute_reformat_plan
+from .consistency_qa import (
+    audit_content_consistency,
+    audit_fact_sources,
+    extract_labeled_values,
+    find_numeric_occurrences,
+)
 
-__version__ = "3.5.7"
+__version__ = "3.5.8"
 
 __all__ = [
     "__version__",
@@ -254,4 +260,8 @@ __all__ = [
     "pdf_page_count",
     "build_reformat_plan",
     "execute_reformat_plan",
+    "audit_content_consistency",
+    "audit_fact_sources",
+    "extract_labeled_values",
+    "find_numeric_occurrences",
 ]

@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v3.5.7 — REFORMAT Diff Plan & Tracked Apply, WPS/LibreOffice PDF Path, Role-Aware Routing, Semantic QA Alignment, Severity-Aware Gate)
+# OfficeCLI + Python Office Document Intelligence Skill (v3.5.8 — Content Truth QA, SVG/VML Image Truth, Fact Provenance, REFORMAT Diff Plan, WPS PDF Path)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
@@ -114,7 +114,7 @@ officecli-template-filler/
 │   ├── repair_plan.schema.json           # RepairPlan output schema
 │   ├── review_report.schema.json         # v3.1: REVIEW mode execution + integrity report
 │   └── qa_report.schema.json             # Unified QA Report schema
-├── tests/                                # Automated unit test suite (111 tests)
+├── tests/                                # Automated unit test suite (138 tests)
 │   ├── test_v3_engine.py                 # P0-1..P1-8, REPAIR, REVIEW & Excel regression baseline
 │   ├── test_transaction.py               # v3.5 M1: staged write, abort on QA failure, atomic commit
 │   ├── test_review_lifecycle.py          # v3.5 M2: revision marks, accept/reject/restore, snapshot
@@ -242,6 +242,15 @@ v3.4 additions:
   - `scripts/reformat_document.py` implements the REFORMAT handler: `build_reformat_plan()` produces a semantic diff list (paragraphs and tables aligned by text/heading/caption anchors; each entry carries `current`, `reference_value`, `action`, `reason`, `confidence`), and `execute_reformat_plan()` applies only `AUTO_FIX` entries, recording every change as a native `w:*PrChange` revision so the user can accept/reject in Word/WPS.
   - Plan actions: `AUTO_FIX` (matched + safe), `REVIEW` (mixed runs / bold / row-count drift), `KEEP` (new content), `UNSUPPORTED` (column-count mismatch). Plan-only mode writes no output; apply mode publishes through the transaction with package QA, and reports `PENDING_HUMAN_REVIEW` when the plan still contains review items.
   - PDF conversion is backend-based (`engine/pdf_backend.py`): WPS `kwpsconvert.exe word2pdf` preferred on Windows, LibreOffice as fallback, `OFFICECLI_PDF_BACKEND` overrides. Page counts use PyMuPDF when installed, else WPS `pdfinfo`. Visual QA reports `pdf_backend`, `page_count_source`, `page_count_available`; a page-count check that cannot run becomes `PDF_PAGE_COUNT_UNVERIFIED` instead of silence.
+- **v3.5.8 — Content truth and image truth**:
+  - **SVG dual embed fixed**: Word stores an inserted icon/SVG as a raster `<a:blip>` plus `<asvg:svgBlip>`, and Word renders the SVG. Replacement now removes the stale `svgBlip` extension (`adjustments: ["svg_fallback_removed"]`) instead of reporting success while the old artwork keeps showing. `count_image_part_references()` counts `svgBlip` and VML `v:imagedata` references too, so a shared part is never treated as exclusive.
+  - **Vector images are no longer silently skipped**: SVG/EMF/WMF parts cannot be decoded by Pillow, so `verify_docx_images_integrity()` returns `VECTOR_IMAGE_UNVERIFIED` in `coverage_gaps`, which propagates to `package_integrity.coverage_gaps` and turns the run `UNVERIFIED`. Replacement results carry `verification: "unverified_vector"`.
+  - **VML pictures replaced**: `w:pict` / `v:imagedata` (WPS header logos, stamps, old templates) now go through the same shared-reference-safe path (`reference_kind: "vml"`), in place when exclusive or via a new part when shared.
+  - **Crop and frame**: replacement clears `a:srcRect` (`crop_rect_cleared`) and supports `fit_mode="fit_image"` to recompute `wp:extent` from the new aspect ratio instead of stretching the new image into the old crop.
+  - **External images reported**: `r:link` images are no longer skipped silently — `EXTERNAL_IMAGE_LINK` lists the owning part and target, because a distributed copy would lose them.
+  - **Content-truth QA (`engine/consistency_qa.py`)**: `audit_content_consistency()` extracts `label → value` pairs from prose, tables and headers, and reports `CONTENT_VALUE_CONFLICT` / `CONTENT_SUBTOTAL_MISMATCH` (high), `CONTENT_LABEL_VALUE_VARIANCE` / `CONTENT_TERM_DRIFT` (medium), and mixed date/unit styles (low). `run_qa.py` runs it by default (`--no-content-qa` disables).
+  - **Fact provenance**: `audit_fact_sources()` fails (`FACT_SOURCE_MISSING`, high) when an SSOT fact has no `source`; `UNVERIFIED` / `MODEL_GENERATED` are recorded as unverified facts rather than silently trusted.
+  - **Honest scope**: no OCR — image-internal text is reported as `OCR_UNAVAILABLE`, never claimed as verified. No chart/placeholder redraw pipeline: `FULL`-profile redrawing stays an orchestration rule, and the engine only supplies the replacement channel.
 
 Mandatory rules:
 
@@ -304,14 +313,14 @@ Also read `routing.capability` from Step 1 before executing anything:
 
 For curriculum/education templates, supplement the structural `DocumentSpec` with a semantic preflight and a repair plan. This is orchestration logic; do not rewrite the OOXML engine to implement it.
 
-Check all of the following across body text, native tables, headers/footers, textboxes, field results, and image labels detectable by OCR or surrounding captions:
+Check all of the following across body text, native tables, headers/footers, textboxes, field results, and image captions/surrounding text. **The engine has no OCR**: text painted inside a picture is not readable, so never claim to have verified it — record `OCR_UNAVAILABLE` in `coverage_gaps` and ask the user for the source text if an image's content matters.
 
 - education level and vocabulary are consistent (`本科` / `专科` / `高职` / `中职`);
 - TOC headings match actual body headings and heading order;
 - course names/codes are consistent across graduation requirements, curriculum matrix, credit allocation, and teaching schedule;
 - credit/hour totals, required/elective splits, theory/practice splits, and semester subtotals close mathematically;
 - semester count and schedule columns agree everywhere;
-- images containing `***`, `XXXX`, generic labels, or another major's examples are marked `NEEDS_REDRAW`, never preserved as normal artwork;
+- images containing `***`, `XXXX`, generic labels, or another major's examples are marked `NEEDS_REDRAW`, never preserved as normal artwork (judged from captions and surrounding text, not from pixels);
 - stale field results or template page numbers are recorded as `TOC_STALE`, not accepted as current.
 
 Emit a structured `semantic_preflight` object with `issues`, `repair_plan`, `image_actions`, `toc_status`, and `blocking_conflicts`. Any conflict that changes business meaning enters `HOLD_AND_ASK`; deterministic template residue enters the selected execution profile. A preflight with unexamined stories or images is `UNVERIFIED`, not passed.
@@ -434,6 +443,18 @@ Read `status` in `qa_report.json` — it is one of four values, never a bare boo
 | `FAILED` | At least one high-severity issue | 1 |
 
 The report also carries `issues` (flattened objects with `code`, `location`, `detail`, `severity`), `warnings`, `warning_count`, `comparison_profile`, `alignment` (matched/new/removed paragraphs and tables), `coverage_gaps`, `unverified_count`, `hard_failure_count` and `pending_human_review_count`. Branch on `code`, never on prose. Never describe a `FAILED` report as delivered, and never call `PENDING_HUMAN_REVIEW` broken. Medium findings are advisory: report them to the user, but do not rewrite the document solely to silence them.
+
+**Content-truth section (`content_qa`, on by default; disable with `--no-content-qa`)** checks whether the numbers and names agree with each other, which format QA cannot see:
+
+| code | Severity | Meaning |
+|---|---|---|
+| `CONTENT_VALUE_CONFLICT` | high | an explicit total (总/合计/小计/共) carries different values in prose and a table |
+| `CONTENT_SUBTOTAL_MISMATCH` | high | a trailing 合计 row does not equal the sum of the rows above it |
+| `CONTENT_LABEL_VALUE_VARIANCE` | medium | the same non-total label appears with a few different values across prose and tables |
+| `CONTENT_TERM_DRIFT` | medium | a name in a name column is spelled two ways (张伟 / 张玮) |
+| `CONTENT_DATE_FORMAT_MIXED`, `CONTENT_UNIT_STYLE_MIXED` | low | `2026年11月4日` mixed with `2026-11-04`, or 万 mixed with 万元 |
+
+The report also returns `label_values` (extracted `label → value` pairs with locations) so the user can audit what was compared. `audit_fact_sources()` rejects SSOT `facts` entries without a `source` (`FACT_SOURCE_MISSING`, high) — every fact must cite a URL, an internal reference name, or the explicit marker `UNVERIFIED` / `MODEL_GENERATED`. For PROOFREAD, `find_numeric_occurrences()` returns every occurrence of a suspect number with surrounding context instead of a bare comment.
 
 For REVIEW outputs, run `python scripts/run_qa.py "$OUTPUT_FILE" --review --reference "$REF_DOCX" --profile replica --task-mode REVIEW`:
 

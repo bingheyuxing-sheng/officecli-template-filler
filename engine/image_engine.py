@@ -42,6 +42,54 @@ PIL_FORMAT_TO_MIME = {
     "WEBP": "image/webp",
 }
 
+# Formats Pillow cannot decode. They are replaced through the part-allocation path and
+# cannot be byte-verified, so they must be reported as a coverage gap, never as a pass.
+VECTOR_MIME_TYPES = frozenset({
+    "image/svg+xml",
+    "image/x-emf",
+    "image/emf",
+    "image/x-wmf",
+    "image/wmf",
+    "image/x-wmz",
+})
+
+SVG_BLIP_URI_MARKER = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"
+
+
+def _local_name(el) -> str:
+    tag = el.tag if isinstance(el.tag, str) else ""
+    return tag.split("}")[-1] if "}" in tag else tag
+
+
+def _svg_blips(blip) -> List[Any]:
+    """Return `<asvg:svgBlip>` children of an `<a:blip>` extension list (namespace-agnostic)."""
+    return [node for node in blip.iter() if _local_name(node) == "svgBlip"]
+
+
+def _blip_fill_src_rect(blip):
+    parent = blip.getparent()
+    if parent is None:
+        return None
+    for node in parent:
+        if _local_name(node) == "srcRect":
+            return node
+    return None
+
+
+def _wp_extent(blip):
+    """Nearest `<wp:extent>` above the blip (inline or anchor)."""
+    node = blip
+    while node is not None:
+        for child in node:
+            if _local_name(child) == "extent" and child.get("cx") and child.get("cy"):
+                return child
+        node = node.getparent()
+    return None
+
+
+def _is_vector_mime(content_type: str) -> bool:
+    return (content_type or "").lower() in VECTOR_MIME_TYPES
+
 
 def _iter_story_parts(doc) -> List[Any]:
     """
@@ -75,37 +123,54 @@ def _iter_story_parts(doc) -> List[Any]:
 
 def count_image_part_references(doc, target_partname: Optional[str] = None):
     """
-    Count `<a:blip r:embed="...">` references across the entire DOCX package
-    (body, headers, footers, footnotes, endnotes, comments).
-    - When `target_partname` is provided (`str`), returns `int` (total references to that partname).
-    - When `target_partname is None`, returns `Dict[str, Dict[str, Any]]` mapping each `rId` to
-      `{"partname": str, "content_type": str, "ref_count": int}`.
+    Count image-part references across the entire DOCX package.
+
+    Three OOXML shapes reference an image part and all three count:
+    - `<a:blip r:embed>` (raster fallback of inline/anchored drawings),
+    - `<asvg:svgBlip r:embed>` (the SVG Word actually renders for inserted icons/SVG),
+    - `<v:imagedata r:id>` (legacy VML pictures used by WPS headers/logos/stamps).
+
+    Missing the latter two let a "shared" part look exclusive, so replacing it corrupted
+    sibling images.
     """
     ref_count = 0
     rid_summary: Dict[str, Dict[str, Any]] = {}
     partname_counts: Dict[str, int] = {}
 
+    def _record(part, r_id: str, kind: str) -> None:
+        nonlocal ref_count
+        if not r_id or r_id not in part.rels:
+            return
+        rel = part.rels[r_id]
+        if rel.is_external:
+            return
+        target = rel.target_part
+        pname = str(target.partname)
+        ctype = str(getattr(target, "content_type", "") or "")
+        partname_counts[pname] = partname_counts.get(pname, 0) + 1
+        rid_summary[f"{part.partname}:{r_id}"] = {
+            "partname": pname,
+            "content_type": ctype,
+            "ref_count": 0,
+            "rId": r_id,
+            "owner_part": str(part.partname),
+            "reference_kind": kind,
+        }
+        if target_partname is not None and pname == str(target_partname):
+            ref_count += 1
+
     for part in _iter_story_parts(doc):
         for blip in part.element.xpath(".//a:blip"):
-            r_id = blip.get(qn("r:embed"))
-            if not r_id or r_id not in part.rels:
+            _record(part, blip.get(qn("r:embed")), "blip")
+            # An SVG dual-embedded icon has BOTH a raster fallback and an SVG part; the
+            # SVG reference is what Word renders, so it must count as a shared reference.
+            for svg_blip in _svg_blips(blip):
+                _record(part, svg_blip.get(qn("r:embed")), "svgBlip")
+        for imagedata in part.element.iter():
+            if _local_name(imagedata) != "imagedata":
                 continue
-            rel = part.rels[r_id]
-            if rel.is_external:
-                continue
-            target = rel.target_part
-            pname = str(target.partname)
-            ctype = str(getattr(target, "content_type", "") or "")
-            partname_counts[pname] = partname_counts.get(pname, 0) + 1
-            rid_summary[f"{part.partname}:{r_id}"] = {
-                "partname": pname,
-                "content_type": ctype,
-                "ref_count": 0,
-                "rId": r_id,
-                "owner_part": str(part.partname),
-            }
-            if target_partname is not None and pname == str(target_partname):
-                ref_count += 1
+            r_id = imagedata.get(qn("r:id")) or imagedata.get(qn("r:embed"))
+            _record(part, r_id, "vml")
 
     if target_partname is not None:
         return ref_count
@@ -133,25 +198,183 @@ def _encode_image_to_target_format(img_path: str, target_pil_fmt: str) -> bytes:
         return buf.getvalue()
 
 
+def _remove_svg_blip(blip) -> List[str]:
+    """
+    Drop `<asvg:svgBlip>` extensions from `a:blip` and return the removed rIds.
+
+    Word 2016+ stores an inserted icon/SVG as a dual embed: `<a:blip>` points at a raster
+    fallback while `<asvg:svgBlip>` points at the real SVG, and **the SVG wins** when
+    rendering. Replacing only the raster part therefore looks successful but Word keeps
+    showing the old artwork. Removing the extension makes the replaced raster authoritative.
+    """
+    removed: List[str] = []
+    for svg_blip in _svg_blips(blip):
+        r_id = svg_blip.get(qn("r:embed"))
+        if r_id:
+            removed.append(r_id)
+        parent = svg_blip.getparent()
+        if parent is None:
+            continue
+        parent.remove(svg_blip)
+        # Clean up the now-empty <a:ext>, then the empty <a:extLst>.
+        ext = parent
+        if len(ext) == 0 and not ext.attrib:
+            ext_lst = ext.getparent()
+            if ext_lst is not None:
+                ext_lst.remove(ext)
+                if len(ext_lst) == 0 and ext_lst.getparent() is not None:
+                    ext_lst.getparent().remove(ext_lst)
+    return removed
+
+
+def _fit_extent_to_image(blip, image_path: str) -> Optional[Dict[str, int]]:
+    """Recompute `wp:extent` from the new image aspect ratio, keeping width."""
+    extent = _wp_extent(blip)
+    if extent is None:
+        return None
+    try:
+        cx = int(extent.get("cx") or 0)
+        with Image.open(image_path) as im:
+            px_w, px_h = im.size
+    except Exception:
+        return None
+    if cx <= 0 or px_w <= 0 or px_h <= 0:
+        return None
+    old_cy = int(extent.get("cy") or 0)
+    new_cy = int(round(cx * px_h / float(px_w)))
+    extent.set("cy", str(new_cy))
+    return {"cx": cx, "cy": new_cy, "previous_cy": old_cy}
+
+
+def _vml_imagedata(paragraph) -> List[Any]:
+    """Return `<v:imagedata>` nodes inside `w:pict` (legacy VML pictures)."""
+    return [node for node in paragraph._p.iter() if _local_name(node) == "imagedata"]
+
+
+def _replace_vml_image(
+    doc,
+    paragraph,
+    imagedata,
+    new_image_path: str,
+    preserve_original_format: bool,
+) -> Dict[str, Any]:
+    """
+    Replace a VML picture (`w:pict` / `v:imagedata`), which WPS uses for header logos,
+    stamps and older templates. The `<a:blip>` path never sees these, so without this
+    branch they were silently left untouched.
+    """
+    owner_part = getattr(paragraph, "part", doc.part)
+    old_rId = imagedata.get(qn("r:id")) or imagedata.get(qn("r:embed"))
+    if not old_rId or old_rId not in owner_part.rels:
+        raise ValueError(f"VML imagedata r:id={old_rId!r} not found in part relationships")
+
+    old_part = owner_part.related_parts[old_rId]
+    orig_mime = (getattr(old_part, "content_type", "") or "").lower()
+    orig_partname = str(getattr(old_part, "partname", ""))
+    ref_count = count_image_part_references(doc, orig_partname)
+
+    with Image.open(new_image_path) as src_im:
+        src_pil_fmt = (src_im.format or "PNG").upper()
+    src_mime = PIL_FORMAT_TO_MIME.get(src_pil_fmt, "image/png")
+    with open(new_image_path, "rb") as handle:
+        raw_bytes = handle.read()
+
+    common = {
+        "shared_ref_count": ref_count,
+        "adjustments": [],
+        "removed_svg_rids": [],
+        "extent": None,
+        "verification": "unverified_vector" if _is_vector_mime(orig_mime) else "raster_verified",
+        "original_content_type": orig_mime,
+        "reference_kind": "vml",
+    }
+
+    if ref_count <= 1 and preserve_original_format and orig_mime in MIME_TO_PIL_FORMAT:
+        target_fmt, _ext = MIME_TO_PIL_FORMAT[orig_mime]
+        blob = raw_bytes if src_pil_fmt == target_fmt else _encode_image_to_target_format(new_image_path, target_fmt)
+        old_part._blob = blob
+        return {
+            "mode": "vml_in_place_mime_matched",
+            "effective": True,
+            "allocated_new_part": False,
+            "old_rId": old_rId,
+            "new_rId": old_rId,
+            "rId": old_rId,
+            "partname": orig_partname,
+            "content_type": orig_mime,
+            **common,
+        }
+
+    stream = io.BytesIO(raw_bytes)
+    stream.name = new_image_path
+    new_rId, _img = owner_part.get_or_add_image(stream)
+    new_part = owner_part.related_parts[new_rId]
+    if new_rId == old_rId:
+        return {
+            "mode": "noop_identical_bytes",
+            "effective": False,
+            "allocated_new_part": False,
+            "old_rId": old_rId,
+            "new_rId": new_rId,
+            "rId": new_rId,
+            "partname": str(new_part.partname),
+            "content_type": getattr(new_part, "content_type", src_mime),
+            **common,
+        }
+    for attribute in ("r:id", "r:embed"):
+        if imagedata.get(qn(attribute)) is not None:
+            imagedata.set(qn(attribute), new_rId)
+    return {
+        "mode": "vml_isolated_new_part",
+        "effective": True,
+        "allocated_new_part": True,
+        "old_rId": old_rId,
+        "new_rId": new_rId,
+        "rId": new_rId,
+        "partname": str(new_part.partname),
+        "content_type": getattr(new_part, "content_type", src_mime),
+        **common,
+    }
+
+
 def replace_inline_image_in_paragraph(
     doc,
     paragraph,
     new_image_path: str,
     blip_index: int = 0,
     preserve_original_format: bool = True,
+    fit_mode: str = "preserve_frame",
+    drop_svg_fallback: bool = True,
 ) -> Dict[str, Any]:
     """
-    Safely replace the inline/anchored image referenced by `<a:blip>` inside `paragraph` (fixes P0-3):
-    1. Reads original `image_part.content_type` and checks reference count across the package.
-    2. If `ref_count == 1` and `preserve_original_format=True` (and original format is raster-supported
-       by Pillow), converts `new_image_path` into the exact original image format so MIME Content-Type
-       and partname extension match 100%, then updates `_blob`.
-    3. If `ref_count > 1` (shared image part) or format differs, adds a fresh dedicated image part via
-       `doc.part.get_or_add_image(new_image_path)` and re-points ONLY `blips[blip_index]`'s `r:embed`
-       attribute, keeping original `wp:extent` dimensions untouched.
+    Safely replace the inline/anchored image referenced by `<a:blip>` inside `paragraph`.
+
+    Fixes beyond the original v3.0 behaviour:
+    - **SVG dual embed**: a Word-inserted icon stores a raster `<a:blip>` plus an
+      `<asvg:svgBlip>` that Word actually renders. The SVG extension is removed
+      (`drop_svg_fallback=True`) so the replacement is really visible; otherwise the
+      call would report success while Word still shows the old image.
+    - **Crop box**: `a:srcRect` (crop) is cleared, because carrying the old crop onto a new
+      image crops away its subject.
+    - **Display box**: `fit_mode="fit_image"` recomputes `wp:extent` from the new image
+      aspect ratio; `preserve_frame` (default) keeps the original frame and reports it.
+    - **Vector originals**: an SVG/EMF/WMF original cannot be byte-verified, so the result
+      carries `verification: "unverified_vector"`.
+
+    Returns a dict describing the mode, the new rId and every adjustment applied.
     """
+    if fit_mode not in ("preserve_frame", "fit_image"):
+        raise ValueError(f"fit_mode must be 'preserve_frame' or 'fit_image', got {fit_mode!r}")
+
     blips = paragraph._p.xpath(".//a:blip")
     if not blips or blip_index >= len(blips):
+        # Legacy VML pictures (`w:pict` / `v:imagedata`) carry no a:blip, and WPS uses
+        # them for header logos and stamps. Handle them instead of failing.
+        vml_images = _vml_imagedata(paragraph)
+        if vml_images and blip_index < len(vml_images):
+            return _replace_vml_image(
+                doc, paragraph, vml_images[blip_index], new_image_path, preserve_original_format
+            )
         raise ValueError(f"No a:blip at index {blip_index} in target paragraph")
 
     target_blip = blips[blip_index]
@@ -177,6 +400,31 @@ def replace_inline_image_in_paragraph(
     with open(new_image_path, "rb") as f:
         raw_bytes = f.read()
 
+    adjustments: List[str] = []
+    removed_svg_ids = _remove_svg_blip(target_blip) if drop_svg_fallback else []
+    if removed_svg_ids:
+        adjustments.append("svg_fallback_removed")
+
+    src_rect = _blip_fill_src_rect(target_blip)
+    if src_rect is not None:
+        src_rect.getparent().remove(src_rect)
+        adjustments.append("crop_rect_cleared")
+
+    extent_change = None
+    if fit_mode == "fit_image":
+        extent_change = _fit_extent_to_image(target_blip, new_image_path)
+        if extent_change:
+            adjustments.append("extent_fitted")
+
+    common = {
+        "shared_ref_count": ref_count,
+        "adjustments": adjustments,
+        "removed_svg_rids": removed_svg_ids,
+        "extent": extent_change,
+        "verification": "unverified_vector" if _is_vector_mime(orig_mime) else "raster_verified",
+        "original_content_type": orig_mime,
+    }
+
     # Case A: Exclusive image part (ref_count <= 1) and original MIME is a standard Pillow-writable raster
     if ref_count <= 1 and preserve_original_format and orig_mime in MIME_TO_PIL_FORMAT:
         target_pil_fmt, _ext = MIME_TO_PIL_FORMAT[orig_mime]
@@ -194,7 +442,7 @@ def replace_inline_image_in_paragraph(
             "rId": old_rId,
             "partname": orig_partname,
             "content_type": orig_mime,
-            "shared_ref_count": ref_count,
+            **common,
         }
 
     # Case B: Image part is shared by multiple drawings (ref_count > 1) OR format cannot be encoded in-place
@@ -216,7 +464,7 @@ def replace_inline_image_in_paragraph(
             "rId": new_rId,
             "partname": str(new_part.partname),
             "content_type": getattr(new_part, "content_type", src_mime),
-            "shared_ref_count": ref_count,
+            **common,
         }
 
     target_blip.set(qn("r:embed"), new_rId)
@@ -229,7 +477,7 @@ def replace_inline_image_in_paragraph(
         "rId": new_rId,
         "partname": str(new_part.partname),
         "content_type": getattr(new_part, "content_type", src_mime),
-        "shared_ref_count": ref_count,
+        **common,
     }
 
 
@@ -256,17 +504,30 @@ def verify_docx_images_integrity(docx_path: str) -> Dict[str, Any]:
     """
     Re-open `docx_path` from disk and verify:
     1. Every `<a:blip r:embed="...">` in every XML story resolves to a valid relationship and part.
-    2. Every image part can be decoded by Pillow and its actual binary format matches its declared MIME `content_type`.
-    3. Every `word/media/*` entry in the archive — including parts no drawing references — is declared in
-       `[Content_Types].xml` and its bytes match the declared MIME type.
-    Returns `{"passed": bool, "checked_count": int, "issues": List[str]}`.
+    2. Every raster image part decodes and its binary format matches its declared MIME.
+    3. Every `word/media/*` entry is declared in `[Content_Types].xml` and matches its MIME.
+    4. SVG dual embeds are structurally valid (no dangling `asvg:svgBlip` target).
+
+    Checks that cannot run are returned in `coverage_gaps` — vector images (SVG/EMF/WMF)
+    cannot be decoded by Pillow, and externally linked images are not package parts, so
+    neither may be reported as verified.
     """
     issues: List[str] = []
+    coverage_gaps: List[str] = []
+    vector_parts: List[str] = []
+    external_links: List[str] = []
+    svg_dual_embeds: List[Dict[str, str]] = []
     checked_count = 0
     try:
         doc = docx.Document(docx_path)
     except Exception as exc:
-        return {"passed": False, "checked_count": 0, "issues": [f"DOCX_REOPEN_FAILED: {exc}"]}
+        return {
+            "passed": False,
+            "checked_count": 0,
+            "issues": [f"DOCX_REOPEN_FAILED: {exc}"],
+            "coverage_gaps": ["IMAGE_VERIFICATION_UNAVAILABLE"],
+            "unverified_count": 1,
+        }
 
     parts_to_check = _iter_story_parts(doc)
     checked_partnames: set = set()
@@ -277,34 +538,77 @@ def verify_docx_images_integrity(docx_path: str) -> Dict[str, Any]:
             continue
         for blip in el.xpath(".//a:blip"):
             r_id = blip.get(qn("r:embed"))
-            if not r_id:
-                continue
             checked_count += 1
-            if r_id not in part.rels:
-                issues.append(f"DANGLING_BLIP_RID {part.partname}: r:embed='{r_id}' missing in .rels")
+            if r_id:
+                if r_id not in part.rels:
+                    issues.append(f"DANGLING_BLIP_RID {part.partname}: r:embed='{r_id}' missing in .rels")
+                else:
+                    rel = part.rels[r_id]
+                    if rel.is_external:
+                        external_links.append(f"{part.partname}:{r_id} -> {rel.target_ref}")
+                    else:
+                        img_part = rel.target_part
+                        checked_partnames.add(str(img_part.partname))
+                        declared_mime = (getattr(img_part, "content_type", "") or "").lower()
+                        blob = getattr(img_part, "blob", b"")
+                        if not blob:
+                            issues.append(f"EMPTY_IMAGE_BLOB {img_part.partname} (rId={r_id})")
+                        elif _is_vector_mime(declared_mime):
+                            if str(img_part.partname) not in vector_parts:
+                                vector_parts.append(str(img_part.partname))
+                        elif declared_mime in MIME_TO_PIL_FORMAT:
+                            expected_fmt, _ = MIME_TO_PIL_FORMAT[declared_mime]
+                            try:
+                                with Image.open(io.BytesIO(blob)) as im:
+                                    im.verify()
+                                    actual_fmt = (im.format or "").upper()
+                                if actual_fmt and actual_fmt != expected_fmt:
+                                    issues.append(
+                                        f"IMAGE_MIME_MISMATCH {img_part.partname}: declared='{declared_mime}' ({expected_fmt}), actual binary='{actual_fmt}'"
+                                    )
+                            except Exception as exc:
+                                issues.append(f"CORRUPT_IMAGE_BINARY {img_part.partname}: {exc}")
+                        else:
+                            coverage_gaps.append(f"IMAGE_TYPE_UNVERIFIED: {img_part.partname} ({declared_mime or 'unknown'})")
+
+            # SVG dual embed: the raster fallback and the SVG must both resolve.
+            for svg_blip in _svg_blips(blip):
+                svg_rid = svg_blip.get(qn("r:embed"))
+                svg_dual_embeds.append({"owner_part": str(part.partname), "svg_rId": svg_rid or ""})
+                if not svg_rid:
+                    issues.append(f"SVG_BLIP_MISSING_RID {part.partname}")
+                elif svg_rid not in part.rels:
+                    issues.append(
+                        f"SVG_BLIP_DANGLING_RID {part.partname}: asvg:svgBlip r:embed='{svg_rid}' missing in .rels"
+                    )
+                else:
+                    rel = part.rels[svg_rid]
+                    if rel.is_external:
+                        external_links.append(f"{part.partname}:{svg_rid} -> {rel.target_ref} (svg)")
+                    else:
+                        svg_part = rel.target_part
+                        checked_partnames.add(str(svg_part.partname))
+                        if _is_vector_mime(getattr(svg_part, "content_type", "") or ""):
+                            if str(svg_part.partname) not in vector_parts:
+                                vector_parts.append(str(svg_part.partname))
+
+    # VML pictures (`w:pict` / `v:imagedata`) are a separate reference path.
+    for part in parts_to_check:
+        el = getattr(part, "element", None)
+        if el is None:
+            continue
+        for node in el.iter():
+            if _local_name(node) != "imagedata":
                 continue
-            rel = part.rels[r_id]
-            if rel.is_external:
-                continue
-            img_part = rel.target_part
-            checked_partnames.add(str(img_part.partname))
-            declared_mime = (getattr(img_part, "content_type", "") or "").lower()
-            blob = getattr(img_part, "blob", b"")
-            if not blob:
-                issues.append(f"EMPTY_IMAGE_BLOB {img_part.partname} (rId={r_id})")
-                continue
-            if declared_mime in MIME_TO_PIL_FORMAT:
-                expected_fmt, _ = MIME_TO_PIL_FORMAT[declared_mime]
-                try:
-                    with Image.open(io.BytesIO(blob)) as im:
-                        im.verify()
-                        actual_fmt = (im.format or "").upper()
-                    if actual_fmt and actual_fmt != expected_fmt:
-                        issues.append(
-                            f"IMAGE_MIME_MISMATCH {img_part.partname}: declared='{declared_mime}' ({expected_fmt}), actual binary='{actual_fmt}'"
-                        )
-                except Exception as exc:
-                    issues.append(f"CORRUPT_IMAGE_BINARY {img_part.partname}: {exc}")
+            r_id = node.get(qn("r:id")) or node.get(qn("r:embed"))
+            checked_count += 1
+            if r_id and r_id not in part.rels:
+                issues.append(f"DANGLING_VML_RID {part.partname}: imagedata r:id='{r_id}' missing in .rels")
+
+    if vector_parts:
+        coverage_gaps.append(f"VECTOR_IMAGE_UNVERIFIED: {', '.join(sorted(vector_parts))}")
+    if external_links:
+        coverage_gaps.append(f"EXTERNAL_IMAGE_LINK: {', '.join(external_links)}")
 
     # Also verify zip archive integrity and every media entry's declared Content-Type
     try:
@@ -352,9 +656,15 @@ def verify_docx_images_integrity(docx_path: str) -> Dict[str, Any]:
     except Exception as exc:
         issues.append(f"ZIP_OPEN_ERROR: {exc}")
 
+    coverage_gaps = list(dict.fromkeys(coverage_gaps))
     return {
         "passed": len(issues) == 0,
         "checked_count": checked_count,
         "checked_image_parts": len(checked_partnames),
         "issues": issues,
+        "coverage_gaps": coverage_gaps,
+        "unverified_count": len(coverage_gaps),
+        "vector_parts": sorted(vector_parts),
+        "external_links": external_links,
+        "svg_dual_embeds": svg_dual_embeds,
     }
