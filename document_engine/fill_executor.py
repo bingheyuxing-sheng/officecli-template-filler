@@ -459,6 +459,28 @@ def _overflow_failure(operation: Dict[str, Any]) -> Optional[Tuple[str, str, Dic
 # ---------------------------------------------------------------------------
 
 
+def _replace_span_in_place(
+    view,
+    start_idx: int,
+    end_idx: int,
+    value: str,
+) -> bool:
+    """Authorized text fill that never rewrites run formatting.
+
+    ``replace_span`` places the value in the anchor ``w:t`` and only strips the red
+    placeholder colour; every other ``rPr`` child (fonts, size, bold) is left byte
+    identical and emptied runs are kept. That keeps ``structural_hash`` stable so
+    FIDELITY does not report an authorized fill as an unauthorized template change.
+    """
+    return view.replace_span(
+        start_idx,
+        end_idx,
+        value,
+        strip_red_color=True,
+        preserve_empty_runs=True,
+    )
+
+
 def _apply_operation(
     doc,
     operation: Dict[str, Any],
@@ -490,17 +512,31 @@ def _apply_operation(
         before = view.logical_text
         offset = _find_occurrence(before, placeholder_token, slot.get("occurrence"))
         if offset is not None:
-            view.replace_span(offset, offset + len(placeholder_token), value, strip_red_color=True)
+            _replace_span_in_place(view, offset, offset + len(placeholder_token), value)
+        elif before:
+            # The slot token no longer exists in this paragraph: replace the
+            # whole paragraph text in place instead of rebuilding it through the
+            # v3 strict-style path, which would rewrite every run's ``rPr``.
+            _replace_span_in_place(view, 0, len(before), value)
         else:
-            # The slot token no longer exists in this paragraph: fall back to the
-            # strict-style paragraph fill so the value still lands in the template.
             fill_paragraph_strict_style(paragraph, value)
         after = LogicalParagraphView(paragraph._p).logical_text
         return before, after
 
     if op_type == "fill_paragraph":
-        before = LogicalParagraphView(paragraph._p).logical_text
-        fill_paragraph_strict_style(paragraph, value)
+        view = LogicalParagraphView(paragraph._p)
+        before = view.logical_text
+        if before:
+            token = placeholder_token if placeholder_token and placeholder_token in before else before
+            offset = _find_occurrence(before, token, slot.get("occurrence"))
+            if offset is None:
+                token = before
+                offset = 0
+            _replace_span_in_place(view, offset, offset + len(token), value)
+        else:
+            # An empty paragraph has no ``w:t`` to anchor the value; the strict-style
+            # path is the only route that can create the run.
+            fill_paragraph_strict_style(paragraph, value)
         after = LogicalParagraphView(paragraph._p).logical_text
         return before, after
 
@@ -524,7 +560,8 @@ def _apply_operation(
         if remove_image_token:
             offset = _find_occurrence(view.logical_text, placeholder_token, slot.get("occurrence"))
             if offset is not None:
-                view.replace_span(offset, offset + len(placeholder_token), "")
+                view.replace_span(offset, offset + len(placeholder_token), "",
+                                  preserve_empty_runs=True)
         return before, view.logical_text
 
     raise ValueError("unsupported operation type {!r}".format(op_type))
@@ -1242,7 +1279,10 @@ def execute_fill_plan(
         if qa_status == QA_PASSED:
             eligible = True
         elif qa_status == QA_UNVERIFIED:
-            eligible = bool(mode == "STANDARD" and allow_unverified and missing_checks)
+            # Contract 04 §7: under STANDARD an UNVERIFIED report stays committable
+            # when the caller allows it. Missing checks and coverage gaps must be
+            # disclosed, which the QAReport gate validates, not a per-checker count.
+            eligible = bool(mode == "STANDARD" and allow_unverified)
         else:
             eligible = False
 

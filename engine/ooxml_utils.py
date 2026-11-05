@@ -245,6 +245,7 @@ class LogicalParagraphView:
         replacement: str,
         strip_red_color: bool = True,
         rPr_normalizer=None,
+        preserve_empty_runs: bool = False,
     ) -> bool:
         """
         Surgically replace `[start_idx, end_idx)` in the logical text with `replacement`:
@@ -299,8 +300,10 @@ class LogicalParagraphView:
             rem_txt = orig_txt[:c_start] + orig_txt[c_end:]
             t_el.text = rem_txt
             ensure_xml_space_preserve_on_t(t_el)
-            # Only remove run if it has no remaining text, no other content nodes, and no custom <w:t> attributes
-            if rem_txt == "" and _can_safely_remove_empty_run(r_el, t_el):
+            # Only remove run if it has no remaining text, no other content nodes, and no custom <w:t> attributes.
+            # The v4 FillPlan path sets preserve_empty_runs so an authorized text fill does not
+            # change the element tree (structural fingerprint) by deleting emptied runs.
+            if rem_txt == "" and not preserve_empty_runs and _can_safely_remove_empty_run(r_el, t_el):
                 parent = r_el.getparent()
                 if parent is not None:
                     parent.remove(r_el)
@@ -521,7 +524,13 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
             if hf_obj is None:
                 continue
             try:
-                if hf_obj.is_linked_to_previous and s_idx > 0:
+                # A linked-to-previous header/footer has no own definition in this
+                # section. Reading ``.paragraphs``/``.tables``/``._element`` would make
+                # python-docx lazily CREATE an empty part and a ``w:headerReference``
+                # in ``w:sectPr``, mutating the supposedly read-only document and
+                # polluting the structural fingerprint (phantom ``r:id`` differs per
+                # file). Skip before any content access, for every section index.
+                if hf_obj.is_linked_to_previous:
                     continue
                 for p_idx, p in enumerate(hf_obj.paragraphs):
                     yield from _yield_p(f"sec[{s_idx}].{hf_name}.p[{p_idx}]", p._p, hf_obj)
@@ -625,7 +634,10 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
             if hf_obj is None:
                 continue
             try:
-                if hf_obj.is_linked_to_previous and s_idx > 0:
+                # Same lazy-creation guard as the paragraph iterator: never read
+                # ``.tables``/``._element`` off a linked header/footer, or python-docx
+                # creates a phantom part and a ``w:headerReference`` in the body.
+                if hf_obj.is_linked_to_previous:
                     continue
                 if hf_obj.tables:
                     yield from _walk(hf_obj.tables, scope=hf_name, prefix=f"sec[{s_idx}].{hf_name}.", depth=0)
