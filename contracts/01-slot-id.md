@@ -1,7 +1,7 @@
 # Contract 01 — Slot ID Specification
 
-- Contract version: **1.1.0**
-- Status: **FROZEN (4.1.0, 2026-11-05; extended by CP-W2-001)**
+- Contract version: **1.2.0**
+- Status: **FROZEN (4.2.0, 2026-11-05; CP-W2-001 + CP-W2-002)**
 - Owner: Agent 01 (Template Intelligence)
 - Co-sign: Agent 02, Agent 03, Agent 04
 - Gate: Agent 07
@@ -34,15 +34,37 @@ story       := "body" | "footnotes" | "endnotes" | "comments"
              | "sec[" n "].first_page_footer"
              | "sec[" n "].even_page_header"
              | "sec[" n "].even_page_footer"
-element     := "p" | "tbl" | "r" | "c" | "txbx_p"
+element     := "p" | "tbl" | "r" | "c" | "txbx_p" | "sdt"
 index       := 0-based non-negative integer
 ```
 
 Examples: `body.p[3]`, `body.tbl[1].r[2].c[1].p[0]`, `sec[1].header.p[0]`,
 `sec[1].first_page_header.p[0]`, `sec[0].even_page_footer.tbl[0].r[1].c[0].p[0]`,
-`footnotes.p[4]`.
+`footnotes.p[4]`, `body.sdt[0].p[0]`, `body.tbl[0].r[0].c[0].sdt[0].p[0]`,
+`sec[0].header.sdt[0].p[0]`, `body.sdt[0].sdt[1].p[0]`.
 
-The grammar MUST match the `location_id` values produced by the v3.5.9 iterator `iter_all_document_paragraphs_with_Wait_context()` (body / nested tables / headers / footers / textboxes / footnotes / endnotes / comments). No parallel addressing scheme is permitted.
+### 3.1 `sdt` element (CP-W2-002)
+
+- `sdt[i]` addresses the i-th (0-based) **direct `w:sdt` child** of the current container.
+- Containers: `<w:body>`, a header/footer story root (`w:hdr` / `w:ftr`), a table cell
+  `w:tc`, and a `w:sdtContent` element (for nested content controls).
+- Paragraphs and tables inside a container are indexed **only among direct
+  `w:sdtContent` children**. The traversal MUST NOT descend into `w:txbxContent` from
+  the container step: textbox paragraphs keep their `txbx_p[i]` locations under the
+  enclosing story so that existing ids are not stolen by de-duplication. Nested tables
+  are reached through their own `tbl/r/c` segments.
+- A nested control is addressed container-relative: `body.sdt[0].sdt[1].p[0]`.
+- A bare container address (`body.sdt[0]`, `sec[0].header.sdt[0]`,
+  `body.tbl[0].r[0].c[0].sdt[0]`) is a valid `location_id` and is used by
+  `protected_regions`.
+- Content inside an SDT is **protected**, never a fillable slot, while
+  `template.capabilities.sdt_edit` is `false` (Contract 02 §7).
+
+The grammar MUST match the `location_id` values produced by the v4 iterator
+`iter_all_document_paragraphs_with_Wait_context()`, which is a **superset** of the
+v3.5.9 story set (body / nested tables / headers / footers / textboxes / footnotes /
+endnotes / comments) and additionally exposes body, header/footer, cell and nested
+SDT content. No parallel addressing scheme is permitted.
 
 ## 4. Normalization of `matched_text`
 
@@ -152,6 +174,7 @@ Blank internal-fact slots (负责人/联系电话/内部编号) are allowed to h
 |---|---|
 | 1.0.0 | W0 initial freeze |
 | 1.1.0 | CP-W2-001: story grammar adds `first_page_header`, `first_page_footer`, `even_page_header`, `even_page_footer`; canonical string format unchanged |
+| 1.2.0 | CP-W2-002: element set adds `sdt`; container/direct-children rules for body, header/footer, cell and nested SDT; bare container address accepted; canonical string format unchanged; iterator conformance sentence revised to the v4 superset (gate amendment B4) |
 
 ## 12. Conformance tests
 

@@ -1,7 +1,7 @@
 # Contract 02 — DocumentSpec 4.0
 
-- Contract version: **1.1.0**
-- Status: **FROZEN (4.1.0, 2026-11-05; inherits Contract 01 §3 story grammar via CP-W2-001)**
+- Contract version: **1.2.0**
+- Status: **FROZEN (4.2.0, 2026-11-05; CP-W2-001 + CP-W2-002)**
 - Owner: Agent 01 (Template Intelligence)
 - Consumers: Agent 02 (ContentPlan), Agent 03 (FillPlan executor), Agent 04 (Fidelity QA)
 - Schema: `schemas/document_spec-4.0.schema.json` (draft 2020-12)
@@ -23,7 +23,7 @@ It MUST NOT contain generated business content. It describes the template only.
 | Consumer (FillPlan executor) | MUST validate every `target.location_id` against `slots[].location_id` |
 | Consumer (Fidelity QA) | MUST treat `fingerprint_ref` + `slots[]` as the only authorized-change mask |
 
-**Open issue OI-01**: `scripts/analyze_template.py` currently emits a reduced summary and cannot produce 4.0. W0 validates the actual output against the legacy CLI schema; the 4.0 producer is a W1 deliverable and an alpha entry condition. The 4.0 schema is **not** relaxed to accommodate this.
+**OI-01 (closed in W1)**: at W0, `scripts/analyze_template.py` emitted only a reduced summary. W1 added `--spec-version 4`, which emits a schema-valid DocumentSpec 4.0; the default CLI output remains 3.0 and validates against the legacy CLI schema. The 4.0 schema was **not** relaxed. Evidence: `reports/w1/w1-acceptance.md`.
 
 ## 3. Top-level object
 
@@ -130,6 +130,25 @@ Consistency rules:
 
 Capacity is **evidence**, not an authority. A slot may be rejected for capacity only when `hard_limit` is present or the caller declared an explicit limit in FillPlan. Estimated capacity MUST NOT alone block an operation.
 
+### 7.2 SDT discovery (CP-W2-002)
+
+1. Every paragraph with non-whitespace text discovered inside a `w:sdt` container (body, header/footer story,
+   table cell, or nested container; see Contract 01 §3.1) MUST be reported as a slot
+   with `candidate_type: control_or_field`, `protection_status: PROTECTED` and
+   `confirmation_tier: PROTECTED_DO_NOT_TOUCH`. The whole trimmed paragraph is the
+   protected unit; no `explicit_token`, `red_run_clue` or `internal_fact` slot may be
+   emitted inside SDT content. Empty or whitespace-only SDT paragraphs remain in
+   `structure.paragraphs` (so the container is visible) but do not produce a slot:
+   there is no protected text to name.
+2. The same rule applies to paragraphs whose stable location hides the enclosing
+   control (textbox paragraphs keep `txbx_p[i]` inside an SDT): they are still inside
+   an SDT and MUST be `PROTECTED`.
+3. `template.capabilities.sdt_edit` MUST stay `false` unless a verified in-place
+   `w:sdtContent` handler and its tests exist. A FillPlan operation targeting such a
+   slot is rejected as `PROTECTED_SLOT_VIOLATION` (Contract 03 §3.4).
+4. Discovery MUST NOT change `location_id`/`slot_id` values for content outside SDT
+   containers. Analysis stays deterministic across repeated runs.
+
 ## 8. `protected_regions[]`
 
 | Field | Required | Rule |
@@ -141,6 +160,22 @@ Capacity is **evidence**, not an authority. A slot may be rejected for capacity 
 | `severity` | optional | `blocking` / `warning`; default `blocking` |
 
 Regions are absolute: an operation targeting a protected region MUST be rejected even if a slot exists there. Overlapping regions are allowed; the strictest severity wins.
+
+### 8.1 `kind: "sdt"` semantics (CP-W2-002)
+
+1. One region per SDT container with content, addressed by the container itself:
+   `body.sdt[i]`, `sec[n].<hf>.sdt[i]`, or the cell form
+   `body.tbl[r].c[c].sdt[i]` (Contract 01 §3.1).
+2. `severity` MUST default to `blocking`; `evidence` MUST name the container location
+   and the direct paragraph/table counts inside it.
+3. Because region matching is prefix-based, the container region covers every slot
+   discovered deeper inside it, including table-cell and nested-container paths.
+   Exception: a textbox paragraph keeps its stable `txbx_p[i]` location, which is not
+   a prefix extension of the SDT container; it is protected by the slot rule in §7.2.2
+   (PROTECTED status), not by the container region. This exception is deliberate:
+   re-addressing textboxes would change existing `slot_id` values.
+4. Empty SDT containers are disclosed by analysis warnings but do not produce a
+   region (there is no content to protect).
 
 ## 9. `capacity_profiles[]`
 
@@ -220,3 +255,4 @@ The schema cannot express these; `tests/contracts/test_document_spec.py` MUST ch
 |---|---|
 | 1.0.0 | Initial frozen contract (W0) |
 | 1.1.0 | CP-W2-001: `location_id` values now include `sec[n].first_page_header`, `first_page_footer`, `even_page_header`, `even_page_footer`; no field added, artifact `schema_version` stays `"4.0"` |
+| 1.2.0 | CP-W2-002: §7.2 SDT discovery (control_or_field → PROTECTED, no fillable token inside SDT, textbox ancestors included); §8.1 `kind: "sdt"` region semantics (one blocking container region with counts); `sdt_edit` stays `false`; no field added, artifact `schema_version` stays `"4.0"` |

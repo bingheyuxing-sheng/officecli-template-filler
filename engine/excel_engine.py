@@ -27,6 +27,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils import column_index_from_string, get_column_letter, range_boundaries
 
 from .process_guard import TaskResourceGuard
+from .pdf_backend import libreoffice_user_installation_arg
 
 EXCEL_ERROR_TOKENS = {"#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A", "#NUM!", "#NULL!"}
 
@@ -406,11 +407,16 @@ def recalculate_and_verify_excel_formulas(
     if soffice_bin:
         active_guard = guard or TaskResourceGuard()
         with tempfile.TemporaryDirectory() as tmpdir:
-            res = active_guard.run_owned_command(
-                [soffice_bin, "--headless", "--convert-to", "xlsx", "--outdir", tmpdir, xlsx_path],
-                timeout=45,
-                check=False,
-            )
+            # W3-5: private user profile per invocation, so the shared default
+            # profile lock cannot serialize or hang back-to-back conversions
+            # (audit P2-04).
+            with tempfile.TemporaryDirectory(prefix="lo-profile-") as profile_dir:
+                res = active_guard.run_owned_command(
+                    [soffice_bin, libreoffice_user_installation_arg(profile_dir),
+                     "--headless", "--convert-to", "xlsx", "--outdir", tmpdir, xlsx_path],
+                    timeout=45,
+                    check=False,
+                )
             recalc_file = os.path.join(tmpdir, os.path.basename(xlsx_path))
             if res.returncode == 0 and os.path.exists(recalc_file):
                 engine_used = "libreoffice+builtin"

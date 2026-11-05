@@ -4,6 +4,18 @@
 
 给它一个模板和资料，它交出一份格式不走样、内容可审计的文档；给它一份草稿，它交回一份**能用 Word/WPS 修订模式打开、逐条接受或拒绝**的审阅稿。
 
+## v4.0 开发状态（未发布）
+
+| 项目 | 状态 |
+|---|---|
+| 契约集 | **4.2.0**（W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经 Agent 07 独立门禁） |
+| 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
+| Skill 工作流 | GENERATE 文档主链已切 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
+| 测试基线 | **450 项通过**；六类**结构化回归 Fixtures**（非真实业务模板） |
+| Alpha | **未宣布**：W3 修复波进行中，真实语料（W3-9）仍待外部脱敏输入，P2-01/P2-04 待审计环境复验 |
+
+**已知限制**：不支持 SDT 内填充（`sdt_edit=false`，SDT 仅作为 PROTECTED 位置发现并拒绝）；本机缺 PyMuPDF/matplotlib/OCR，相关检查如实 `UNVERIFIED`；真实模板与合成 Fixture 的指标必须分开报告，不得用合成通过率替代真实验证。详见 [CHANGELOG.md](CHANGELOG.md) 与 [reports/w3/w3-task-book.md](reports/w3/w3-task-book.md)。
+
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Word](https://img.shields.io/badge/Word-.docx-2B579A)
 ![Excel](https://img.shields.io/badge/Excel-.xlsx%20%2F%20.xlsm-217346)
@@ -22,7 +34,7 @@
 - 明明「已修复」，打开文件却没有任何修改痕迹；
 - QA 返回 `passed: true`，但其实根本没渲染、没计算出公式。
 
-这个引擎针对的就是这些问题。核心原则只有一条：**报告为通过，必须是真的通过；无法验证，就明确标注。**
+这个引擎针对的就是这些问题。核心原则只有一条：**报告通过，必须是真的通过；无法验证，就明确标注。**
 
 ---
 
@@ -71,7 +83,14 @@ pip install -r requirements.txt
 # 路由判断：先看输入该走哪个模式
 python scripts/inspect_document.py --inputs template.docx --intent "按模板生成"
 
-# 模板填充
+# v4.0 plan chain（GENERATE 默认）：spec 4.0 -> ContentPlan/FillPlan -> 执行器 -> QA/门禁
+python scripts/analyze_template.py --input template.docx --spec-version 4 --out spec.json
+# ContentPlan/FillPlan 由 Agent 按 schemas/ 生成（可用 content_intelligence.build_*），并先校验
+python scripts/generate_document.py --template template.docx --spec spec.json `
+  --content-plan content_plan.json --plan fill_plan.json --out output.docx `
+  --mode STANDARD --allow-unverified
+
+# Legacy token mode（兼容路径，不是 v4 主链）
 python scripts/generate_document.py --template template.docx --data payload.json --out output.docx
 
 # 按模板修复格式（双文档 REPAIR）
@@ -147,15 +166,23 @@ python scripts/run_qa.py output.docx --reference template.docx --profile style-g
 
 ```
 officecli-template-filler/
+├── AGENTS.md             # 项目级开发规则（权威版本）
 ├── README.md             # 项目介绍与使用说明
 ├── CHANGELOG.md          # 版本变更记录
 ├── SKILL.md              # Agent 使用规范与流程约束
-├── engine/               # 核心引擎（OOXML / 表格 / 审阅 / QA / Excel / SSOT）
+├── contracts/            # v4.0 契约集（4.2.0）与变更提案
+├── config/               # QA 策略、错误码、环境能力与输入配额
+├── engine/               # v3.5.9 核心引擎（OOXML / 表格 / 审阅 / QA / Excel / SSOT）
+├── template_intelligence/# DocumentSpec 4.0 生产、槽位、指纹与语义校验
+├── content_intelligence/ # ContentPlan / FillPlan 构建与校验
+├── document_engine/      # FillPlan 执行器、填充台账与事务衔接
+├── qa/                   # QAReport 4.0、QA Gate、Pipeline 与环境探测
 ├── scripts/              # CLI 入口（路由、生成、修复、审阅、QA、渲染、清理）
-├── schemas/              # JSON Schema（文档规格 / 修复计划 / QA 报告 / 审阅报告）
+├── schemas/              # JSON Schema（3.0 兼容与 4.0 契约）
 ├── references/           # 引擎实现参考
-├── dist/                 # 历史版本打包文件
-└── tests/                # 回归测试
+├── reports/              # W0–W3 验收、门禁与问题记录
+├── dist/                 # 历史归档与 v4 开发快照
+└── tests/                # 单元、契约、回归与端到端测试
 ```
 
 ---
@@ -166,7 +193,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前基线：**186 项测试全部通过**（v3.5.9）。
+当前完整套件：**450 项通过**（v3.5.9 基线、W0 契约、W1–W3 回归与端到端测试共同计入）。
 
 ---
 
@@ -206,7 +233,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## 路线图
 
-v3.5 聚焦「让报告成功等于真的完成」：事务化交付（Preflight → Execute → Verify → Commit）、Excel 公式与对象可靠性、结构化版面 QA、Windows 进程所有权、单文档校对模式。
+v4.0 聚焦「契约化、可验证、可回滚的模板填充」：DocumentSpec → ContentPlan/FillPlan → 事务执行 → QAReport → 提交门禁的统一链路。当前处于 W3 修复波，出口条件是 W3-9 真实语料验证、P2-01/P2-04 审计环境复验和 Agent 07 出口评审；未满足前不宣布 Alpha。
 
 ---
 

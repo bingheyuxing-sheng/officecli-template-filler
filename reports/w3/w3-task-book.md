@@ -1,7 +1,7 @@
 # W3 修复任务书（Remediation Task Book）
 
 - 依据：`reports/w3/audit-triage.md`（审计核查裁定）
-- 版本基线：契约集 4.1.0；代码 HEAD 含 W0-W2 + 依赖修正 + dev 包 `aa6e44d`
+- 版本基线：契约集 **4.2.0**（W3-4 完成后冻结）；代码 HEAD 含 W0–W2 + W3 修复 + dev 包
 - 批准：主智能体；本任务书为 W3 唯一工作清单，未列入项不得顺手实施（AGENTS §5）
 
 ## 0. 全局执行规则（含核查方三条约束，均为强制）
@@ -56,12 +56,12 @@
 | 项 | 内容 |
 |---|---|
 | 输入 | W3-3 已上线的披露行为；`contracts/01-slot-id.md` §3；`engine/ooxml_utils.py` 迭代器 |
-| 阶段 A（先行，07 门禁） | 提案 `contracts/changes/CP-W2-002-sdt-location.md`：路径段 `sdt[i]`（body 直接子级序号）；嵌套规则；指纹边界（`w:sdt` 节点入结构哈希）；填充策略——**发现并定位，但 `sdt_edit` 能力保持 false，槽位 `protection_status=CONDITIONAL`，FillPlan 命中即拒绝（SDT_EDIT_UNSUPPORTED）**，直至独立 W4 任务交付可验证的 SDT 内填充。MINOR 版本 4.2.0。Agent 07 审查 PASS 前禁止任何代码改动 |
+| 阶段 A（先行，07 门禁） | 提案 `contracts/changes/CP-W2-002-sdt-location.md`：路径段 `sdt[i]`（容器直接子级序号，含 body/页眉页脚/单元格）；嵌套规则；指纹边界（`w:sdt` 节点入结构哈希）；填充策略——**发现并定位，但 `sdt_edit` 能力保持 false，槽位 `protection_status=PROTECTED`（control_or_field 规则），FillPlan 命中即拒绝（`PROTECTED_SLOT_VIOLATION`）**，直至独立 W4 任务交付可验证的 SDT 内填充。MINOR 版本 4.2.0。Agent 07 审查：提案阶段 **CONDITIONAL_PASS，B1-B4 已折入 rev 2**；实施后二次审查已 **PASS**，4.2.0 冻结 |
 | 阶段 B（实施） | `slot_id.py`/两个 Schema location 正则/`ooxml_utils` 迭代器暴露 `body.sdt[i].p[j]`/`spec_builder` 枚举与槽位/`fill_executor` 定位与拒绝路径/`tests/contracts` 语法用例/`examples` 向量/4.2.0 哈希清单 |
 | Owner | 阶段 A：05 起草 + 07 审查；阶段 B：01（模板侧）→ 03（执行器侧），串行 |
-| 测试 | 语法正反例；SDT 内 token 被枚举为 CONDITIONAL 槽位；FillPlan 指向该槽位 → `BLOCKED`（含错误码），模板字节不变；W3-3 的 L3 降级与披露保留为兜底 |
+| 测试 | 语法正反例；SDT 内 token 被枚举为 PROTECTED（control_or_field）槽位；FillPlan 指向该槽位 → `BLOCKED`（`PROTECTED_SLOT_VIOLATION`），模板字节不变；W3-3 的 L3 降级与披露保留为兜底；页眉页脚 story SDT、txbxContent 不抢占、scan_error 保留 high 警告（B1-B3） |
 | 验收 | 契约测试 + 全量回归 + 07 复审记录 |
-| 07 复核 | **强制，两次**（提案冻结前 / 实施完成后） |
+| 07 复核 | **已完成**：提案阶段 CONDITIONAL_PASS（B1–B4 已折入 rev 2），实施后 PASS；4.2.0 已冻结（`07-cp-w2-002-gate-review.md`、`07-cp-w2-002-post-review.md`） |
 
 ### W3-5｜soffice profile 隔离与套件稳定性（P2-04）
 
@@ -100,7 +100,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 修改 | ① `d:\docs\AGENTS.md` 复制入仓库根并更新基线段（契约集版本按 W3 推进实况：4.1.0→4.2.0；W1/W2 完成、W3 进行中）；② `CHANGELOG.md` 增 v4.0.0-dev 条目（W0/W1/W2/审计修复，区分契约版本与软件版本）；③ `README.md` v4 章节；④ `reports/w2/w2-acceptance.md` 追加“更正记录”节：real-template → 结构化回归 Fixture；补记跨环境未验证；**不改写历史正文**；⑤ 重新打包 skill zip 时包含 AGENTS.md，剔除 dist |
+| 修改 | ① 工作区 `AGENTS.md` 复制入仓库根并更新基线段（契约集版本按 W3 推进实况：4.1.0→4.2.0；W1/W2 完成、W3 进行中）；② `CHANGELOG.md` 增 v4.0.0-dev 条目（W0/W1/W2/审计修复，区分契约版本与软件版本）；③ `README.md` v4 章节；④ `reports/w2/w2-acceptance.md` 追加“更正记录”节：real-template → 结构化回归 Fixture；补记跨环境未验证；**不改写历史正文**；⑤ 重新打包 skill zip 时包含 AGENTS.md，剔除 dist |
 | Owner | 05 |
 | 验收 | 包内文件清单核对；文档间版本号一致 |
 | 07 复核 | 抽查（措辞更正是否忠实） |

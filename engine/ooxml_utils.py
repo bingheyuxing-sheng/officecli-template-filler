@@ -446,6 +446,32 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
             p_el=p_el,
         )
 
+    def _walk_sdt_container(sdt_el, sdt_location: str, parent_obj):
+        """Yield content of one `w:sdt` container (CP-W2-002).
+
+        `sdt[i]` addresses the i-th direct `w:sdt` child of its container. Paragraphs
+        and tables are indexed only among direct `w:sdtContent` children (gate
+        amendment B3): the global `w:txbxContent` pass above already yields textbox
+        paragraphs under their stable `txbx_p[i]` locations, so descending into
+        `w:txbxContent` here would let the `id()`-based de-duplication steal those
+        paragraphs and change existing slot ids.
+        """
+        content = sdt_el.find(qn("w:sdtContent"))
+        if content is None:
+            return
+        for p_idx, p in enumerate(content.findall(qn("w:p"))):
+            yield from _yield_p(f"{sdt_location}.p[{p_idx}]", p, parent_obj)
+        table_elements = content.findall(qn("w:tbl"))
+        if table_elements:
+            from docx.table import Table
+
+            tables = [Table(tbl_el, parent_obj) for tbl_el in table_elements]
+            yield from _walk_tables(tables, f"{sdt_location}.", parent_obj)
+        for nested_idx, nested in enumerate(content.findall(qn("w:sdt"))):
+            yield from _walk_sdt_container(
+                nested, f"{sdt_location}.sdt[{nested_idx}]", parent_obj
+            )
+
     def _walk_tables(tables, prefix: str, parent_obj):
         for t_idx, tbl in enumerate(tables):
             seen_tcs: Set[int] = set()
@@ -460,6 +486,10 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
                         yield from _yield_p(f"{cell_prefix}.p[{p_idx}]", p._p, cell)
                     if cell.tables:
                         yield from _walk_tables(cell.tables, f"{cell_prefix}.", cell)
+                    for sdt_idx, sdt_el in enumerate(cell._tc.findall(qn("w:sdt"))):
+                        yield from _walk_sdt_container(
+                            sdt_el, f"{cell_prefix}.sdt[{sdt_idx}]", cell
+                        )
 
     # 1. Main body paragraphs
     for i, p in enumerate(doc.paragraphs):
@@ -471,6 +501,11 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
     # 3. Textboxes (`w:txbxContent`) in main body
     for txbx_idx, p_el in enumerate(doc.element.body.xpath(".//w:txbxContent//w:p")):
         yield from _yield_p(f"body.txbx_p[{txbx_idx}]", p_el, doc)
+
+    # 3b. Body-level `w:sdt` containers (CP-W2-002). Kept after the textbox pass so
+    # textbox paragraphs keep their `body.txbx_p[i]` locations and ids.
+    for sdt_idx, sdt_el in enumerate(doc.element.body.findall(qn("w:sdt"))):
+        yield from _walk_sdt_container(sdt_el, f"body.sdt[{sdt_idx}]", doc)
 
     # 4. Headers & Footers across all sections (including default, even_page, first_page)
     for s_idx, section in enumerate(doc.sections):
@@ -494,6 +529,10 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
                     yield from _walk_tables(hf_obj.tables, f"sec[{s_idx}].{hf_name}.", hf_obj)
                 for txbx_idx, p_el in enumerate(hf_obj._element.xpath(".//w:txbxContent//w:p")):
                     yield from _yield_p(f"sec[{s_idx}].{hf_name}.txbx_p[{txbx_idx}]", p_el, hf_obj)
+                for sdt_idx, sdt_el in enumerate(hf_obj._element.findall(qn("w:sdt"))):
+                    yield from _walk_sdt_container(
+                        sdt_el, f"sec[{s_idx}].{hf_name}.sdt[{sdt_idx}]", hf_obj
+                    )
             except Exception:
                 continue
 
@@ -519,6 +558,26 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
     seen_tbl_ids: Set[int] = set()
     # Same proxy-recycling guard as the paragraph iterator above.
     seen_elements: List[Any] = []
+
+    def _walk_sdt_tables(sdt_el, sdt_location: str, scope: str, depth: int, parent_obj):
+        """Tables directly inside one `w:sdt` container (CP-W2-002).
+
+        Direct `w:sdtContent` children only, matching the paragraph iterator. Nested
+        SDTs are walked recursively with their own `sdt[i]` segment.
+        """
+        content = sdt_el.find(qn("w:sdtContent"))
+        if content is None:
+            return
+        table_elements = content.findall(qn("w:tbl"))
+        if table_elements:
+            from docx.table import Table
+
+            tables = [Table(tbl_el, parent_obj) for tbl_el in table_elements]
+            yield from _walk(tables, scope=scope, prefix=f"{sdt_location}.", depth=depth)
+        for nested_idx, nested in enumerate(content.findall(qn("w:sdt"))):
+            yield from _walk_sdt_tables(
+                nested, f"{sdt_location}.sdt[{nested_idx}]", scope, depth, parent_obj
+            )
 
     def _walk(tables, scope: str, prefix: str, depth: int):
         for t_idx, tbl in enumerate(tables):
@@ -548,8 +607,18 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
                             prefix=f"{table_id}.r[{r_idx}].c[{c_idx}].",
                             depth=depth + 1,
                         )
+                    for sdt_idx, sdt_el in enumerate(cell._tc.findall(qn("w:sdt"))):
+                        yield from _walk_sdt_tables(
+                            sdt_el,
+                            f"{table_id}.r[{r_idx}].c[{c_idx}].sdt[{sdt_idx}]",
+                            "nested_table",
+                            depth + 1,
+                            cell,
+                        )
 
     yield from _walk(doc.tables, scope="body", prefix="body.", depth=0)
+    for sdt_idx, sdt_el in enumerate(doc.element.body.findall(qn("w:sdt"))):
+        yield from _walk_sdt_tables(sdt_el, f"body.sdt[{sdt_idx}]", "body", 0, doc)
     for s_idx, section in enumerate(doc.sections):
         for hf_name in ("header", "first_page_header", "even_page_header", "footer", "first_page_footer", "even_page_footer"):
             hf_obj = getattr(section, hf_name, None)
@@ -560,6 +629,10 @@ def iter_all_document_tables_with_context(doc) -> Iterator[Dict[str, any]]:
                     continue
                 if hf_obj.tables:
                     yield from _walk(hf_obj.tables, scope=hf_name, prefix=f"sec[{s_idx}].{hf_name}.", depth=0)
+                for sdt_idx, sdt_el in enumerate(hf_obj._element.findall(qn("w:sdt"))):
+                    yield from _walk_sdt_tables(
+                        sdt_el, f"sec[{s_idx}].{hf_name}.sdt[{sdt_idx}]", hf_name, 0, hf_obj
+                    )
             except Exception:
                 continue
 

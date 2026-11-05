@@ -31,12 +31,13 @@ The location grammar (Contract 01 §3, extended by CP-W2-001) enumerates `p | tb
 element := "p" | "tbl" | "r" | "c" | "txbx_p" | "sdt"
 ```
 
-- `sdt[i]`: the i-th (0-based) **direct `w:sdt` child** of the current container. Containers: `<w:body>`, a `w:sdtContent` (for nested SDT), or a table cell `tc`.
-- Inside an SDT container, paragraphs/tables are indexed among its `w:sdtContent` **direct children**: `body.sdt[0].p[1]`, `body.sdt[0].tbl[0].r[2].c[1].p[0]`.
+- `sdt[i]`: the i-th (0-based) **direct `w:sdt` child** of the current container. Containers: `<w:body>`, a header/footer story root, a `w:sdtContent` (for nested SDT), or a table cell `tc`.
+- **Story coverage (gate amendment B2):** containers are scanned in body AND header/footer stories (`sec[n].header.sdt[i].p[j]`, `sec[n].first_page_footer.sdt[i].p[0]`, ...) AND table cells. A header/footer body-level SDT must not remain a fail-open gap.
+- Inside an SDT container, paragraphs/tables are indexed among its `w:sdtContent` **direct children only** (gate amendment B3): the traversal MUST NOT descend into `w:txbxContent` or nested `w:tbl` cell paragraphs from the container step — those are reached by their own path segments. This keeps the iterator's `id()`-based de-duplication (`engine/ooxml_utils.py:435-440`) from stealing textbox paragraphs and changing existing slot ids.
 - Nested SDT: `body.sdt[0].sdt[1].p[0]`.
 - A bare container address `body.sdt[0]` is a valid location (story + one element) and is used by protected regions.
 
-Examples: `body.sdt[0].p[0]`, `body.tbl[1].r[0].c[0].sdt[0].p[0]` (cell-level SDT), `sec[0].header.p[0]` unchanged.
+Examples: `body.sdt[0].p[0]`, `body.tbl[1].r[0].c[0].sdt[0].p[0]` (cell-level SDT), `sec[0].header.sdt[0].p[0]`, `sec[1].even_page_footer.sdt[0].tbl[0].r[0].c[0].p[0]`; `sec[0].header.p[0]` unchanged.
 
 ### 3.2 Discovery semantics (Contract 02)
 
@@ -44,7 +45,7 @@ Examples: `body.sdt[0].p[0]`, `body.tbl[1].r[0].c[0].sdt[0].p[0]` (cell-level SD
 2. Every slot discovered inside a body/cell-level SDT MUST be `candidate_type: "control_or_field"`, hence `protection_status: "PROTECTED"` + `confirmation_tier: "PROTECTED_DO_NOT_TOUCH"` (existing Contract 02 §7 rules — no enum change).
 3. `template.capabilities.sdt_edit` stays `false`. A FillPlan operation targeting any slot inside an SDT is rejected as `PROTECTED_SLOT_VIOLATION` (precondition `not_protected` already covers it — no executor change).
 4. Protected regions: one entry per container with content, `kind: "sdt"`, `location_id: "body.sdt[i]"`, `severity: "blocking"`, evidence naming paragraph/table counts.
-5. W3-3 behaviour is **kept**: compatibility capped at ≥L3, `SDT_BODY_UNSUPPORTED` retained with reworded detail ("discovered as protected positions; not fillable while sdt_edit=false"), high `SDT_BODY_ENUMERATION_GAP` warning becomes `SDT_BODY_PROTECTED_ONLY` (medium) once discovery works.
+5. W3-3 behaviour is **kept**: compatibility capped at ≥L3 and `SDT_BODY_UNSUPPORTED` retained with reworded detail ("discovered as protected positions; not fillable while sdt_edit=false"). Gate amendment B1: the warning rename to `SDT_BODY_PROTECTED_ONLY` (medium) applies **only to the discovery-success path**; a failed pre-scan (`scan_error`) keeps the high-severity `SDT_BODY_ENUMERATION_GAP` and `SDT_BODY_SCAN_INCOMPLETE` disclosure unchanged (fail-closed, `spec_builder.py:1161`).
 
 ### 3.3 Identity, fingerprint, QA
 
@@ -60,15 +61,14 @@ Filling SDT content (in-place `w:sdtContent` text replacement with format inheri
 
 | Artifact | Change | Kind |
 |---|---|---|
-| `contracts/01-slot-id.md` §3 | element set adds `sdt`; indexing rules | additive |
+| `contracts/01-slot-id.md` §3 | element set adds `sdt`; indexing rules; story coverage incl. header/footer; **and the "MUST match the v3.5.9 iterator" sentence is revised to "MUST match the v4 iterator, which is a superset of the v3.5.9 story set" (gate amendment B4)** | additive |
 | `contracts/02-document-spec.md` §7/§8 | SDT discovery semantics (rules above) | additive |
-| `schemas/document_spec-4.0.schema.json` | `location_id` pattern adds `sdt` | additive regex |
-| `schemas/fill_plan-4.0.schema.json` | `target.location_id` pattern adds `sdt` | additive regex |
-| `template_intelligence/slot_id.py`, `tests/contracts/helpers.py` | `LOCATION_RE` widened | additive |
-| `engine/ooxml_utils.py` | iterators expose body/cell-level SDT content with new locations | **frozen primitive** — full regression + 07 review |
+| `schemas/document_spec-4.0.schema.json`, `schemas/fill_plan-4.0.schema.json` | **no edit required**: the location patterns already accept any `[a-z_]+` element name (gate review fact-check; the earlier "pattern adds sdt" claim was wrong) | none |
+| `template_intelligence/slot_id.py`, `tests/contracts/helpers.py` | **no code edit required** (post-review fact-check): `LOCATION_RE` already matches any `[a-z_]+` element, so `sdt` was accepted before this CP; only the contract prose was missing it | none |
+| `engine/ooxml_utils.py` | iterators expose body/cell/header-level SDT content with new locations; direct-children-only, no txbxContent descent (B3) | **frozen primitive** — full regression + 07 review |
 | `engine/docx_parser.py` | `assess_template_compatibility_level` sees sdt paragraphs via same iterator (no code change expected; verify) | verify |
-| `template_intelligence/spec_builder.py` | discovery as control_or_field/PROTECTED; regions kind=sdt; W3-3 rewording | change |
-| `tests/contracts/test_slot_id.py`, `tests/test_sdt_detection.py` | grammar vectors; slots now discovered (assert PROTECTED, not `slots == []`) | strengthened |
+| `template_intelligence/spec_builder.py` | discovery as control_or_field/PROTECTED; regions kind=sdt; W3-3 rewording with B1 split | change |
+| `tests/contracts/test_slot_id.py`, `tests/test_sdt_detection.py` | grammar vectors; slots now discovered (assert PROTECTED, not `slots == []`); scan_error path keeps high warning | strengthened |
 
 ## 5. Compatibility
 
@@ -84,12 +84,24 @@ Filling SDT content (in-place `w:sdtContent` text replacement with format inheri
 4. Locked (`w:lock="sdtContentLocked"`) and plain SDTs both discovered.
 5. Slot-id stability: two runs identical; existing vectors unchanged (regression).
 6. Fingerprint: structural hash equal before/after a no-op authorized fill elsewhere.
-7. Full suite green; contracts suite includes new vectors; 07 post-implementation review PASS recorded; 4.2.0 manifest hashes updated.
+7. Header/footer story SDT (`sec[0].header.sdt[0].p[0]`) discovered, PROTECTED, region emitted (gate amendment B2).
+8. Textbox paragraphs keep their existing `txbx_p[i]` locations and slot ids when a document also contains body-level SDT with a nested textbox (gate amendment B3: no txbxContent descent from the container step).
+9. Scan-failure path still yields high `SDT_BODY_ENUMERATION_GAP` + `SDT_BODY_SCAN_INCOMPLETE` after the rename (gate amendment B1).
+10. Full suite green; contracts suite includes new vectors; 07 post-implementation review PASS recorded; 4.2.0 manifest hashes updated.
 
 ## 7. Approval
 
 | Role | Verdict |
 |---|---|
-| Agent 05 (author) | proposed |
-| Agent 07 (independent gate, proposal) | pending — see `reports/w2/`/`reports/w3/` gate record |
-| Implementation (W3-4B) | **blocked until proposal gate = PASS** |
+| Agent 05 (author) | proposed; gate amendments B1-B4 + schema fact-check folded in (revision 2) |
+| Agent 07 (independent gate, proposal) | **CONDITIONAL_PASS** (`reports/w3/07-cp-w2-002-gate-review.md`): implementation may start once B1-B4 are folded into this text (done in revision 2); implementation completion requires a second 07 review |
+| Agent 07 (post-implementation) | **PASS** (`reports/w3/07-cp-w2-002-post-review.md`): three text corrections (§7.2.1 empty paragraphs, §8.1.3 textbox exception, §4 LOCATION_RE fact-check) verified closed; 4.2.0 may be frozen |
+| Implementation (W3-4B) | **FROZEN 4.2.0 (2026-11-05)** by Agent 05; commit `5417f8a` + freeze text commit |
+
+## 8. Revision log
+
+| Rev | Change |
+|---|---|
+| 1 | Initial proposal (commit `143cb74`) |
+| 2 | Gate review folded: B1 warning-rename split; B2 header/footer story coverage; B3 direct-children-only, no txbxContent descent; B4 Contract 01 iterator sentence revision; §4 corrected — schema location regexes already generic, no schema edit needed |
+| 3 | Post-implementation review folded: §7.2.1 non-whitespace-only paragraphs; §8.1.3 textbox exception; §4 LOCATION_RE no-code-change fact-check; frozen 4.2.0 |
