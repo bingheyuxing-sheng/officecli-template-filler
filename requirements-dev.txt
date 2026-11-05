@@ -1,0 +1,6 @@
+# W0 contract-test dependencies (not required for the v3.5.9 runtime)
+jsonschema>=4.20
+
+# Run:
+#   py -3.15 -m pip install -r requirements-dev.txt
+#   py -3.15 -m unittest discover -s tests/contracts -t tests

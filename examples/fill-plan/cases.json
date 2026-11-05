@@ -1,0 +1,281 @@
+{
+  "contract": "03-fill-plan",
+  "cases": {
+    "minimal_valid": {
+      "expect": "valid",
+      "document": {
+        "schema_version": "4.0",
+        "task_id": "TASK_W0_001",
+        "template_id": "T_000000000000",
+        "mode": "STRICT",
+        "baseline": {
+          "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "spec_schema_version": "4.0",
+          "fingerprint_id": "FP_001",
+          "allowed_slot_ids": ["S_d6df35f1e6cd"]
+        },
+        "operations": [
+          {
+            "op_id": "OP_001",
+            "sequence": 1,
+            "type": "replace_text",
+            "slot_id": "S_d6df35f1e6cd",
+            "target": { "location_id": "body.p[0]" },
+            "source_ref": "USER_INPUT",
+            "value": "示例项目",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 4,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          }
+        ],
+        "global_policy": {
+          "allow_structure_change": false,
+          "deny_operations": [
+            "modify_page_margin",
+            "modify_global_styles",
+            "rebuild_table",
+            "insert_row"
+          ],
+          "styles": "DENY",
+          "page_setup": "DENY"
+        }
+      }
+    },
+    "full_valid": {
+      "expect": "valid",
+      "document": {
+        "schema_version": "4.0",
+        "task_id": "TASK_W0_001",
+        "template_id": "T_000000000000",
+        "mode": "STRICT",
+        "baseline": {
+          "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "spec_schema_version": "4.0",
+          "fingerprint_id": "FP_001",
+          "allowed_slot_ids": [
+            "S_d6df35f1e6cd",
+            "S_5abf927e8f5e",
+            "S_42824f695c11",
+            "S_744ef06dee9d"
+          ]
+        },
+        "operations": [
+          {
+            "op_id": "OP_001",
+            "sequence": 1,
+            "type": "replace_text",
+            "slot_id": "S_d6df35f1e6cd",
+            "target": { "location_id": "body.p[0]" },
+            "source_ref": "F_001",
+            "value": "示例项目",
+            "value_ref": "F_001",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "source_verified", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 4,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          },
+          {
+            "op_id": "OP_002",
+            "sequence": 2,
+            "type": "fill_paragraph",
+            "slot_id": "S_5abf927e8f5e",
+            "target": { "location_id": "body.p[2]" },
+            "source_ref": "USER_INPUT",
+            "value": "本项目面向区域产业升级需求，建设必要性包括技术迭代与人才培养。",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 30,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          },
+          {
+            "op_id": "OP_003",
+            "sequence": 3,
+            "type": "fill_cell",
+            "slot_id": "S_42824f695c11",
+            "target": {
+              "location_id": "body.tbl[1].r[2].c[1].p[0]",
+              "table_id": "body.tbl[1]",
+              "row": 2,
+              "col": 1
+            },
+            "source_ref": "F_002",
+            "value": "120000",
+            "value_ref": "F_002",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "capacity_ok", "source_verified", "template_sha_match"],
+            "depends_on": ["OP_001"],
+            "overflow": {
+              "measured_chars": 6,
+              "limit_source": "fixed_height_cell",
+              "limit_value": 40,
+              "strategy": "REJECT"
+            }
+          },
+          {
+            "op_id": "OP_004",
+            "sequence": 4,
+            "type": "replace_image",
+            "slot_id": "S_744ef06dee9d",
+            "target": {
+              "location_id": "body.p[5]",
+              "image_role": "illustration"
+            },
+            "source_ref": "USER_INPUT",
+            "value": "assets/flow.png",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 0,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          }
+        ],
+        "global_policy": {
+          "allow_structure_change": false,
+          "deny_operations": [
+            "modify_page_margin",
+            "modify_section_properties",
+            "modify_global_styles",
+            "rebuild_table",
+            "move_existing_image",
+            "delete_protected_content",
+            "insert_row",
+            "insert_paragraph",
+            "merge_cells"
+          ],
+          "styles": "DENY",
+          "page_setup": "DENY"
+        }
+      }
+    },
+    "missing_required": {
+      "expect": "invalid",
+      "document": {
+        "schema_version": "4.0",
+        "task_id": "TASK_W0_002",
+        "template_id": "T_000000000000",
+        "mode": "STRICT",
+        "operations": [
+          {
+            "op_id": "OP_001",
+            "sequence": 1,
+            "type": "replace_text",
+            "slot_id": "S_d6df35f1e6cd",
+            "target": { "location_id": "body.p[0]" },
+            "source_ref": "USER_INPUT",
+            "value": "示例项目",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 4,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          }
+        ],
+        "global_policy": {
+          "allow_structure_change": false,
+          "deny_operations": [],
+          "styles": "DENY",
+          "page_setup": "DENY"
+        }
+      }
+    },
+    "type_error": {
+      "expect": "invalid",
+      "document": {
+        "schema_version": "4.0",
+        "task_id": "TASK_W0_003",
+        "template_id": "T_000000000000",
+        "mode": "STRICT",
+        "baseline": {
+          "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "spec_schema_version": "4.0",
+          "fingerprint_id": "FP_001",
+          "allowed_slot_ids": ["S_d6df35f1e6cd"]
+        },
+        "operations": {},
+        "global_policy": {
+          "allow_structure_change": false,
+          "deny_operations": [],
+          "styles": "DENY",
+          "page_setup": "DENY"
+        }
+      }
+    },
+    "boundary_conflict": {
+      "expect": "semantic_invalid",
+      "rule": "duplicate operation sequence",
+      "document": {
+        "schema_version": "4.0",
+        "task_id": "TASK_W0_004",
+        "template_id": "T_000000000000",
+        "mode": "STRICT",
+        "baseline": {
+          "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "spec_schema_version": "4.0",
+          "fingerprint_id": "FP_001",
+          "allowed_slot_ids": ["S_d6df35f1e6cd", "S_5abf927e8f5e"]
+        },
+        "operations": [
+          {
+            "op_id": "OP_001",
+            "sequence": 1,
+            "type": "replace_text",
+            "slot_id": "S_d6df35f1e6cd",
+            "target": { "location_id": "body.p[0]" },
+            "source_ref": "USER_INPUT",
+            "value": "示例项目",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 4,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          },
+          {
+            "op_id": "OP_002",
+            "sequence": 1,
+            "type": "fill_paragraph",
+            "slot_id": "S_5abf927e8f5e",
+            "target": { "location_id": "body.p[2]" },
+            "source_ref": "USER_INPUT",
+            "value": "重复序号的内容",
+            "policy": "STRICT",
+            "preconditions": ["slot_exists", "not_protected", "template_sha_match"],
+            "overflow": {
+              "measured_chars": 7,
+              "limit_source": "none",
+              "limit_value": null,
+              "strategy": "REJECT"
+            }
+          }
+        ],
+        "global_policy": {
+          "allow_structure_change": false,
+          "deny_operations": [],
+          "styles": "DENY",
+          "page_setup": "DENY"
+        }
+      }
+    }
+  }
+}

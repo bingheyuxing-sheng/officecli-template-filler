@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/v4.0/schemas/document_spec-legacy-cli.schema.json",
+  "title": "analyze_template.py CLI output (v3.5.9, deprecated)",
+  "description": "Validates the actual v3.5.9 CLI summary. It is not DocumentSpec 4.0; the 4.0 producer is tracked as OI-01.",
+  "type": "object",
+  "required": [
+    "file_path",
+    "compatibility",
+    "paragraphs_count",
+    "candidate_hits_count",
+    "candidate_hits",
+    "table_profiles",
+    "image_profiles"
+  ],
+  "properties": {
+    "file_path": { "type": "string" },
+    "compatibility": {
+      "type": "object",
+      "required": ["compatibility_level", "recommended_strategy"],
+      "properties": {
+        "compatibility_level": { "enum": ["L1", "L2", "L3", "L4"] },
+        "recommended_strategy": { "type": "string" },
+        "l2_features": { "type": "array", "items": { "type": "string" } },
+        "l3_features": { "type": "array", "items": { "type": "string" } },
+        "l4_features": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "paragraphs_count": { "type": "integer", "minimum": 0 },
+    "candidate_hits_count": { "type": "integer", "minimum": 0 },
+    "candidate_hits": { "type": "array", "items": { "type": "object" } },
+    "table_profiles": { "type": "array", "items": { "type": "object" } },
+    "image_profiles": { "type": "array", "items": { "type": "object" } }
+  }
+}
