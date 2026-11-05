@@ -89,6 +89,7 @@ The current `analyze_template.py` cannot emit a 4.0 DocumentSpec. That is record
 |---|---|---|---|
 | 4.0.0 | 2026-11-05 | W0 initial freeze | W0 |
 | 4.1.0 | 2026-11-05 | `location_id` story grammar adds first/even page headers and footers; artifact `schema_version` stays `4.0` | `changes/CP-W2-001-location-story.md` |
+| 4.2.0 | pending | `location_id` element set adds `sdt`; body/cell/header-level SDT content discovered as PROTECTED positions; `sdt_edit` stays false; implementation gated on 07 post-implementation review | `changes/CP-W2-002-sdt-location.md` |
 
 ## 6. Compatibility statement
 
