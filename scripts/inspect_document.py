@@ -19,6 +19,7 @@ if ROOT_DIR not in sys.path:
 
 import docx
 from engine import extract_document_spec, extract_excel_spec, install_auto_cleanup, route_document_task
+from engine.package_guard import check_package, load_limits
 
 
 def main() -> int:
@@ -33,6 +34,14 @@ def main() -> int:
     files = args.inputs or args.files
     if not files:
         parser.error("at least one input file is required (positional or --inputs)")
+
+    # W3-7: every user input passes the pre-parse quota before any parser runs.
+    for path in files:
+        verdict = check_package(path, load_limits())
+        if not verdict["ok"]:
+            print(json.dumps({"error": verdict["code"], "input": path,
+                              "package_guard": verdict}, ensure_ascii=False))
+            return 2
 
     routing = route_document_task(files, user_intent=args.intent)
     result = {"routing": routing, "specs": []}

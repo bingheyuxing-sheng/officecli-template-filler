@@ -152,6 +152,16 @@ def main() -> int:
                         help="STANDARD only: commit a QA UNVERIFIED report that discloses missing checks")
     args = parser.parse_args()
 
+    # W3-7: the user template passes the pre-parse quota on BOTH paths
+    # (--data legacy and --plan v4) before any parser touches the file.
+    from engine.package_guard import check_package, load_limits
+
+    verdict = check_package(args.template, load_limits())
+    if not verdict["ok"]:
+        print(json.dumps({"output": args.out, "error": verdict["code"],
+                          "package_guard": verdict}, ensure_ascii=False))
+        return 2
+
     if args.plan:
         if not args.spec:
             parser.error("--plan requires --spec")

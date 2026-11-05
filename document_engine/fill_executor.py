@@ -808,6 +808,23 @@ def execute_fill_plan(
         }
 
     try:
+        # -- 0. pre-parse package quota (W3-7): reject hostile/oversized input
+        # before python-docx reads any part of it.
+        from engine.package_guard import check_package, load_limits
+
+        guard_verdict = check_package(str(template_path), load_limits())
+        if not guard_verdict["ok"]:
+            errors.append(
+                _error_record(
+                    guard_verdict["code"],
+                    "Template package rejected before parsing: "
+                    + str(guard_verdict["violations"])[:300],
+                    details={"violations": guard_verdict["violations"]},
+                    rollback_required=False,
+                )
+            )
+            return envelope("BLOCKED", "STOP")
+
         # -- 1. load + validate ------------------------------------------------
         try:
             document = docx.Document(template_path)

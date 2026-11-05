@@ -21,6 +21,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from engine import extract_excel_spec, install_auto_cleanup
+from engine.package_guard import check_package, load_limits
 
 
 def main() -> int:
@@ -36,6 +37,11 @@ def main() -> int:
         parser.error("a template path is required (positional or --input)")
     if not template_path.lower().endswith((".xlsx", ".xlsm")):
         parser.error("analyze_excel_template.py only accepts .xlsx/.xlsm; use analyze_template.py for Word")
+
+    verdict = check_package(template_path, load_limits())
+    if not verdict["ok"]:
+        print(json.dumps({"error": verdict["code"], "package_guard": verdict}, ensure_ascii=False))
+        return 2
 
     spec = extract_excel_spec(template_path)
     payload = json.dumps(spec, ensure_ascii=False, indent=2)
