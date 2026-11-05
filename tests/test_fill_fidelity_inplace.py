@@ -237,7 +237,12 @@ class FillParagraphInPlaceTests(unittest.TestCase):
 
 
 class FormatResidualInheritanceTests(unittest.TestCase):
-    """A blank the template already had is not a fill defect; a targeted one is."""
+    """A blank the template already had is not a fill defect.
+
+    Only a registered fillable slot's token that the plan targeted and left
+    unfilled stays blocking; that spec-aware case is covered in
+    tests/test_residual_inheritance.py.
+    """
 
     def _template(self, directory: Path) -> Path:
         template = directory / "blank.docx"
@@ -272,18 +277,77 @@ class FormatResidualInheritanceTests(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertEqual(warnings[0]["severity"], "medium")
 
-    def test_residual_in_a_targeted_paragraph_stays_blocking(self) -> None:
+
+class RedResidualInheritanceTests(unittest.TestCase):
+    """Regression (real-corpus W3-9): template's own red emphasis is not a fill defect.
+
+    An exam template carried a legitimate red run ("观测极光") in a paragraph no
+    operation targeted; FORMAT QA reported it as a blocking RED_TEXT_RESIDUAL and
+    the commit gate refused a otherwise clean fill.
+    """
+
+    def _template(self, directory: Path) -> Path:
+        template = directory / "red.docx"
+        document = docx.Document()
+        document.add_paragraph("正文段落")
+        red = document.add_paragraph()
+        run = red.add_run("观测极光")
+        run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
+        document.save(str(template))
+        return template
+
+    def _section(self):
+        return {
+            "passed": False,
+            "structured_issues": [
+                {
+                    "code": "RED_TEXT_RESIDUAL",
+                    "severity": "high",
+                    "location": "body.p[1]",
+                    "detail": "观测极光",
+                }
+            ],
+        }
+
+    def test_inherited_red_text_demotes_to_warning(self) -> None:
         from qa.pipeline import _adjust_inherited_residuals
 
-        with tempfile.TemporaryDirectory(prefix="residual_") as tmp:
+        with tempfile.TemporaryDirectory(prefix="red_res_") as tmp:
+            template = self._template(Path(tmp))
+            adjusted, warnings = _adjust_inherited_residuals(
+                self._section(), str(template), {"operations": []}
+            )
+        self.assertTrue(adjusted["passed"])
+        self.assertEqual(adjusted["structured_issues"], [])
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0]["severity"], "medium")
+
+    def test_red_text_in_a_targeted_location_stays_blocking(self) -> None:
+        from qa.pipeline import _adjust_inherited_residuals
+
+        with tempfile.TemporaryDirectory(prefix="red_res_") as tmp:
             template = self._template(Path(tmp))
             plan = {
                 "operations": [
-                    {"type": "replace_text", "target": {"location_id": "body.p[0]"}}
+                    {"type": "replace_text", "target": {"location_id": "body.p[1]"}}
                 ]
             }
             adjusted, warnings = _adjust_inherited_residuals(
                 self._section(), str(template), plan
+            )
+        self.assertFalse(adjusted["passed"])
+        self.assertEqual(len(adjusted["structured_issues"]), 1)
+        self.assertEqual(warnings, [])
+
+    def test_red_text_absent_from_template_stays_blocking(self) -> None:
+        from qa.pipeline import _adjust_inherited_residuals
+
+        with tempfile.TemporaryDirectory(prefix="red_res_") as tmp:
+            template = self._template(Path(tmp))
+            section = self._section()
+            section["structured_issues"][0]["detail"] = "新出现的红色文字"
+            adjusted, warnings = _adjust_inherited_residuals(
+                section, str(template), {"operations": []}
             )
         self.assertFalse(adjusted["passed"])
         self.assertEqual(len(adjusted["structured_issues"]), 1)

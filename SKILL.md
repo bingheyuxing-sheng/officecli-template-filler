@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v4.0 dev — contract set 4.2.0; v3.5.9 compatibility baseline)
+# OfficeCLI + Python Office Document Intelligence Skill (v4.0.0 stable — contract set 4.2.0; v3.5.9 compatibility baseline)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
@@ -132,7 +132,7 @@ officecli-template-filler/
 │   ├── repair_plan.schema.json           # RepairPlan output schema
 │   ├── review_report.schema.json         # v3.1: REVIEW mode execution + integrity report
 │   └── qa_report.schema.json             # Unified QA Report schema
-├── tests/                                # Automated suite (450 tests)
+├── tests/                                # Automated suite (473 tests)
 │   ├── contracts/                        # W0 contract tests (70)
 │   ├── test_e2e_v4.py                    # v4 DocumentSpec → plans → executor → QA → commit
 │   ├── test_skill_workflow_v4.py         # Runs the documented SKILL.md GENERATE chain

@@ -117,6 +117,76 @@ class PackageGuardTests(unittest.TestCase):
         self.assertNotIn("unknown_key", merged)
 
 
+class BaselineInheritanceTests(unittest.TestCase):
+    """WPS templates that already lack ``xml:space`` must not block an authorized fill."""
+
+    XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = self._tmp.name
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _docx_with_missing_space(self, name: str, extra: int = 0) -> str:
+        path = os.path.join(self.dir, name)
+        document = docx.Document()
+        document.add_paragraph(" 前导空格 ")
+        for index in range(extra):
+            document.add_paragraph(" 额外空格 %d " % index)
+        for t_el in document.element.body.xpath(".//w:t"):
+            t_el.attrib.pop(self.XML_SPACE, None)
+        document.save(path)
+        return path
+
+    def test_inherited_space_preserve_is_disclosed_not_blocking(self) -> None:
+        from engine.qa_engine import audit_docx_package_integrity
+
+        template = self._docx_with_missing_space("template.docx")
+        output = os.path.join(self.dir, "output.docx")
+        with open(template, "rb") as source, open(output, "wb") as target:
+            target.write(source.read())
+
+        report = audit_docx_package_integrity(output, baseline_path=template)
+        self.assertTrue(report["passed"], report["structured_issues"])
+        self.assertEqual(report["inherited_space_preserve"], report["missing_space_preserve"])
+        self.assertEqual(
+            [item["code"] for item in report["structured_issues"]],
+            ["PACKAGE_SPACE_PRESERVE_MISSING"],
+        )
+        self.assertEqual(report["structured_issues"][0]["severity"], "medium")
+
+        strict = audit_docx_package_integrity(output)
+        self.assertFalse(strict["passed"])
+        self.assertEqual(strict["inherited_space_preserve"], 0)
+
+    def test_new_space_preserve_beyond_baseline_is_blocking(self) -> None:
+        from engine.qa_engine import audit_docx_package_integrity
+
+        template = self._docx_with_missing_space("template.docx")
+        output = self._docx_with_missing_space("output.docx", extra=2)
+        report = audit_docx_package_integrity(output, baseline_path=template)
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["inherited_space_preserve"], 0)
+        self.assertGreater(report["effective_space_preserve"], 0)
+
+    def test_format_qa_does_not_raise_when_raise_on_failure_is_false(self) -> None:
+        from engine.qa_engine import audit_format_and_text_qa
+
+        template = self._docx_with_missing_space("template.docx")
+        report = audit_format_and_text_qa(
+            docx.Document(template),
+            docx_path=template,
+            reference_docx_path=template,
+            raise_on_failure=False,
+            comparison_profile="STYLE_GUIDE",
+        )
+        self.assertTrue(report["passed"], report["structured_issues"])
+        self.assertGreater(report["inherited_space_preserve"], 0)
+
+
 class GuardIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
