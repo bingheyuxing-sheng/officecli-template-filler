@@ -1,0 +1,37 @@
+{
+  "schema_version": "4.0",
+  "plan_id": "CP_FIXTURE_06",
+  "template_id": "T_67b50b8bf4e2",
+  "sections": [
+    {
+      "section_id": "SEC_501",
+      "purpose": "报表名称",
+      "target_slots": [
+        "S_e0748a1ca7cd"
+      ],
+      "fact_refs": [
+        "F_501"
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "F_501",
+      "label": "报表名称",
+      "value": "2025年度报告",
+      "unit": "none",
+      "source": "USER_INPUT",
+      "verification_status": "VERIFIED",
+      "used_by_slots": [
+        "S_e0748a1ca7cd"
+      ]
+    }
+  ],
+  "completeness": {
+    "required_slots": [
+      "S_e0748a1ca7cd"
+    ],
+    "optional_slots": [],
+    "allow_missing": []
+  }
+}

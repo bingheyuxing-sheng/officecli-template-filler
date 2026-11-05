@@ -1,0 +1,135 @@
+{
+  "class_key": "class_06_complex_document",
+  "schema_version": "4.0",
+  "template_sha256": "67b50b8bf4e2d652071475ce3017bc991208417e2f7d794e9d159ab155d50fb6",
+  "compatibility": "L3",
+  "capabilities": {
+    "text_fill": true,
+    "table_fill": true,
+    "image_replace": false,
+    "nested_table": false,
+    "field_update": false,
+    "sdt_edit": false,
+    "smartart_edit": false,
+    "visual_render": true
+  },
+  "slots": [
+    {
+      "slot_id": "S_e0748a1ca7cd",
+      "slot_key": "c6fb938ea10bb5d1",
+      "location_id": "body.p[1]",
+      "matched_text": "{{报表名称}}",
+      "occurrence": 1,
+      "candidate_type": "explicit_token",
+      "protection_status": "FILLABLE",
+      "confirmation_tier": "AUTO_DERIVE_OR_BIND",
+      "scope": "body"
+    },
+    {
+      "slot_id": "S_d6bfbacec83c",
+      "slot_key": "9fb9ec2af124b369",
+      "location_id": "body.p[2]",
+      "matched_text": "受控字段：项目编号",
+      "occurrence": 1,
+      "candidate_type": "control_or_field",
+      "protection_status": "PROTECTED",
+      "confirmation_tier": "PROTECTED_DO_NOT_TOUCH",
+      "scope": "body"
+    },
+    {
+      "slot_id": "S_5ab8bad95cad",
+      "slot_key": "700e451e608edc4f",
+      "location_id": "body.p[3]",
+      "matched_text": "页码：1",
+      "occurrence": 1,
+      "candidate_type": "control_or_field",
+      "protection_status": "PROTECTED",
+      "confirmation_tier": "PROTECTED_DO_NOT_TOUCH",
+      "scope": "body"
+    }
+  ],
+  "protected_regions": [
+    {
+      "kind": "field",
+      "location_id": "body.p[3]",
+      "severity": "blocking",
+      "evidence": "field code found; field result must not be overwritten"
+    },
+    {
+      "kind": "sdt",
+      "location_id": "body.p[2]",
+      "severity": "blocking",
+      "evidence": "content control (w:sdt) found; SDT content is read-only"
+    }
+  ],
+  "unsupported_features": [
+    {
+      "code": "FIELD_UPDATE_UNSUPPORTED",
+      "location_id": "body.p[3]"
+    },
+    {
+      "code": "SDT_EDIT_UNSUPPORTED",
+      "location_id": "body.p[2]"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "primary",
+      "plan": "fill_plan.json",
+      "content_plan": "content_plan.json",
+      "allowed_status": [
+        "SUCCESS",
+        "UNVERIFIED"
+      ],
+      "committed": true,
+      "expect_text": [
+        {
+          "location_id": "body.p[0]",
+          "text": "年度报告（固定标题）"
+        },
+        {
+          "location_id": "body.p[1]",
+          "text": "2025年度报告"
+        },
+        {
+          "location_id": "body.p[2]",
+          "text": "受控字段：项目编号"
+        },
+        {
+          "location_id": "body.p[3]",
+          "text": "页码：1"
+        }
+      ]
+    },
+    {
+      "name": "protected_target_refused",
+      "plan": null,
+      "content_plan": "content_plan.json",
+      "allowed_status": [
+        "BLOCKED"
+      ],
+      "committed": false,
+      "build": "protected_target",
+      "expect_validation_errors": [
+        "PROTECTED_SLOT_VIOLATION"
+      ]
+    }
+  ],
+  "controls": {
+    "sdt_count": 1,
+    "field_count": 1,
+    "sdt_texts": [
+      "项目编号"
+    ],
+    "field_texts": [
+      "1"
+    ],
+    "fixed_texts": [
+      "年度报告（固定标题）"
+    ],
+    "protected_slot_texts": [
+      "受控字段：项目编号",
+      "页码：1"
+    ]
+  }
+}

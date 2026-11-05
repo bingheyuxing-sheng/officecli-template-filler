@@ -72,6 +72,25 @@ def _heading_level(paragraph) -> int:
     return 0
 
 
+def is_heading_paragraph(paragraph) -> bool:
+    """True for real headings; TOC and caption styles are deliberately excluded.
+
+    Structural helper shared by alignment, workflow TOC assessment and logic QA.
+    ``heading``/``标题`` styles and ``w:outlineLvl`` count; ``TOC``/``目录`` and
+    ``caption``/``题注`` styles do not.
+    """
+    try:
+        name = str(getattr(paragraph.style, "name", "") or "").strip().lower()
+    except Exception:
+        name = ""
+    if any(marker in name for marker in ("toc", "目录", "caption", "题注")):
+        return False
+    if re.search(r"(heading|标题)\s*[1-9]?", name):
+        return True
+    p_pr = paragraph._p.pPr
+    return p_pr is not None and p_pr.find(qn("w:outlineLvl")) is not None
+
+
 def _paragraph_token(paragraph) -> str:
     text = normalize_text(paragraph.text)
     if text:

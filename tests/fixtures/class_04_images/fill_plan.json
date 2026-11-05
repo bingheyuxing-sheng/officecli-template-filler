@@ -1,0 +1,80 @@
+{
+  "schema_version": "4.0",
+  "task_id": "TASK_FIXTURE_04",
+  "template_id": "T_f25d2a630dce",
+  "mode": "STANDARD",
+  "baseline": {
+    "template_sha256": "f25d2a630dce7c73bfcbaf13de8215ca4447d6b9b70c3733ad31f07cebaa7c3c",
+    "spec_schema_version": "4.0",
+    "fingerprint_id": "FP_001",
+    "allowed_slot_ids": [
+      "S_34dd7d8f3e34"
+    ]
+  },
+  "operations": [
+    {
+      "op_id": "OP_001",
+      "sequence": 1,
+      "type": "replace_image",
+      "slot_id": "S_34dd7d8f3e34",
+      "target": {
+        "location_id": "body.p[1]",
+        "image_role": "illustration"
+      },
+      "source_ref": "IMAGE_INPUT",
+      "value": "replacement.png",
+      "policy": "STRICT",
+      "preconditions": [
+        "slot_exists",
+        "not_protected",
+        "template_sha_match"
+      ],
+      "overflow": {
+        "measured_chars": 0,
+        "limit_source": "none",
+        "limit_value": null,
+        "strategy": "REJECT"
+      }
+    },
+    {
+      "op_id": "OP_002",
+      "sequence": 2,
+      "type": "replace_text",
+      "slot_id": "S_34dd7d8f3e34",
+      "target": {
+        "location_id": "body.p[1]"
+      },
+      "source_ref": "F_IMG",
+      "value": "图1：项目示意",
+      "value_ref": "F_IMG",
+      "policy": "STRICT",
+      "preconditions": [
+        "slot_exists",
+        "not_protected",
+        "template_sha_match"
+      ],
+      "overflow": {
+        "measured_chars": 7,
+        "limit_source": "none",
+        "limit_value": null,
+        "strategy": "REJECT"
+      }
+    }
+  ],
+  "global_policy": {
+    "allow_structure_change": false,
+    "deny_operations": [
+      "modify_page_margin",
+      "modify_section_properties",
+      "modify_global_styles",
+      "rebuild_table",
+      "move_existing_image",
+      "delete_protected_content",
+      "insert_row",
+      "insert_paragraph",
+      "merge_cells"
+    ],
+    "styles": "DENY",
+    "page_setup": "DENY"
+  }
+}

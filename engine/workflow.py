@@ -27,6 +27,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 import docx
 from docx.oxml.ns import qn
 
+from .alignment import is_heading_paragraph as _is_heading_paragraph
+
 CONFIRMATION_SKIP = "SKIP"
 CONFIRMATION_LIGHT = "LIGHT_CONFIRM"
 CONFIRMATION_FULL = "FULL_CONFIRM"
@@ -298,17 +300,13 @@ class WorkflowCheckpointStore:
 
 
 def is_heading_paragraph(paragraph) -> bool:
-    """True for real headings; TOC and caption styles are deliberately excluded."""
-    try:
-        name = str(getattr(paragraph.style, "name", "") or "").strip().lower()
-    except Exception:
-        name = ""
-    if any(marker in name for marker in ("toc", "目录", "caption", "题注")):
-        return False
-    if re.search(r"(heading|标题)\s*[1-9]?", name):
-        return True
-    p_pr = paragraph._p.pPr
-    return p_pr is not None and p_pr.find(qn("w:outlineLvl")) is not None
+    """True for real headings; TOC and caption styles are deliberately excluded.
+
+    Delegates to :func:`engine.alignment.is_heading_paragraph`: the structural
+    helper lives there so that logic QA does not depend on workflow. Kept here
+    as the public workflow API, backed by the single implementation.
+    """
+    return _is_heading_paragraph(paragraph)
 
 
 def _toc_paragraphs(document) -> List[Any]:

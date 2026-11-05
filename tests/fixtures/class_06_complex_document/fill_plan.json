@@ -1,0 +1,56 @@
+{
+  "schema_version": "4.0",
+  "task_id": "TASK_FIXTURE_06",
+  "template_id": "T_67b50b8bf4e2",
+  "mode": "STANDARD",
+  "baseline": {
+    "template_sha256": "67b50b8bf4e2d652071475ce3017bc991208417e2f7d794e9d159ab155d50fb6",
+    "spec_schema_version": "4.0",
+    "fingerprint_id": "FP_001",
+    "allowed_slot_ids": [
+      "S_e0748a1ca7cd"
+    ]
+  },
+  "operations": [
+    {
+      "op_id": "OP_001",
+      "sequence": 1,
+      "type": "replace_text",
+      "slot_id": "S_e0748a1ca7cd",
+      "target": {
+        "location_id": "body.p[1]"
+      },
+      "source_ref": "F_501",
+      "value": "2025年度报告",
+      "policy": "STRICT",
+      "preconditions": [
+        "slot_exists",
+        "not_protected",
+        "template_sha_match"
+      ],
+      "overflow": {
+        "measured_chars": 8,
+        "limit_source": "none",
+        "limit_value": null,
+        "strategy": "REJECT"
+      },
+      "value_ref": "F_501"
+    }
+  ],
+  "global_policy": {
+    "allow_structure_change": false,
+    "deny_operations": [
+      "modify_page_margin",
+      "modify_section_properties",
+      "modify_global_styles",
+      "rebuild_table",
+      "move_existing_image",
+      "delete_protected_content",
+      "insert_row",
+      "insert_paragraph",
+      "merge_cells"
+    ],
+    "styles": "DENY",
+    "page_setup": "DENY"
+  }
+}
