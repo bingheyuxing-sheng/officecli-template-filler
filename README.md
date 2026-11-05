@@ -4,6 +4,18 @@
 
 给它一个模板和资料，它交出一份格式不走样、内容可审计的文档；给它一份草稿，它交回一份**能用 Word/WPS 修订模式打开、逐条接受或拒绝**的审阅稿。
 
+## v4.0 开发状态（未发布）
+
+| 项目 | 状态 |
+|---|---|
+| 契约集 | **4.2.0**（W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经 Agent 07 独立门禁） |
+| 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
+| Skill 工作流 | GENERATE 文档主链已切 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
+| 测试基线 | **450 项通过**；六类**结构化回归 Fixtures**（非真实业务模板） |
+| Alpha | **未宣布**：W3 修复波进行中，真实语料（W3-9）仍待外部脱敏输入，P2-01/P2-04 待审计环境复验 |
+
+**已知限制**：不支持 SDT 内填充（`sdt_edit=false`，SDT 仅作为 PROTECTED 位置发现并拒绝）；本机缺 PyMuPDF/matplotlib/OCR，相关检查如实 `UNVERIFIED`；真实模板与合成 Fixture 的指标必须分开报告，不得用合成通过率替代真实验证。详见 [CHANGELOG.md](CHANGELOG.md) 与 [reports/w3/w3-task-book.md](reports/w3/w3-task-book.md)。
+
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Word](https://img.shields.io/badge/Word-.docx-2B579A)
 ![Excel](https://img.shields.io/badge/Excel-.xlsx%20%2F%20.xlsm-217346)

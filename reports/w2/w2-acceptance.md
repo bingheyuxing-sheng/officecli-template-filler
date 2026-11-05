@@ -109,3 +109,12 @@ py -3.15 -m unittest discover -s tests -p "test_*.py"                # 397 OK, 1
 ```
 
 **W2 decision: PASS.** v4.0 now has a contract-governed, transaction-gated, real-template-tested chain. The only declared structural gap is body-level SDT wrapping, which requires a future contract change rather than a private workaround.
+
+---
+
+## Correction record (2026-11-05, appended after later audit; history above unchanged)
+
+1. **"Real-template-tested" corrected.** The six fixture classes are **programmatically constructed structured regression fixtures**, not validated real-world business templates. W2 proves the chain on controlled structures, not general DOCX support. Real-corpus validation is W3-9 and remains external-input dependent (`reports/w3/real-corpus-candidates.md`).
+2. **Cross-environment status.** The 397-test run was on Windows/Python 3.15 with the WPS PDF backend and no LibreOffice. Two Excel reliability tests fail on a host with LibreOffice (audit P2-01), so W2 acceptance did **not** cover a cross-environment matrix. P2-01 was fixed in W3-2; P2-04 profile isolation in W3-5; both still require the auditor's Linux/LibreOffice run to close.
+3. **Body-level SDT (W2-I1).** Not merely "undisclosed": the original analyzer reported such templates as L1 with zero slots and no warning (audit P1-01). W3-3 added fail-closed disclosure and W3-4/CP-W2-002 made the content discoverable as PROTECTED positions; `sdt_edit` remains false.
+4. **Contract status.** W2 was accepted at 4.1.0; the contract set is now 4.2.0 (CP-W2-002, Agent 07 post-implementation PASS). The numbers above (4.1.0, 397 tests) are historical, not current.
