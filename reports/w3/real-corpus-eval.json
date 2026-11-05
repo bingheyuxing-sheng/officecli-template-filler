@@ -1,0 +1,2245 @@
+{
+  "generated_at": "2026-11-05T21:02:55+08:00",
+  "totals": {
+    "docx_analyzed": 46,
+    "analyze_classification": {
+      "OK": 46
+    },
+    "compatibility_levels": {
+      "L1": 17,
+      "L4": 26,
+      "L3": 2,
+      "L2": 1
+    },
+    "template_bytes_changed": 0,
+    "spec_invalid": 0,
+    "warning_code_histogram": {
+      "READ_ONLY_STRUCTURES_PRESENT": 26,
+      "SDT_BODY_PROTECTED_ONLY": 5
+    },
+    "unsupported_code_histogram": {
+      "FIELD_UPDATE_UNSUPPORTED": 380,
+      "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED": 59,
+      "OLE_EDIT_UNSUPPORTED": 30,
+      "VECTOR_IMAGE_UNVERIFIED": 9,
+      "SDT_BODY_UNSUPPORTED": 5,
+      "SMARTART_EDIT_UNSUPPORTED": 5
+    },
+    "fill_smoke": {
+      "attempted": 21,
+      "classification": {
+        "OK": 21
+      },
+      "template_bytes_changed": 0,
+      "qa_status": {
+        "UNVERIFIED": 9,
+        "PASSED": 12
+      }
+    },
+    "elapsed_s": 212.1
+  },
+  "records": [
+    {
+      "id": "D001",
+      "size_bytes": 19465,
+      "sha256_before": "9afc87b986e1a2cb7ab5994b054b72c16b4e3887d841c16e363b396df8993085",
+      "sha256_after": "9afc87b986e1a2cb7ab5994b054b72c16b4e3887d841c16e363b396df8993085",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.09,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D002",
+      "size_bytes": 72127,
+      "sha256_before": "49154f0dbf39e958ecc120356cc675e95a3d93dde0404e96001197390fd9d572",
+      "sha256_after": "49154f0dbf39e958ecc120356cc675e95a3d93dde0404e96001197390fd9d572",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.06,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 21,
+          "fillable_count": 2,
+          "protected_count": 19,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "SDT_BODY_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT",
+            "SDT_BODY_PROTECTED_ONLY"
+          ],
+          "token_slots": [
+            "S_d93ee4b55686",
+            "S_5bc7cc9cd6d1"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D003",
+      "size_bytes": 53778,
+      "sha256_before": "80c4cd8b162196655aedeb136350e8159cb75916e242623765cebcaece7136ce",
+      "sha256_after": "80c4cd8b162196655aedeb136350e8159cb75916e242623765cebcaece7136ce",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.3,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 2,
+          "fillable_count": 2,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_39058f6cfbc8",
+            "S_5a935bb7564f"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D004",
+      "size_bytes": 18726,
+      "sha256_before": "d6155b59eab6c747604e610dcc0944afa907e0157c228109783769eab3605a02",
+      "sha256_after": "d6155b59eab6c747604e610dcc0944afa907e0157c228109783769eab3605a02",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.01,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 99,
+          "fillable_count": 99,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_63984a92833e",
+            "S_fdc202e6da52",
+            "S_1f34527f75b5",
+            "S_6c01207ff39f",
+            "S_cdcd0b5568eb",
+            "S_9a19d6d340d3",
+            "S_ad4d7e3ad0b6",
+            "S_bca38055b820",
+            "S_cd5084ebe920",
+            "S_98306c426766",
+            "S_2e4f7587b082",
+            "S_8da23636ffd5",
+            "S_d9ffc909c9a1",
+            "S_69c4eba6125b",
+            "S_a9d613cebded",
+            "S_3e7663245c85",
+            "S_76525be9bd7e",
+            "S_cf712873ad6d",
+            "S_f324a0cbca20",
+            "S_f4b9c1d970cb",
+            "S_10876aa586ce",
+            "S_4dc3f76f0dc9",
+            "S_77ecb5c81ac2",
+            "S_8781faf105aa",
+            "S_5354aacfce93",
+            "S_cd03aad1a997",
+            "S_3675037f83e6",
+            "S_b1eff59141a9",
+            "S_0097fd95f4ba",
+            "S_b35c749ad6ac",
+            "S_53e94375d371",
+            "S_45b91aaca232",
+            "S_32925d09fc95",
+            "S_67e82a7531de",
+            "S_894be7c2ba5a",
+            "S_5f6009677178",
+            "S_54320d70bec3",
+            "S_bde5367117f3",
+            "S_0007f15bda91",
+            "S_7bcc27476a27",
+            "S_729c5a9f9102",
+            "S_797a06c260fd",
+            "S_3a49aa9b4fda",
+            "S_856cf4d9bdb3",
+            "S_486779bf3b38",
+            "S_9110477dce55",
+            "S_807990a44059",
+            "S_2a69edb7efe2",
+            "S_2c5cf2967b0d",
+            "S_84bf71cf9241",
+            "S_120df0e079a2",
+            "S_18505be3b1bc",
+            "S_be20a388e9df",
+            "S_c88ed9af7f7d",
+            "S_80c9cc9c6d31",
+            "S_95638ef2af27",
+            "S_396411cc1e0c",
+            "S_f110e85e1c2e",
+            "S_b3a4e3845b6e",
+            "S_b741a7c97dd9",
+            "S_c039d9f56413",
+            "S_1358a143ea3a",
+            "S_ae7e2824908f",
+            "S_c5b2807abd86",
+            "S_b92e30e276c0",
+            "S_f7b012b9fde7",
+            "S_93016f0a9db6",
+            "S_cf3a28bf7fca",
+            "S_535dee3df6b6",
+            "S_592626de519f",
+            "S_d880d28097ca",
+            "S_118bb3bb47f9",
+            "S_95c3280e3a34",
+            "S_d04558d423fd",
+            "S_6fe2457ee237",
+            "S_96f357dca474",
+            "S_0819c6d85fd8",
+            "S_839154af501b",
+            "S_80793b91309b",
+            "S_515370a28f1e",
+            "S_ef8a050ba710",
+            "S_360486520abd",
+            "S_458cd8768f86",
+            "S_3b19535c8ed1",
+            "S_fc15c96add2b",
+            "S_1ca1eb1cd834",
+            "S_6e9678d2dc78",
+            "S_2ef890760bbe",
+            "S_369d64a0e9a5",
+            "S_61a6b58849a9",
+            "S_8d0e81d7b6e6",
+            "S_63dc0ee6ecae",
+            "S_b7f69e91880f",
+            "S_2cc34cd6a9d5",
+            "S_85345a2b0bc2",
+            "S_4b33a998a179",
+            "S_dc39fd06ffa4",
+            "S_97a357da8dc8",
+            "S_5da9f0b847b4"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D005",
+      "size_bytes": 47751,
+      "sha256_before": "6c70ef1dfd9e655be7def0e3e4fc0cf57a6dec7bf512cc9e99cf5a9a3ffe6906",
+      "sha256_after": "6c70ef1dfd9e655be7def0e3e4fc0cf57a6dec7bf512cc9e99cf5a9a3ffe6906",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.02,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 10,
+          "fillable_count": 0,
+          "protected_count": 10,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D006",
+      "size_bytes": 19279,
+      "sha256_before": "3f4773176c245914fbf0b1fc4a48455332de8b7ec075a62f1a08ed1f866e9251",
+      "sha256_after": "3f4773176c245914fbf0b1fc4a48455332de8b7ec075a62f1a08ed1f866e9251",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.04,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D007",
+      "size_bytes": 18880,
+      "sha256_before": "86750921be5fcd41a69a17a03d3014ebfbe7d9e558641dfb3d9a726e089a70b4",
+      "sha256_after": "86750921be5fcd41a69a17a03d3014ebfbe7d9e558641dfb3d9a726e089a70b4",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.99,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 95,
+          "fillable_count": 95,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_e69ca91b7981",
+            "S_3af6b8786b54",
+            "S_c9dcbe63b29c",
+            "S_a1fedf494336",
+            "S_dd4b15afdc3f",
+            "S_194fec5a09a8",
+            "S_69bef0e75052",
+            "S_fb31e0245b4f",
+            "S_c82a554c964c",
+            "S_93972f7068d7",
+            "S_8d18ebe6fe83",
+            "S_44d0e358a7db",
+            "S_2a9118c25f79",
+            "S_0741a4ed2e0d",
+            "S_35c90cc07d25",
+            "S_debd9e2d57d9",
+            "S_287565e9fb13",
+            "S_7fb5a187ba81",
+            "S_28085715947a",
+            "S_6969256b991a",
+            "S_5f10a573f70c",
+            "S_a9332c40ded3",
+            "S_dbc16e12fb0e",
+            "S_a7d5c2f6c998",
+            "S_be0e7b455a7b",
+            "S_30a18bca0d3e",
+            "S_3fa05bbbc865",
+            "S_8600190e6d91",
+            "S_cc20ed885e58",
+            "S_997fcedecbdf",
+            "S_eebcd2b7d6f6",
+            "S_38148c05c604",
+            "S_c3bbfe5dbe22",
+            "S_ed67bc5bb01d",
+            "S_f5b15e08f17a",
+            "S_83104f4badc0",
+            "S_8984e238a303",
+            "S_aaf9df62dbb3",
+            "S_b4bb988541ad",
+            "S_9e235aec93b1",
+            "S_3e13f43f4670",
+            "S_cadf2c294d23",
+            "S_a9ab9f212e09",
+            "S_92e878a4b8d0",
+            "S_4cef947c9c83",
+            "S_d87d92412e38",
+            "S_f080e51fa103",
+            "S_8baa7d998a48",
+            "S_215ad32cd11a",
+            "S_9e9201373774",
+            "S_c190fd27fc31",
+            "S_df924748c124",
+            "S_845a89ad6491",
+            "S_0faac011df66",
+            "S_a27bd52b1791",
+            "S_86a66a3cdbb7",
+            "S_291ccce2875c",
+            "S_e04f2e5f6e0b",
+            "S_216d7d8176d6",
+            "S_facdb43f0ff8",
+            "S_9333a09a4afe",
+            "S_ddf4d76879f7",
+            "S_c72d53531f15",
+            "S_f5fc3ab197b2",
+            "S_64cdbd6bbf04",
+            "S_c3613493d595",
+            "S_fa176b9f30d4",
+            "S_47b329d50874",
+            "S_ccfcae35c43b",
+            "S_bd1248404ad8",
+            "S_45d94c22f136",
+            "S_412767b58842",
+            "S_db8595568b07",
+            "S_cc9fdd206a1e",
+            "S_31b019a5c5d1",
+            "S_59c3a08f3804",
+            "S_18b2b35420af",
+            "S_e5ada5fb51f3",
+            "S_528fbfb4c06c",
+            "S_4e81a26c5cef",
+            "S_83a35d356a59",
+            "S_3034843fe8aa",
+            "S_cef71d57ef9f",
+            "S_4ed1a343013b",
+            "S_ce5ae5a90527",
+            "S_07239168e4ac",
+            "S_bbe27fd7557a",
+            "S_bd8430cb1d37",
+            "S_535270b0c04f",
+            "S_04371508ec49",
+            "S_2adf4a1a3232",
+            "S_2df8644eb700",
+            "S_af899cbf58e4",
+            "S_1c3bf02f9300",
+            "S_df3c03fd4175"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D008",
+      "size_bytes": 536587,
+      "sha256_before": "814d5f4502a564ee82e166f57c2db2ef940b4950b4fb478e58022bb0c46165e1",
+      "sha256_after": "814d5f4502a564ee82e166f57c2db2ef940b4950b4fb478e58022bb0c46165e1",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.32,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 32,
+          "fillable_count": 0,
+          "protected_count": 32,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D009",
+      "size_bytes": 521636,
+      "sha256_before": "345c5f72cf3f698ac50dc65fb12d6b62c9a49a789b22b4e9c557fad9c7641d98",
+      "sha256_after": "345c5f72cf3f698ac50dc65fb12d6b62c9a49a789b22b4e9c557fad9c7641d98",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.17,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "OLE_EDIT_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D010",
+      "size_bytes": 203182,
+      "sha256_before": "f04d44b7a9a21ba34ed8d6eedae92cba014e2acef04bd3f467cceb0888257fce",
+      "sha256_after": "f04d44b7a9a21ba34ed8d6eedae92cba014e2acef04bd3f467cceb0888257fce",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.18,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 30,
+          "fillable_count": 0,
+          "protected_count": 30,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "SDT_BODY_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT",
+            "SDT_BODY_PROTECTED_ONLY"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D011",
+      "size_bytes": 53509,
+      "sha256_before": "9568724fa3f0c13e9b82288cea96581ff7adcf192bb9fd43dfda0de44c43af13",
+      "sha256_after": "9568724fa3f0c13e9b82288cea96581ff7adcf192bb9fd43dfda0de44c43af13",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.2,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 2,
+          "fillable_count": 2,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_7b58a8ee4fcf",
+            "S_04765fb29325"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D012",
+      "size_bytes": 147519,
+      "sha256_before": "308c41c8417d66bc5a321664eba9f62678b608d2235495f2de27f5de619d0f2b",
+      "sha256_after": "308c41c8417d66bc5a321664eba9f62678b608d2235495f2de27f5de619d0f2b",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.09,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L3",
+          "slot_count": 4,
+          "fillable_count": 0,
+          "protected_count": 4,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D013",
+      "size_bytes": 188182,
+      "sha256_before": "75d00cd960b1b15b813ad8e83c24b18308f3bbf395cfc051c7f9b8cbda18c376",
+      "sha256_after": "75d00cd960b1b15b813ad8e83c24b18308f3bbf395cfc051c7f9b8cbda18c376",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.16,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 48,
+          "fillable_count": 0,
+          "protected_count": 48,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED",
+            "SDT_BODY_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT",
+            "SDT_BODY_PROTECTED_ONLY"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D014",
+      "size_bytes": 174037,
+      "sha256_before": "e5c49ad169ee743b16dcfdce91d52029ddfd609d242317d1b453a75b4e28bc1e",
+      "sha256_after": "e5c49ad169ee743b16dcfdce91d52029ddfd609d242317d1b453a75b4e28bc1e",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.1,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 26,
+          "fillable_count": 4,
+          "protected_count": 22,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_973b6a0059de",
+            "S_6a75f42c7b84",
+            "S_7dbf1a1e8b4a",
+            "S_0da36ec6a71c"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D015",
+      "size_bytes": 23561,
+      "sha256_before": "44a12ad4b92329d504a5c98a019676cc6d830085509ca5f21e2f5f65773f0ef8",
+      "sha256_after": "44a12ad4b92329d504a5c98a019676cc6d830085509ca5f21e2f5f65773f0ef8",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.08,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 3,
+          "fillable_count": 1,
+          "protected_count": 2,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_02a6a4b6933b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D016",
+      "size_bytes": 733406,
+      "sha256_before": "5a5c596b09eaa9310729c83d776276a69879d7a07ea99fbcb073d3170ddc2603",
+      "sha256_after": "5a5c596b09eaa9310729c83d776276a69879d7a07ea99fbcb073d3170ddc2603",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.02,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 24,
+          "fillable_count": 0,
+          "protected_count": 24,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED",
+            "SDT_BODY_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT",
+            "SDT_BODY_PROTECTED_ONLY"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D017",
+      "size_bytes": 720507,
+      "sha256_before": "5d836c6d1f2f288205d80f60492da019943affc7f5f8adb35160fb0942c609ff",
+      "sha256_after": "5d836c6d1f2f288205d80f60492da019943affc7f5f8adb35160fb0942c609ff",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.95,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D018",
+      "size_bytes": 23750,
+      "sha256_before": "c601c958d4ee1d583a5d86fdd6e0bc8f6dfe9a1b317c4cb71a7f2481c58f4649",
+      "sha256_after": "c601c958d4ee1d583a5d86fdd6e0bc8f6dfe9a1b317c4cb71a7f2481c58f4649",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.84,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 2,
+          "fillable_count": 0,
+          "protected_count": 2,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D019",
+      "size_bytes": 738087,
+      "sha256_before": "1055b4b2cafc888839b35f2739e2e5fdf0d5e3a33168fb8a493a37876d7d22fb",
+      "sha256_after": "1055b4b2cafc888839b35f2739e2e5fdf0d5e3a33168fb8a493a37876d7d22fb",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.92,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 5,
+          "fillable_count": 0,
+          "protected_count": 5,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D020",
+      "size_bytes": 774819,
+      "sha256_before": "b416e75a24c0c94210bc04d28dfa8b23b655cf7078314bd967b224858ffa9b98",
+      "sha256_after": "b416e75a24c0c94210bc04d28dfa8b23b655cf7078314bd967b224858ffa9b98",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.8,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 3,
+          "fillable_count": 3,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_5337051e1e0f",
+            "S_36856d5e5745",
+            "S_b419879aaf9f"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D021",
+      "size_bytes": 25760,
+      "sha256_before": "9369a57aa09190a3eb010bc2db91507c73699954abdf4f58ceb4d71f58d2a212",
+      "sha256_after": "9369a57aa09190a3eb010bc2db91507c73699954abdf4f58ceb4d71f58d2a212",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.82,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 7,
+          "fillable_count": 5,
+          "protected_count": 2,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_b2724cdcbb76",
+            "S_8dcd0a50060b",
+            "S_64a1e578471d",
+            "S_b9601b58c57c",
+            "S_19dc169f7e0b"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D022",
+      "size_bytes": 1426993,
+      "sha256_before": "91993cc20603bfa026bccf5a5d91b45b6a35a0fed31e185108ca427f8e77f304",
+      "sha256_after": "91993cc20603bfa026bccf5a5d91b45b6a35a0fed31e185108ca427f8e77f304",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.15,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 76,
+          "fillable_count": 2,
+          "protected_count": 73,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_22e702a7ba8e",
+            "S_6037b1040370"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D023",
+      "size_bytes": 17642,
+      "sha256_before": "2efbf831cd13e1bb5989a31e419d81aaef600416dd8700388c0227f9f10ba175",
+      "sha256_after": "2efbf831cd13e1bb5989a31e419d81aaef600416dd8700388c0227f9f10ba175",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.77,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D024",
+      "size_bytes": 309186,
+      "sha256_before": "6f3599c9732ec5e9efb4eb8d567632ca883438dded0dd6707969965880076f66",
+      "sha256_after": "6f3599c9732ec5e9efb4eb8d567632ca883438dded0dd6707969965880076f66",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.03,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L3",
+          "slot_count": 14,
+          "fillable_count": 12,
+          "protected_count": 1,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [],
+          "token_slots": [
+            "S_13d4b1d2b1f4",
+            "S_615378638cba",
+            "S_0072279027dd",
+            "S_8e6637121fd9",
+            "S_fb14cecb04e7",
+            "S_c4353a051beb",
+            "S_a8e5d32b063c",
+            "S_e3c0902bd5a6",
+            "S_22a7f60334f5",
+            "S_5790e10d5499",
+            "S_24af01236fee",
+            "S_f7cf6da6f777"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D025",
+      "size_bytes": 22084,
+      "sha256_before": "1963cb271be2d7df8cd2f048ac63d342a9181d6bd2ce645902785759dc9a3fc1",
+      "sha256_after": "1963cb271be2d7df8cd2f048ac63d342a9181d6bd2ce645902785759dc9a3fc1",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.83,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D026",
+      "size_bytes": 16772,
+      "sha256_before": "78d2e0408f75269cf7d7c6a990d37d22f1cdaac871234182e9cfe826ef84fd1f",
+      "sha256_after": "78d2e0408f75269cf7d7c6a990d37d22f1cdaac871234182e9cfe826ef84fd1f",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.74,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 33,
+          "fillable_count": 33,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_963431507f43",
+            "S_8a7fbeb65076",
+            "S_6c608cde5a0c",
+            "S_2574d66792de",
+            "S_631d70b7ca04",
+            "S_f1b3921082e6",
+            "S_26de8db707af",
+            "S_57f8f7fc20f0",
+            "S_d8fccaedba22",
+            "S_d0315e2c1dcf",
+            "S_162b4c0f1250",
+            "S_b05620bb1ae9",
+            "S_c7196848eca1",
+            "S_9bc5eb0b262a",
+            "S_79e110da164e",
+            "S_8df3c2a370b3",
+            "S_7c9278179dfd",
+            "S_91e934250840",
+            "S_c4c005a2976f",
+            "S_f7b387d806bc",
+            "S_727bb8ea83f5",
+            "S_8a1db47f4fc7",
+            "S_bed058f7e386",
+            "S_0a585ca418d9",
+            "S_3913593bdf8c",
+            "S_795ec2115aaf",
+            "S_d81ff6185015",
+            "S_a95cd9487b80",
+            "S_a9e423922d4c",
+            "S_ba4a3d7d8749",
+            "S_1b6da043599f",
+            "S_8e0e96da3f9c",
+            "S_6080777aeac4"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D027",
+      "size_bytes": 47956,
+      "sha256_before": "68f02d3281b09524a58972651cfaecac1fee499be7ba614d101fa890d9f3b229",
+      "sha256_after": "68f02d3281b09524a58972651cfaecac1fee499be7ba614d101fa890d9f3b229",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.09,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 42,
+          "fillable_count": 7,
+          "protected_count": 35,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_6f84c0892424",
+            "S_09a6de3ee5f5",
+            "S_429897557cf8",
+            "S_441f9cf243e7",
+            "S_aefef686321e",
+            "S_4bd51e532672",
+            "S_d76340c5775d"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D028",
+      "size_bytes": 32517,
+      "sha256_before": "a6e86bb265905466c44da6ae69409f9474ad2ada92da3e79d1fdb5fe33e5945d",
+      "sha256_after": "a6e86bb265905466c44da6ae69409f9474ad2ada92da3e79d1fdb5fe33e5945d",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.94,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 7,
+          "fillable_count": 7,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_297114992258",
+            "S_578b15d5df37",
+            "S_e02b5e891bb7",
+            "S_b869c2826f02",
+            "S_1a0612feaab2",
+            "S_ef713cf55fbd",
+            "S_40ef59898ab2"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D029",
+      "size_bytes": 21409,
+      "sha256_before": "ed3b29839cbfa7972c3386300413848159730d3e190dfbb57d260e2926dd5ae0",
+      "sha256_after": "ed3b29839cbfa7972c3386300413848159730d3e190dfbb57d260e2926dd5ae0",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.81,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 2,
+          "fillable_count": 2,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_b82976a7e0d5",
+            "S_98f549cb797d"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D030",
+      "size_bytes": 153626,
+      "sha256_before": "78c9a17a410b9ec44f5e80789b15b7722af3a67586438f7caac183aa21cd86c1",
+      "sha256_after": "78c9a17a410b9ec44f5e80789b15b7722af3a67586438f7caac183aa21cd86c1",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.94,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 11,
+          "fillable_count": 1,
+          "protected_count": 10,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_fe9f6bb74134"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D031",
+      "size_bytes": 139896,
+      "sha256_before": "fab122c30e442044faa90a1601de2396ece863f4718cbd07d32727e44405c3c6",
+      "sha256_after": "fab122c30e442044faa90a1601de2396ece863f4718cbd07d32727e44405c3c6",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.16,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 2,
+          "fillable_count": 2,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_93b098ffd0c6",
+            "S_20dfefd17179"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D032",
+      "size_bytes": 19008,
+      "sha256_before": "a1091997790cf3446cb8ca233177869a3c479241dc36fd9f8356b7bf3fb0c0ad",
+      "sha256_after": "a1091997790cf3446cb8ca233177869a3c479241dc36fd9f8356b7bf3fb0c0ad",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.96,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 1,
+          "fillable_count": 1,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_3ee32dde671a"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D033",
+      "size_bytes": 23513,
+      "sha256_before": "288c6fb4a83531c346421beff19871d295b81dda44f03fd594c5f770ed254935",
+      "sha256_after": "288c6fb4a83531c346421beff19871d295b81dda44f03fd594c5f770ed254935",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.97,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 4,
+          "fillable_count": 0,
+          "protected_count": 4,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D034",
+      "size_bytes": 19029,
+      "sha256_before": "f2603ab83dad81a350235b0ba27e027e8815bdadce3314899e156e60d7481859",
+      "sha256_after": "f2603ab83dad81a350235b0ba27e027e8815bdadce3314899e156e60d7481859",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.94,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 36,
+          "fillable_count": 36,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": [
+            "S_dfdc3d0993af",
+            "S_670b1c087b09",
+            "S_25073cdd3194",
+            "S_bb725936d5af",
+            "S_37b70b2ceba1",
+            "S_91ef8c75de64",
+            "S_db09dabf824a",
+            "S_27940083b78f",
+            "S_75c6df5c6080",
+            "S_c554bd1a155e",
+            "S_0dc0e73499c3",
+            "S_840406304705",
+            "S_80f53b124c9b",
+            "S_881d49135a2f",
+            "S_728148a44d14",
+            "S_37d9d00c707f",
+            "S_17ec63cf5a52",
+            "S_90905f0a5506",
+            "S_6f2532f01e07",
+            "S_5c9e45749cee",
+            "S_0e939b538b4b",
+            "S_38c24409afbe",
+            "S_5bd625d43b84",
+            "S_8ecffe818832",
+            "S_98cf615f1b7b",
+            "S_bffbdd77153f",
+            "S_70e3cb668104",
+            "S_50217f74bb48",
+            "S_c480c05d4a91",
+            "S_3ac7d6097708",
+            "S_54830d130122",
+            "S_b5b7969fffb0",
+            "S_42a8b698cd73",
+            "S_c1b6d2d5b545",
+            "S_a7c8d7952ac2",
+            "S_ad2aa3d33d21"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D035",
+      "size_bytes": 23923,
+      "sha256_before": "e0f86bb5b75a681573506cd259b55dc6d2b09db61934094becb4eff4cdbbcfb3",
+      "sha256_after": "e0f86bb5b75a681573506cd259b55dc6d2b09db61934094becb4eff4cdbbcfb3",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.99,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D036",
+      "size_bytes": 2159459,
+      "sha256_before": "38aac00cb9685904e4d8aac5d7b4ecb56af7e254d8a4765943abcdcb678da2ba",
+      "sha256_after": "38aac00cb9685904e4d8aac5d7b4ecb56af7e254d8a4765943abcdcb678da2ba",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 2.09,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 141,
+          "fillable_count": 0,
+          "protected_count": 141,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D037",
+      "size_bytes": 2074959,
+      "sha256_before": "f8df308d4132adb008033e2e3adbc7b4a5553563ef1aa54e6b3c27149619e614",
+      "sha256_after": "f8df308d4132adb008033e2e3adbc7b4a5553563ef1aa54e6b3c27149619e614",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.72,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 46,
+          "fillable_count": 46,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_c74a17f0dc61",
+            "S_afe970d66f3a",
+            "S_922de7540174",
+            "S_e1a8c26869ea",
+            "S_d4b0c93a9b67",
+            "S_9a8e7df84f94",
+            "S_3bf73f514631",
+            "S_e01acbacf0cb",
+            "S_06d2f8ebd388",
+            "S_a24450899946",
+            "S_7b40c0b8af3c",
+            "S_b5317c7f9da3",
+            "S_4da46150f929",
+            "S_fadd8743038a",
+            "S_275478a3011d",
+            "S_4263d6db6594",
+            "S_952c307c5fe9",
+            "S_3c0048116362",
+            "S_1752ee7b3770",
+            "S_9d61519b663b",
+            "S_fb92eab940ba",
+            "S_420bcde704f7",
+            "S_18821ee034cb",
+            "S_8a3214bca12f",
+            "S_a65a014f41c3",
+            "S_35d245082894",
+            "S_09d361743bb7",
+            "S_b36c48bfa861",
+            "S_673b63378d72",
+            "S_2adbd735f7fc",
+            "S_1935035a4832",
+            "S_f3d0c9d1a19f",
+            "S_aa0208662e48",
+            "S_7b37ae69a03a",
+            "S_ba2b77c4c8dc",
+            "S_b9182ae557dd",
+            "S_cb6617461032",
+            "S_50283f1f3377",
+            "S_fc1de2d2bc6e",
+            "S_2d9b71f07e0a",
+            "S_47c45b15bcc0",
+            "S_22707808da18",
+            "S_7f8263e50aa7",
+            "S_9abee64972f2",
+            "S_31dc61e97fcc",
+            "S_baf80c1d293d"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D038",
+      "size_bytes": 18705,
+      "sha256_before": "4bf63b2a00a6b38ecb68130a7d7a6653ce90d258cef87aad9b1b0c24974b281a",
+      "sha256_after": "4bf63b2a00a6b38ecb68130a7d7a6653ce90d258cef87aad9b1b0c24974b281a",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.91,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D039",
+      "size_bytes": 80781,
+      "sha256_before": "c43a3dd1fdb83638eed6d9899f56527eac145a23b95601c09d022c3ecb6e2478",
+      "sha256_after": "c43a3dd1fdb83638eed6d9899f56527eac145a23b95601c09d022c3ecb6e2478",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.44,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 49,
+          "fillable_count": 1,
+          "protected_count": 48,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": [
+            "S_fac9095063ae"
+          ]
+        }
+      }
+    },
+    {
+      "id": "D040",
+      "size_bytes": 63482,
+      "sha256_before": "ed028724d4029affcf406baea58bc27af02edd2ee873d3119454aeee864cec8f",
+      "sha256_after": "ed028724d4029affcf406baea58bc27af02edd2ee873d3119454aeee864cec8f",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.48,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D041",
+      "size_bytes": 18416,
+      "sha256_before": "0c2253f10e83a242210e041fe83ec7e0954a62bb6faeca01e6db5a40a6f862b6",
+      "sha256_after": "0c2253f10e83a242210e041fe83ec7e0954a62bb6faeca01e6db5a40a6f862b6",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.94,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L1",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D042",
+      "size_bytes": 210516,
+      "sha256_before": "fb582a9abf019fe598968d2c98e8a2e156bd516cb948d02e5f5afc56bd4811d8",
+      "sha256_after": "fb582a9abf019fe598968d2c98e8a2e156bd516cb948d02e5f5afc56bd4811d8",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.2,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 6,
+          "fillable_count": 0,
+          "protected_count": 6,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D043",
+      "size_bytes": 17824,
+      "sha256_before": "a8a2a2500a869b78e2288ef45058a403fe0edc095439ae3d2ba57e765226acb8",
+      "sha256_after": "a8a2a2500a869b78e2288ef45058a403fe0edc095439ae3d2ba57e765226acb8",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 0.96,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L2",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [],
+          "warning_codes": [],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D044",
+      "size_bytes": 841711,
+      "sha256_before": "d3d8daa16cc2bbb467c59a510ee49432e35e9a2fd196843e72c4f2a2771d845f",
+      "sha256_after": "d3d8daa16cc2bbb467c59a510ee49432e35e9a2fd196843e72c4f2a2771d845f",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.21,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 20,
+          "fillable_count": 0,
+          "protected_count": 20,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "SMARTART_EDIT_UNSUPPORTED",
+            "SMARTART_EDIT_UNSUPPORTED",
+            "SMARTART_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D045",
+      "size_bytes": 54174,
+      "sha256_before": "83cb223a7aa132fd47bb4626912df3111cc9c0690a0801ba68babd4d609225be",
+      "sha256_after": "83cb223a7aa132fd47bb4626912df3111cc9c0690a0801ba68babd4d609225be",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.04,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 0,
+          "fillable_count": 0,
+          "protected_count": 0,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "SMARTART_EDIT_UNSUPPORTED",
+            "SMARTART_EDIT_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT"
+          ],
+          "token_slots": []
+        }
+      }
+    },
+    {
+      "id": "D046",
+      "size_bytes": 733406,
+      "sha256_before": "5a5c596b09eaa9310729c83d776276a69879d7a07ea99fbcb073d3170ddc2603",
+      "sha256_after": "5a5c596b09eaa9310729c83d776276a69879d7a07ea99fbcb073d3170ddc2603",
+      "template_bytes_changed": false,
+      "analyze": {
+        "classification": "OK",
+        "elapsed_s": 1.13,
+        "spec_valid": true,
+        "summary": {
+          "compatibility": "L4",
+          "slot_count": 24,
+          "fillable_count": 0,
+          "protected_count": 24,
+          "protected_regions": 0,
+          "unsupported_features": [
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "FLOATING_ANCHOR_LAYOUT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "OLE_EDIT_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "FIELD_UPDATE_UNSUPPORTED",
+            "VECTOR_IMAGE_UNVERIFIED",
+            "SDT_BODY_UNSUPPORTED"
+          ],
+          "warning_codes": [
+            "READ_ONLY_STRUCTURES_PRESENT",
+            "SDT_BODY_PROTECTED_ONLY"
+          ],
+          "token_slots": []
+        }
+      }
+    }
+  ],
+  "smoke_records": [
+    {
+      "id": "D002",
+      "sha256_before": "49154f0dbf39e958ecc120356cc675e95a3d93dde0404e96001197390fd9d572",
+      "sha256_after": "49154f0dbf39e958ecc120356cc675e95a3d93dde0404e96001197390fd9d572",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D003",
+      "sha256_before": "80c4cd8b162196655aedeb136350e8159cb75916e242623765cebcaece7136ce",
+      "sha256_after": "80c4cd8b162196655aedeb136350e8159cb75916e242623765cebcaece7136ce",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D004",
+      "sha256_before": "d6155b59eab6c747604e610dcc0944afa907e0157c228109783769eab3605a02",
+      "sha256_after": "d6155b59eab6c747604e610dcc0944afa907e0157c228109783769eab3605a02",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 99
+    },
+    {
+      "id": "D007",
+      "sha256_before": "86750921be5fcd41a69a17a03d3014ebfbe7d9e558641dfb3d9a726e089a70b4",
+      "sha256_after": "86750921be5fcd41a69a17a03d3014ebfbe7d9e558641dfb3d9a726e089a70b4",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 95
+    },
+    {
+      "id": "D011",
+      "sha256_before": "9568724fa3f0c13e9b82288cea96581ff7adcf192bb9fd43dfda0de44c43af13",
+      "sha256_after": "9568724fa3f0c13e9b82288cea96581ff7adcf192bb9fd43dfda0de44c43af13",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D014",
+      "sha256_before": "e5c49ad169ee743b16dcfdce91d52029ddfd609d242317d1b453a75b4e28bc1e",
+      "sha256_after": "e5c49ad169ee743b16dcfdce91d52029ddfd609d242317d1b453a75b4e28bc1e",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 4
+    },
+    {
+      "id": "D015",
+      "sha256_before": "44a12ad4b92329d504a5c98a019676cc6d830085509ca5f21e2f5f65773f0ef8",
+      "sha256_after": "44a12ad4b92329d504a5c98a019676cc6d830085509ca5f21e2f5f65773f0ef8",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 1
+    },
+    {
+      "id": "D020",
+      "sha256_before": "b416e75a24c0c94210bc04d28dfa8b23b655cf7078314bd967b224858ffa9b98",
+      "sha256_after": "b416e75a24c0c94210bc04d28dfa8b23b655cf7078314bd967b224858ffa9b98",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 3
+    },
+    {
+      "id": "D021",
+      "sha256_before": "9369a57aa09190a3eb010bc2db91507c73699954abdf4f58ceb4d71f58d2a212",
+      "sha256_after": "9369a57aa09190a3eb010bc2db91507c73699954abdf4f58ceb4d71f58d2a212",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 5
+    },
+    {
+      "id": "D022",
+      "sha256_before": "91993cc20603bfa026bccf5a5d91b45b6a35a0fed31e185108ca427f8e77f304",
+      "sha256_after": "91993cc20603bfa026bccf5a5d91b45b6a35a0fed31e185108ca427f8e77f304",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D024",
+      "sha256_before": "6f3599c9732ec5e9efb4eb8d567632ca883438dded0dd6707969965880076f66",
+      "sha256_after": "6f3599c9732ec5e9efb4eb8d567632ca883438dded0dd6707969965880076f66",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 12
+    },
+    {
+      "id": "D026",
+      "sha256_before": "78d2e0408f75269cf7d7c6a990d37d22f1cdaac871234182e9cfe826ef84fd1f",
+      "sha256_after": "78d2e0408f75269cf7d7c6a990d37d22f1cdaac871234182e9cfe826ef84fd1f",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 33
+    },
+    {
+      "id": "D027",
+      "sha256_before": "68f02d3281b09524a58972651cfaecac1fee499be7ba614d101fa890d9f3b229",
+      "sha256_after": "68f02d3281b09524a58972651cfaecac1fee499be7ba614d101fa890d9f3b229",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 7
+    },
+    {
+      "id": "D028",
+      "sha256_before": "a6e86bb265905466c44da6ae69409f9474ad2ada92da3e79d1fdb5fe33e5945d",
+      "sha256_after": "a6e86bb265905466c44da6ae69409f9474ad2ada92da3e79d1fdb5fe33e5945d",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 7
+    },
+    {
+      "id": "D029",
+      "sha256_before": "ed3b29839cbfa7972c3386300413848159730d3e190dfbb57d260e2926dd5ae0",
+      "sha256_after": "ed3b29839cbfa7972c3386300413848159730d3e190dfbb57d260e2926dd5ae0",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D030",
+      "sha256_before": "78c9a17a410b9ec44f5e80789b15b7722af3a67586438f7caac183aa21cd86c1",
+      "sha256_after": "78c9a17a410b9ec44f5e80789b15b7722af3a67586438f7caac183aa21cd86c1",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 1
+    },
+    {
+      "id": "D031",
+      "sha256_before": "fab122c30e442044faa90a1601de2396ece863f4718cbd07d32727e44405c3c6",
+      "sha256_after": "fab122c30e442044faa90a1601de2396ece863f4718cbd07d32727e44405c3c6",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 2
+    },
+    {
+      "id": "D032",
+      "sha256_before": "a1091997790cf3446cb8ca233177869a3c479241dc36fd9f8356b7bf3fb0c0ad",
+      "sha256_after": "a1091997790cf3446cb8ca233177869a3c479241dc36fd9f8356b7bf3fb0c0ad",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 1
+    },
+    {
+      "id": "D034",
+      "sha256_before": "f2603ab83dad81a350235b0ba27e027e8815bdadce3314899e156e60d7481859",
+      "sha256_after": "f2603ab83dad81a350235b0ba27e027e8815bdadce3314899e156e60d7481859",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 36
+    },
+    {
+      "id": "D037",
+      "sha256_before": "f8df308d4132adb008033e2e3adbc7b4a5553563ef1aa54e6b3c27149619e614",
+      "sha256_after": "f8df308d4132adb008033e2e3adbc7b4a5553563ef1aa54e6b3c27149619e614",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "SUCCESS",
+      "qa_status": "PASSED",
+      "committed": true,
+      "filled_slots": 46
+    },
+    {
+      "id": "D039",
+      "sha256_before": "c43a3dd1fdb83638eed6d9899f56527eac145a23b95601c09d022c3ecb6e2478",
+      "sha256_after": "c43a3dd1fdb83638eed6d9899f56527eac145a23b95601c09d022c3ecb6e2478",
+      "template_bytes_changed": false,
+      "classification": "OK",
+      "status": "UNVERIFIED",
+      "qa_status": "UNVERIFIED",
+      "committed": true,
+      "filled_slots": 1
+    }
+  ]
+}

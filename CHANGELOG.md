@@ -6,9 +6,46 @@
 
 ---
 
-## v4.0.0-dev（未发布开发快照）
+## v4.0.0（2026-11-05，稳定版）
 
-> **不是正式发布**：无 Git tag、无 GitHub Release、未 push。软件版本仍以 v3.5.9 引擎为兼容基线；以下内容为 v4.0 增量模块与**契约集 4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。
+> 软件版本 **4.0.0**；契约集 **4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。本版是 v4 架构的首个稳定发布，取代预发布 `v4.0.0-dev.1`。
+
+### Added（新增）
+
+- v4 文档主链：DocumentSpec 4.0 生产/校验 → ContentPlan/FillPlan → 事务执行器 → QA Pipeline → 二次门禁 → 原子提交（沿用 v4.0.0-dev 的全部模块与契约 4.2.0）。
+- W3-9 真实语料评测工具 `tests/real_corpus_eval.py`：语料目录仅在运行时通过 `--corpus` 传入，仓库内不保存路径、文件名或文档内容；报告只含匿名序号与聚合指标。
+- 真实语料评测结果（46 份 `.docx`）：解析 46/46 成功、0 字节改动、0 Spec 校验失败；21 份含可填槽位的模板全部完成填充并提交（12 PASSED、9 UNVERIFIED 因浮动图片覆盖缺口如实披露），模板字节 0 改动。
+
+### Changed（变更）
+
+- `engine.__version__`：`3.5.9` → `4.0.0`。v3.5.9 的公共导出、legacy 3.0 生产者与旧 Schema 保持不变，兼容门禁继续通过。
+
+### Fixed（修复）
+
+- 真实模板填充误报 `UNAUTHORIZED_TEMPLATE_CHANGE`：`replace_text` / `fill_paragraph` 改为原位替换并保留被清空的 run，不再经 v3 strict-style 重写 `rPr`；结构指纹只忽略被授权剥离的占位红色。
+- `red_run_clue` / `internal_fact` 段落填充不再触发 strict-style 回退，字体、字号、加粗与段落标记格式保持不变。
+- STANDARD 模式下 `UNVERIFIED` + 仅有覆盖缺口（无缺失检查）的报告按契约 04 §7 允许提交；`qa_eligible` 与报告 `final.eligible_for_commit` 不再矛盾。
+- QA 基线继承：模板自身已缺少的 `xml:space`、未被任何 FillPlan 操作触及的模板空位与模板既有红字内容，降级为披露性警告；新引入的问题仍为阻断。修复 `audit_format_and_text_qa(raise_on_failure=False)` 仍抛出包完整性异常的问题。
+- QA Pipeline 将 GENERATE 的 `STYLE_GUIDE` 比较档位传给视觉检查，内容变化引起的分页数/字体漂移按警告处理，不再阻断；版式几何、表格宽度等硬指标仍为阻断。
+- Excel 解析：超过 2 MB 的工作簿走 `read_only` 扫描，图表/扩展解析异常回退到 `read_only` 并结构化披露，不再崩溃或长时间阻塞。
+
+### Known limitations（已知限制）
+
+- 真实语料未经脱敏与人工标注，按 E3 不计算、不声称槽位 P/R/F1；真实与合成指标分列。
+- **不支持 SDT 内填充**：`sdt_edit=false`，SDT 内容仅作为 PROTECTED 位置发现并拒绝（W4 能力项）。
+- 浮动图片、域更新、OLE、SmartArt、矢量图等结构以 `UNSUPPORTED` 披露；涉及浮动图片的模板 QA 状态为 `UNVERIFIED`（可提交但需人工复核版式）。
+- 本机环境（2026-11-05 实测）：WPS PDF 后端与 PDF 页数分析可用；PyMuPDF、matplotlib、OCR 缺失，对应可选检查如实 `UNVERIFIED`。Linux/LibreOffice 环境未验证。
+
+### Tests
+
+- 全量 **473 项通过**，无跳过、无既有测试删除或弱化；`python -m unittest discover`（Python 3.15，Windows）。
+- 真实语料评测与合成 Fixture 测试分列，不合并统计。
+
+---
+
+## v4.0.0-dev.1（预发布，2026-11-05）
+
+> 已被 `v4.0.0` 取代，保留为开发过程记录。以下内容为 v4.0 增量模块与**契约集 4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。
 
 ### Added（新增）
 
