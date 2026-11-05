@@ -247,7 +247,7 @@ class FormatResidualInheritanceTests(unittest.TestCase):
     def _template(self, directory: Path) -> Path:
         template = directory / "blank.docx"
         document = docx.Document()
-        document.add_paragraph("姓名：___________")
+        document.add_paragraph("项目：___________")
         document.save(str(template))
         return template
 
@@ -279,11 +279,11 @@ class FormatResidualInheritanceTests(unittest.TestCase):
 
 
 class RedResidualInheritanceTests(unittest.TestCase):
-    """Regression (real-corpus W3-9): template's own red emphasis is not a fill defect.
+    """Regression: the template's own red emphasis is not a fill defect.
 
-    An exam template carried a legitimate red run ("观测极光") in a paragraph no
-    operation targeted; FORMAT QA reported it as a blocking RED_TEXT_RESIDUAL and
-    the commit gate refused a otherwise clean fill.
+    A template carried a legitimate red run in a paragraph no operation
+    targeted; FORMAT QA reported it as a blocking RED_TEXT_RESIDUAL and the
+    commit gate refused an otherwise clean fill.
     """
 
     def _template(self, directory: Path) -> Path:
@@ -291,7 +291,7 @@ class RedResidualInheritanceTests(unittest.TestCase):
         document = docx.Document()
         document.add_paragraph("正文段落")
         red = document.add_paragraph()
-        run = red.add_run("观测极光")
+        run = red.add_run("模板强调文字")
         run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)
         document.save(str(template))
         return template
@@ -304,7 +304,7 @@ class RedResidualInheritanceTests(unittest.TestCase):
                     "code": "RED_TEXT_RESIDUAL",
                     "severity": "high",
                     "location": "body.p[1]",
-                    "detail": "观测极光",
+                    "detail": "模板强调文字",
                 }
             ],
         }

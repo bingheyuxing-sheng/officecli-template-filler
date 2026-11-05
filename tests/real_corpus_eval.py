@@ -14,8 +14,9 @@ name, or corpus fact is ever embedded in the repository.  The harness
 4. aggregates robustness metrics into JSON + Markdown reports.
 
 Per task-book rule E3, no annotation baseline exists for this corpus, so no
-slot precision/recall/F1 is computed or claimed.  Reports are aggregate
-metadata only; document text content is never copied into reports.
+slot precision/recall/F1 is computed or claimed.  Reports contain anonymous
+IDs, technical metadata and aggregate metrics only; document text content is
+never copied into reports.
 
 Usage:
     py -3.15 tests/real_corpus_eval.py --corpus "<path-to-docx-dir>" \
@@ -29,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
 import shutil
 import subprocess
 import sys
@@ -37,6 +39,8 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+
+import docx
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -247,10 +251,12 @@ def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> di
         payload = json.loads(generated.stdout)
         record["classification"] = "OK"
         record["status"] = payload.get("status")
-        record["qa_status"] = (payload.get("data", {}) or {}).get("qa_status")
+        data = payload.get("data", {}) or {}
+        record["qa_status"] = data.get("qa_status")
+        record["missing_checks"] = data.get("missing_checks") or []
+        record["coverage_gaps"] = data.get("coverage_gaps") or []
         record["committed"] = (payload.get("transaction", {}) or {}).get("committed")
-        record["filled_slots"] = len((payload.get("data", {}) or {})
-                                     .get("ledger", {}).get("records", []) or [])
+        record["filled_slots"] = len((data.get("ledger", {}) or {}).get("records", []) or [])
         return record
     except subprocess.TimeoutExpired:
         record["classification"] = "TIMEOUT"
@@ -299,16 +305,20 @@ def aggregate(records: list[dict], smoke_records: list[dict], elapsed_s: float) 
 
 
 def write_markdown(path: Path, corpus_arg: str, totals: dict,
-                   records: list[dict], smoke_records: list[dict]) -> None:
+                   records: list[dict], smoke_records: list[dict],
+                   run_info: dict | None = None) -> None:
+    run_info = run_info or {}
     lines = [
         "# W3-9 真实语料评测报告（real-corpus-eval）",
         "",
         "- 评测时间：%s" % datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "- 运行命令：`%s`" % run_info.get("command", "n/a"),
+        "- 运行环境：%s" % run_info.get("environment", "n/a"),
         "- 语料来源：运行时通过 `--corpus` 提供的外部目录（路径不入库、不写入代码）",
         "- 语料构成：%d 份 `.docx`（递归发现）" % totals["docx_analyzed"],
         "- 标注基线：无（E3）——因此**不计算也不声称**槽位 P/R/F1、漏检率等需要人工标注的指标",
         "- 指标性质：本报告全部为**真实语料的鲁棒性/披露性指标**，与合成 Fixture 指标分列，未合并",
-        "- 内容安全：报告仅含匿名序号与聚合元数据，不含路径、文件名或文档正文",
+        "- 内容安全：报告仅含匿名序号、技术元数据与聚合指标，不含路径、文件名或文档正文",
         "",
         "## 总体结果",
         "",
@@ -379,6 +389,25 @@ def write_markdown(path: Path, corpus_arg: str, totals: dict,
     else:
         lines += ["（无）"]
 
+    lines += ["", "## UNVERIFIED 原因分布", ""]
+    unverified = [r for r in smoke_records if str(r.get("qa_status")) == "UNVERIFIED"]
+    if unverified:
+        gap_counts = Counter(
+            gap for r in unverified for gap in (r.get("coverage_gaps") or [])
+        )
+        missing_counts = Counter(
+            check for r in unverified for check in (r.get("missing_checks") or [])
+        )
+        lines += ["| 来源 | 代码 | 次数 |", "|---|---|---|"]
+        lines += ["| coverage_gap | `%s` | %d |" % (k, v)
+                  for k, v in gap_counts.most_common()]
+        lines += ["| missing_check | `%s` | %d |" % (k, v)
+                  for k, v in missing_counts.most_common()]
+        if not gap_counts and not missing_counts:
+            lines += ["| - | 未记录原因 | %d |" % len(unverified)]
+    else:
+        lines += ["（无）"]
+
     lines += [
         "",
         "## 已知限制",
@@ -439,11 +468,24 @@ def main() -> int:
 
     elapsed = time.monotonic() - started
     totals = aggregate(records, smoke_records, elapsed)
+    run_info = {
+        "command": (
+            "python tests/real_corpus_eval.py --corpus <external-dir> "
+            "--fill-sample %d --timeout %d --limit %d"
+            % (args.fill_sample, args.timeout, args.limit)
+        ),
+        "environment": "Python %s; %s; python-docx %s" % (
+            platform.python_version(),
+            platform.platform(),
+            getattr(docx, "__version__", "unknown"),
+        ),
+    }
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "run_info": run_info,
         "totals": totals,
         "records": records,
         "smoke_records": smoke_records,
@@ -451,7 +493,7 @@ def main() -> int:
 
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    write_markdown(report_path, str(corpus), totals, records, smoke_records)
+    write_markdown(report_path, str(corpus), totals, records, smoke_records, run_info)
 
     print(json.dumps(totals, ensure_ascii=False, indent=2))
     return 0

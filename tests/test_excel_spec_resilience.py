@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Regression: real-world Excel workbooks must not crash or hang the analyzer.
 
-Two exam-corpus workbooks made openpyxl raise TypeError while parsing charts
-(PageItem/Nested), and one 5.5 MB workbook took ~33 s in full mode. The fix
+Two real-world workbooks made openpyxl raise TypeError while parsing charts
+(PageItem/Nested), and one large workbook took ~33 s in full mode. The fix
 falls back to read-only and uses read-only for large inputs, disclosing what
 was not inspected instead of claiming full structural coverage.
 """

@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """Regression: template tokens that were never registered as slots must not block.
 
-An exam-corpus paragraph ``姓名：___________联系方式：__________________``
-registers only the label slot (``matched_text="联系方式"``); the underscore
-blanks are legitimate template content. The residual scanner still reports them
-as ``TEMPLATE_TEXT_RESIDUAL`` because ``TOKEN_PATTERN`` matches ``_{3,}``, and
-the inheritance downgrade kept them blocking merely because the paragraph was
+A template paragraph registers only a label slot; the underscore blanks beside
+it are legitimate template content. The residual scanner still reports them as
+``TEMPLATE_TEXT_RESIDUAL`` because ``TOKEN_PATTERN`` matches ``_{3,}``, and the
+inheritance downgrade kept them blocking merely because the paragraph was
 attempted — failing an otherwise correct fill. Blocking is now reserved for
 tokens that are the ``matched_text`` of a fillable slot AND whose paragraph was
 targeted by the plan.
@@ -28,8 +27,8 @@ from qa.pipeline import _adjust_inherited_residuals  # noqa: E402
 
 BLANK1 = "___________"
 BLANK2 = "__________________"
-LABEL = "联系方式"
-PARAGRAPH = "姓名：%s%s：%s" % (BLANK1, LABEL, BLANK2)
+LABEL = "备注字段"
+PARAGRAPH = "项目：%s%s：%s" % (BLANK1, LABEL, BLANK2)
 
 
 def _residual(index: int, detail: str) -> dict:
@@ -45,7 +44,7 @@ def _residual(index: int, detail: str) -> dict:
 class ResidualInheritanceTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="residual_")
-        self.template = Path(self._tmp.name) / "exam.docx"
+        self.template = Path(self._tmp.name) / "template.docx"
         document = docx.Document()
         document.add_paragraph(PARAGRAPH)
         document.add_paragraph("普通段落")
@@ -59,7 +58,7 @@ class ResidualInheritanceTests(unittest.TestCase):
         self.spec = {
             "slots": [
                 {"slot_id": "S_1", "matched_text": LABEL, "protection_status": "CONDITIONAL"},
-                {"slot_id": "S_2", "matched_text": "姓名", "protection_status": "PROTECTED"},
+                {"slot_id": "S_2", "matched_text": "项目", "protection_status": "PROTECTED"},
             ]
         }
 

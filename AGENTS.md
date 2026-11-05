@@ -57,7 +57,7 @@
 1. v3.5.9 是现有功能和兼容性基线；修改前应先检查实际实现、调用点和测试，不得假定设计文档描述等于生产行为。
 2. v4.0 公共契约当前冻结版本为 `4.2.0`（4.0.0 基线 + CP-W2-001 页眉页脚位置语法 + CP-W2-002 `sdt` 位置语法与 PROTECTED 发现）。未经正式变更流程，不得修改冻结契约、JSON Schema、枚举、字段含义或必填规则。契约集版本与产物 `schema_version`（仍为 `4.0`）是两件事。
 3. W1 已交付 DocumentSpec 4.0 生产与语义校验、ContentPlan/FillPlan 生成与校验、FillPlan 执行器、填充台账、QA Gate、QA Pipeline 及端到端测试。W2 已交付 CP-W2-001、六类结构化回归 Fixtures、环境能力矩阵、事务二次门禁与 `logic_qa → workflow` 依赖倒置。W3 已交付 W3-1（PDF 临时副本清理）、W3-2（Excel 三级状态合并）、W3-3（SDT fail-closed 披露）、W3-4（CP-W2-002 + SDT 发现）、W3-5（soffice 私有 profile）、W3-6（GENERATE 文档主链切 v4）、W3-7（ZIP 输入配额）、W3-8（文档与交付一致性）、W3-9（真实语料无损评测，报告仅聚合指标）。
-4. 当前测试基线为 **473 项通过**（含 v3.5.9 基线、W0 契约、W1–W3 回归、真实语料稳定性回归与端到端测试）。后续新增测试可以增加总数，但不得删除、跳过或降低原有测试的有效覆盖。
+4. 当前测试基线为 **479 项通过**（含 v3.5.9 基线、W0 契约、W1–W3 回归、真实语料稳定性回归与端到端测试）。后续新增测试可以增加总数，但不得删除、跳过或降低原有测试的有效覆盖。
 5. `analyze_template.py --spec-version 4` 输出 DocumentSpec 4.0；默认输出保持 3.0 兼容行为（Skill 文档中的 GENERATE 主链使用 `--spec-version 4`，但 CLI 默认值未翻转），除非经过正式兼容性决策。
 6. W1/W2/W3 集成中已确认的修正（可选视觉检查与必需检查分离、FIDELITY 图像授权读取 FillPlan、`--content-plan` CLI、事务二次门禁、SDT fail-closed、Excel 状态合并、PDF 临时副本清理、ZIP 配额）应作为现有行为保护，不得回退。
 
