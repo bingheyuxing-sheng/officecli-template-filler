@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import docx
+from docx.oxml.ns import qn
 
 from engine import (
     audit_content_consistency,
@@ -22,6 +24,7 @@ from engine import (
     iter_all_document_paragraphs_with_Wait_context,
     run_visual_layout_qa,
 )
+from engine.ooxml_utils import TOKEN_PATTERN, is_red_run
 
 from .environment import capability_matrix
 from .gate import resolve_required_checks
@@ -193,6 +196,169 @@ def _has_image_ops(fill_plan: Any) -> bool:
     )
 
 
+def _attempted_body_paragraphs(fill_plan: Any) -> set:
+    indexes = set()
+    if not isinstance(fill_plan, dict):
+        return indexes
+    for operation in fill_plan.get("operations") or []:
+        if not isinstance(operation, dict):
+            continue
+        location = (operation.get("target") or {}).get("location_id")
+        if not isinstance(location, str):
+            continue
+        match = re.fullmatch(r"body\.p\[(\d+)\]", location)
+        if match:
+            indexes.add(int(match.group(1)))
+    return indexes
+
+
+def _attempted_locations(fill_plan: Any) -> set:
+    """Every location_id a FillPlan operation targeted, verbatim."""
+    locations = set()
+    if not isinstance(fill_plan, dict):
+        return locations
+    for operation in fill_plan.get("operations") or []:
+        if not isinstance(operation, dict):
+            continue
+        location = (operation.get("target") or {}).get("location_id")
+        if isinstance(location, str) and location:
+            locations.add(location)
+    return locations
+
+
+def _template_red_texts(template: Optional[str]) -> set:
+    """Truncated red-run texts the template already contained.
+
+    Mirrors the residual scanner's extraction (text[:40]) so comparison against
+    a RED_TEXT_RESIDUAL detail is exact.  Scan failures return an empty set:
+    without positive evidence of inheritance nothing is ever downgraded.
+    """
+    if not template:
+        return set()
+    try:
+        document = docx.Document(template)
+    except Exception:
+        return set()
+    texts = set()
+    for ctx in iter_all_document_paragraphs_with_Wait_context(document):
+        p_el = ctx["p_el"]
+        for r_el in p_el.iter(qn("w:r")):
+            text = "".join((node.text or "") for node in r_el.iter(qn("w:t"))).strip()
+            if text and is_red_run(r_el, ctx["paragraph"]):
+                texts.add(text[:40])
+    return texts
+
+
+def _template_tokens(template: Optional[str]) -> set:
+    if not template:
+        return set()
+    try:
+        document = docx.Document(template)
+    except Exception:
+        return set()
+    tokens = set()
+    for paragraph in document.paragraphs:
+        tokens.update(TOKEN_PATTERN.findall(paragraph.text))
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                tokens.update(TOKEN_PATTERN.findall(cell.text))
+    return tokens
+
+
+def _slot_matched_texts(spec: Any) -> set:
+    """``matched_text`` of every fillable (non-PROTECTED) slot in the spec.
+
+    A template token that was never registered as a slot — e.g. an exam paper's
+    underscore blanks ``___________`` that are legitimate content, not
+    placeholders — must not block a commit. Only a token the plan actually
+    undertook to clear (a registered slot whose paragraph was targeted) stays
+    blocking when it survives the fill.
+    """
+    if not isinstance(spec, dict):
+        return set()
+    texts = set()
+    for slot in spec.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        if slot.get("protection_status") == "PROTECTED":
+            continue
+        matched = slot.get("matched_text")
+        if isinstance(matched, str) and matched:
+            texts.add(matched)
+    return texts
+
+
+def _adjust_inherited_residuals(
+    formatting: Any, template: Optional[str], fill_plan: Any, spec: Any = None
+) -> tuple:
+    """Separate untouched template content from what this fill failed to clear.
+
+    A slot the FillPlan targeted and left unfilled stays blocking. A blank or a
+    red run that the template already had and no operation targeted is a
+    disclosed warning: leaving an unbound conditional field — or the template's
+    own red-emphasis content — untouched is the contract-correct behaviour, not
+    a fill defect. A template token that is not the ``matched_text`` of any
+    fillable slot is inherited content even when its paragraph was attempted.
+    """
+    if not isinstance(formatting, dict):
+        return formatting, []
+    tokens = _template_tokens(template)
+    red_texts = _template_red_texts(template)
+    attempted = _attempted_body_paragraphs(fill_plan)
+    attempted_locations = _attempted_locations(fill_plan)
+    slot_texts = _slot_matched_texts(spec)
+    kept: List[Any] = []
+    inherited: List[Dict[str, Any]] = []
+    for issue in _section_issues(formatting):
+        if (
+            isinstance(issue, dict)
+            and issue.get("code") == "TEMPLATE_TEXT_RESIDUAL"
+            and str(issue.get("detail") or "") in tokens
+        ):
+            match = re.search(r"body_p_token\.(\d+)", str(issue.get("location") or ""))
+            targeted_unfilled = (
+                bool(match)
+                and int(match.group(1)) in attempted
+                and str(issue.get("detail") or "") in slot_texts
+            )
+            if not targeted_unfilled:
+                inherited.append(
+                    {
+                        "code": "TEMPLATE_TEXT_RESIDUAL",
+                        "severity": "medium",
+                        "detail": "unfilled template placeholder left as-is: %s" % issue.get("detail"),
+                    }
+                )
+                continue
+        if (
+            isinstance(issue, dict)
+            and issue.get("code") == "RED_TEXT_RESIDUAL"
+            and str(issue.get("detail") or "") in red_texts
+            and str(issue.get("location") or "") not in attempted_locations
+        ):
+            inherited.append(
+                {
+                    "code": "RED_TEXT_RESIDUAL",
+                    "severity": "medium",
+                    "detail": "red text inherited from the template, no operation targeted it: %s"
+                              % issue.get("detail"),
+                }
+            )
+            continue
+        kept.append(issue)
+    if not inherited:
+        return formatting, []
+    adjusted = dict(formatting)
+    adjusted["structured_issues"] = kept
+    adjusted["issues"] = kept
+    adjusted["passed"] = bool(formatting.get("passed")) or not any(
+        isinstance(item, dict) and _severity(item.get("severity")) == "high"
+        for item in kept
+    )
+    return adjusted, inherited
+
+
 def _required_capability_blockers(
     check_id: str, capabilities: Dict[str, Dict[str, Any]]
 ) -> List[str]:
@@ -292,7 +458,7 @@ def run_full_qa(
             continue
 
         if check_id == "PACKAGE":
-            package = audit_docx_package_integrity(staged)
+            package = audit_docx_package_integrity(staged, baseline_path=template)
             status = "PASSED" if package.get("passed") else "FAILED"
             detail = "%d package parts inspected" % int(package.get("inspected_parts_count") or 0)
             checks.append(
@@ -327,6 +493,9 @@ def run_full_qa(
                     )
                 )
             else:
+                formatting, inherited_residuals = _adjust_inherited_residuals(
+                    formatting, template, fill_plan, spec
+                )
                 status = "PASSED" if formatting.get("passed") else "FAILED"
                 detail = "%s profile; %d finding(s)" % (
                     comparison_profile,
@@ -342,6 +511,7 @@ def run_full_qa(
                     )
                 )
                 _absorb(formatting, "FORMAT", issues, warnings, coverage_gaps)
+                warnings.extend(inherited_residuals)
                 _ensure_failure_issue("FORMAT", status, issues, detail)
 
         elif check_id == "FIDELITY":
@@ -509,7 +679,11 @@ def run_full_qa(
 
         elif check_id == "VISUAL_PAGE_COUNT":
             try:
-                visual = run_visual_layout_qa(staged, reference_docx_path=template)
+                visual = run_visual_layout_qa(
+                    staged,
+                    reference_docx_path=template,
+                    comparison_profile=comparison_profile,
+                )
             except Exception as exc:
                 checks.append(
                     check_record(
