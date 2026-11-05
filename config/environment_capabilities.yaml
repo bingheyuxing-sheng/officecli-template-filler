@@ -1,0 +1,47 @@
+# W2 environment capability expectations for Office Skill v4.0.
+#
+# This file is the declarative expectation: what the skill assumes a machine
+# must provide, and which of those are required for a verdict to be trusted.
+#
+# PyYAML is optional. When it is not installed, config/environment_capabilities.json
+# is the machine-readable source of truth and declares exactly the same values;
+# the two files must stay in sync. Detection result, never this file alone,
+# decides AVAILABLE / UNAVAILABLE / UNVERIFIED.
+
+schema_version: "4.0"
+
+capabilities:
+  docx_parse:
+    required: true
+    probe: python_docx_import
+    description: "python-docx can import and read .docx packages"
+
+  docx_write:
+    required: true
+    probe: writable_temp_dir_and_python_docx
+    description: "a writable temp directory and python-docx are available for staged output"
+
+  wps_pdf_render:
+    required: true
+    probe: engine.pdf_backend.find_pdf_backend
+    description: "a DOCX to PDF converter (WPS kwpsconvert or LibreOffice) is installed"
+
+  pdf_page_analysis:
+    required: true
+    probe: pymupdf_import_or_wps_pdfinfo
+    description: "PDF page counts can be measured (PyMuPDF or WPS pdfinfo)"
+
+  pixel_visual_diff:
+    required: false
+    probe: pymupdf_import
+    description: "PyMuPDF pixmap comparison for page-level pixel diff"
+
+  ocr:
+    required: false
+    probe: engine.ocr_engine.detect_ocr_backend
+    description: "an OCR backend (rapidocr / paddleocr / pytesseract + tesseract) is installed"
+
+  chart_render:
+    required: false
+    probe: engine.chart_render.backend_status
+    description: "matplotlib can render chart images"
