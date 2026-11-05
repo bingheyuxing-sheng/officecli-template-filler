@@ -1,6 +1,6 @@
 # Office Skill v4.0 — W0 Contract Index
 
-- Contract set version: **4.1.0** (W0 freeze 4.0.0 + CP-W2-001, additive)
+- Contract set version: **4.2.0** (W0 freeze 4.0.0 + CP-W2-001 + CP-W2-002, additive)
 - Freeze date: 2026-11-05; change date: 2026-11-05
 - Freeze authority: Agent 05 (Architecture & Integration)
 - Independent gate: Agent 07 (Architecture Reviewer)
@@ -89,7 +89,7 @@ The current `analyze_template.py` cannot emit a 4.0 DocumentSpec. That is record
 |---|---|---|---|
 | 4.0.0 | 2026-11-05 | W0 initial freeze | W0 |
 | 4.1.0 | 2026-11-05 | `location_id` story grammar adds first/even page headers and footers; artifact `schema_version` stays `4.0` | `changes/CP-W2-001-location-story.md` |
-| 4.2.0 | 2026-11-05 | `location_id` element set adds `sdt`; body/cell/header-level SDT content discovered as PROTECTED positions; `sdt_edit` stays false; frozen pending 07 post-implementation review | `changes/CP-W2-002-sdt-location.md` |
+| 4.2.0 | 2026-11-05 | `location_id` element set adds `sdt`; body/cell/header-level SDT content discovered as PROTECTED positions; `sdt_edit` stays false. **FROZEN** after 07 post-implementation PASS (`reports/w3/07-cp-w2-002-post-review.md`) | `changes/CP-W2-002-sdt-location.md` |
 
 ## 6. Compatibility statement
 

@@ -1,15 +1,14 @@
 # W3-4B 变更清单与校验值 — CP-W2-002（契约集 4.2.0 候选）
 
 - 日期：2026-11-05
-- 状态：**4.2.0 候选，未冻结**；SHA-256 取自本实现工作区的最终文件内容，必须由 Agent 07
-  实施后复审通过后方可作为冻结基线。
+- 状态：**4.2.0 FROZEN（2026-11-05）**。SHA-256 取自冻结提交前的最终文件内容；Agent 07 实施后复审 PASS（`reports/w3/07-cp-w2-002-post-review.md`）。
 - 哈希算法：SHA-256；下表同时给出前 16 位（`first-16`）与完整值。
 
 | 文件 | SHA-256 first-16 | SHA-256 (full) |
 |---|---|---|
-| `contracts/01-slot-id.md` | `a609237b4dbb4412` | `a609237b4dbb44124fdbf57def4c67d869679dedce980d76c74fe245d4cd44fa` |
-| `contracts/02-document-spec.md` | `af81a8affb871fb0` | `af81a8affb871fb009638653c118ffef4f2896e926f445b1095ef2018423acdf` |
-| `contracts/README.md` | `74becae612c04307` | `74becae612c04307b0eec9f0ee6573ab1c055acee7d4d0b5a6eae3a41915b661` |
+| `contracts/01-slot-id.md` | `1823e8e4651f10a6` | `1823e8e4651f10a6488feec8ff067b9c7dad1d34cc192c35c7f6237450ba741d` |
+| `contracts/02-document-spec.md` | `82ff7346904ddff8` | `82ff7346904ddff8fd9504133f745903573765dd99076cb3522b1028ea9806ad` |
+| `contracts/README.md` | `515bcdcaa655cbde` | `515bcdcaa655cbde873addef8d28d792c4b5b267a24b3a6a459dbd95c08a9146` |
 | `engine/ooxml_utils.py` | `ff6319d7f68d63f7` | `ff6319d7f68d63f718551b14f54d46a01f192e59ca3f75b152631a72e42bf244` |
 | `examples/slot-id/cases.json` | `f6396cce3294b7d3` | `f6396cce3294b7d34457ae53896822ca233a93e61f542e151106884cb084b14a` |
 | `template_intelligence/spec_builder.py` | `948efe58e48a7197` | `948efe58e48a7197558bfac043638f3cd5aa07d94edc0c61dda3816a50b10492` |

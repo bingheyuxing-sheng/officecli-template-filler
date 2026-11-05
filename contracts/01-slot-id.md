@@ -1,7 +1,7 @@
 # Contract 01 — Slot ID Specification
 
 - Contract version: **1.2.0**
-- Status: **FROZEN at 4.1.0; CP-W2-002 extension (4.2.0) frozen pending Agent 07 post-implementation review**
+- Status: **FROZEN (4.2.0, 2026-11-05; CP-W2-001 + CP-W2-002)**
 - Owner: Agent 01 (Template Intelligence)
 - Co-sign: Agent 02, Agent 03, Agent 04
 - Gate: Agent 07
