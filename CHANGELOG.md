@@ -38,7 +38,7 @@
 
 ### Tests
 
-- 全量 **473 项通过**，无跳过、无既有测试删除或弱化；`python -m unittest discover`（Python 3.15，Windows）。
+- 全量 **479 项通过**（发布包解包副本实测 173.5s），无跳过、无既有测试删除或弱化；`python -m unittest discover`（Python 3.15，Windows）。
 - 真实语料评测与合成 Fixture 测试分列，不合并统计。
 
 ---
