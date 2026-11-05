@@ -39,7 +39,7 @@
 
 ### 3.2 `references/`
 
-- `python-docx-engine.md`：标题从 v3.5.5 更新为 v3.5.9 引擎基线 / 4.2.0 契约集；测试数 138 → 450；移除本机绝对路径 `D:\docs\...`，改为 `<skill_root>`；6 处示例 `assert` 改为 `RuntimeError`，与“校验不使用 assert”的项目规则一致；修正“格式修订无法用 tracked changes 表达”的过时说法，说明 REVIEW 使用 `w:*PrChange`。
+- `python-docx-engine.md`：标题从 v3.5.5 更新为 v3.5.9 引擎基线 / 4.2.0 契约集；测试数 138 → 450；移除本机绝对路径（示例改为 `<skill_root>`）；6 处示例 `assert` 改为 `RuntimeError`，与“校验不使用 assert”的项目规则一致；修正“格式修订无法用 tracked changes 表达”的过时说法，说明 REVIEW 使用 `w:*PrChange`。
 - `engine-internals.md`：补充 v4 迭代器对 SDT 内容的暴露；把 `sdt_control` 说明限定为 legacy v3 表格单元格路径，并声明 v4 FillPlan 将其视为 PROTECTED；视觉 QA 的 PDF 后端改为 WPS 或 LibreOffice；把孤立在 `---` 后的 v3.5.9 条目提升为 H2 小节，消除结构断裂。
 
 ### 3.3 `contracts/`

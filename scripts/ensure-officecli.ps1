@@ -16,8 +16,7 @@ $localCandidates = @(
     "$env:LOCALAPPDATA\OfficeCLI\officecli.exe",
     "$skillRoot\bin\officecli.exe",
     "$skillRoot\assets\officecli.exe",
-    ".\officecli.exe",
-    "D:\docs\OfficeCLI\officecli.exe"
+    ".\officecli.exe"
 )
 
 $installDir = "$env:LOCALAPPDATA\OfficeCLI"
