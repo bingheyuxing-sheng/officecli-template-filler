@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
-"""W3-3: body-level w:sdt must be discovered, capped to L3 and disclosed.
+"""W3-3 / CP-W2-002: SDT content must be discovered, capped to L3 and disclosed.
 
 Covers the audit P1-01 reproduction plus fail-closed behaviour: the spec must
-never silently report L1/L2 when body-level SDT content exists or the scan
-itself failed.
+never silently report L1/L2 when SDT content exists or the scan itself failed.
+After CP-W2-002 the content is also addressable: slots inside SDTs are PROTECTED,
+blocking `kind: sdt` regions name the container, and the discovery-success warning
+is `SDT_BODY_PROTECTED_ONLY` (medium). A failed scan keeps the high-severity
+`SDT_BODY_ENUMERATION_GAP` (gate amendment B1).
 """
 
 from __future__ import annotations
@@ -80,12 +83,22 @@ class SdtBodyDetectionTests(unittest.TestCase):
         codes = [item["code"] for item in spec["unsupported_features"]]
         self.assertIn("SDT_BODY_UNSUPPORTED", codes)
         detail = next(i["detail"] for i in spec["unsupported_features"] if i["code"] == "SDT_BODY_UNSUPPORTED")
-        self.assertIn("child[", detail, "disclosure must name the concrete body position")
+        self.assertIn("body.sdt[0]", detail, "disclosure must name the concrete container location")
         self.assertIn("1 paragraph", detail)
-        warnings = [w for w in spec["warnings"] if w["code"] == "SDT_BODY_ENUMERATION_GAP"]
+        warnings = [w for w in spec["warnings"] if w["code"] == "SDT_BODY_PROTECTED_ONLY"]
         self.assertTrue(warnings)
-        self.assertEqual(warnings[0]["severity"], "high")
-        self.assertEqual(spec["slots"], [])  # undiscoverable until CP-W2-002, but now disclosed
+        self.assertEqual(warnings[0]["severity"], "medium")
+        # CP-W2-002: the content is now discovered as a PROTECTED position, never fillable.
+        slot = next(s for s in spec["slots"] if s["location_id"] == "body.sdt[0].p[0]")
+        self.assertEqual(slot["candidate_type"], "control_or_field")
+        self.assertEqual(slot["protection_status"], "PROTECTED")
+        self.assertEqual(slot["confirmation_tier"], "PROTECTED_DO_NOT_TOUCH")
+        self.assertTrue(all(s["candidate_type"] != "explicit_token" for s in spec["slots"]))
+        regions = [r for r in spec["protected_regions"] if r["kind"] == "sdt"]
+        self.assertTrue(regions)
+        self.assertEqual(regions[0]["location_id"], "body.sdt[0]")
+        self.assertEqual(regions[0]["severity"], "blocking")
+        self.assertNotIn("SDT_BODY_ENUMERATION_GAP", [w["code"] for w in spec["warnings"]])
 
     def test_sdt_wrapping_table_is_disclosed(self) -> None:
         doc = docx.Document()
@@ -104,6 +117,9 @@ class SdtBodyDetectionTests(unittest.TestCase):
         self.assertEqual(spec["template"]["compatibility"], "L3")
         detail = " ".join(i["detail"] for i in spec["unsupported_features"] if i["code"] == "SDT_BODY_UNSUPPORTED")
         self.assertIn("1 table", detail)
+        self.assertIn("body.sdt[0]", detail)
+        self.assertIn("body.sdt[0].tbl[0]", [t["table_id"] for t in spec["structure"]["tables"]])
+        self.assertIn("body.sdt[0]", [r["location_id"] for r in spec["protected_regions"] if r["kind"] == "sdt"])
 
     def test_nested_sdt_counted_once_as_one_body_container(self) -> None:
         doc = docx.Document()
@@ -120,7 +136,9 @@ class SdtBodyDetectionTests(unittest.TestCase):
         outer.append(outer_content)
         spec = build_document_spec_from_path(self._save(doc))
         sdt_entries = [i for i in spec["unsupported_features"] if i["code"] == "SDT_BODY_UNSUPPORTED"]
-        self.assertEqual(len(sdt_entries), 1, "only direct body children are containers")
+        self.assertEqual(len(sdt_entries), 1, "only the nested container holds direct content")
+        self.assertEqual(sdt_entries[0]["location_id"], "body.sdt[0].sdt[0]")
+        self.assertIn("body.sdt[0].sdt[0].p[0]", [s["location_id"] for s in spec["slots"]])
 
     def test_inline_sdt_in_paragraph_is_not_body_level(self) -> None:
         doc = docx.Document()

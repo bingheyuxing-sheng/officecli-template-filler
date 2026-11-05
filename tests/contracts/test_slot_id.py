@@ -110,9 +110,21 @@ class SlotInputValidationTests(unittest.TestCase):
             "sec[1].first_page_header.p[0]",
             "sec[0].even_page_footer.tbl[0].r[1].c[0].p[0]",
             "footnotes.p[4]",
+            # CP-W2-002: `sdt` is a location element in every addressable container.
+            "body.sdt[0].p[0]",
+            "body.sdt[0].sdt[1].p[0]",
+            "body.tbl[0].r[0].c[0].sdt[0].p[0]",
+            "sec[0].header.sdt[0].p[0]",
+            "sec[0].even_page_footer.sdt[0].p[0]",
+            "body.sdt[0].tbl[0].r[0].c[0].p[0]",
+            "body.sdt[0]",
         ):
             self.assertRegex(value, LOCATION_RE)
-        for value in ("body.p0", "body.p[-1]", "", "body", "sec[0].first_page_header"):
+        for value in (
+            "body.p0", "body.p[-1]", "", "body", "sec[0].first_page_header",
+            # bare container/paragraph forms without an index are still invalid
+            "body.sdt", "body.sdt[0].p", "body.sdt[-1]", "body.sdt[0].p[0].sdt",
+        ):
             self.assertNotRegex(value, LOCATION_RE)
 
         self.assertRegex("S_d6df35f1e6cd", SLOT_ID_RE)
