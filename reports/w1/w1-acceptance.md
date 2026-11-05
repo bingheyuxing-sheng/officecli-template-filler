@@ -6,6 +6,8 @@
 - Contract baseline: **4.0.0 (frozen, unchanged)**
 - Decision: **W1 COMPLETE — 4.0 data chain is executable**
 
+> Historical W1 record (contract set 4.0.0, 357 tests). Current state: contract set **4.2.0**, full suite **450**. OI-05 remained open at W1 and was closed in W2.
+
 ## 1. What was built
 
 | Work package | Deliverable | Owner agent |

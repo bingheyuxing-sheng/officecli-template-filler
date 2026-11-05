@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v3.5.9 — Role-Based Image Targeting, Optional OCR, Figure Rendering, Reference Split)
+# OfficeCLI + Python Office Document Intelligence Skill (v4.0 dev — contract set 4.2.0; v3.5.9 compatibility baseline)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
@@ -71,12 +71,20 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (`v3.0`)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.0)
 
 ```
 officecli-template-filler/
+├── AGENTS.md                             # Project rules (authoritative repository copy)
 ├── SKILL.md                              # Primary skill workflow & architecture rules
-├── engine/                               # Standalone, importable Python engine package
+├── contracts/                            # v4.0 contract set 4.2.0 + change proposals
+├── config/                               # QA policy, error codes, capability matrix, package limits
+├── template_intelligence/                # DocumentSpec 4.0 producer, slot ids, fingerprint, validator
+├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
+├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
+├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
+├── reports/                              # W0–W3 acceptance, gate and issue records
+├── engine/                               # v3.5.9 standalone, importable Python engine package
 │   ├── __init__.py                       # Public API exports
 │   ├── ooxml_utils.py                    # P0-1: LogicalParagraphView cross-run mapper & full-story iterator
 │   ├── ssot_engine.py                    # P0-2: decimal.Decimal SSOT solver, unit converter & explicit ratio bounds
@@ -124,16 +132,14 @@ officecli-template-filler/
 │   ├── repair_plan.schema.json           # RepairPlan output schema
 │   ├── review_report.schema.json         # v3.1: REVIEW mode execution + integrity report
 │   └── qa_report.schema.json             # Unified QA Report schema
-├── tests/                                # Automated unit test suite (186 tests)
-│   ├── test_v3_engine.py                 # P0-1..P1-8, REPAIR, REVIEW & Excel regression baseline
-│   ├── test_transaction.py               # v3.5 M1: staged write, abort on QA failure, atomic commit
-│   ├── test_review_lifecycle.py          # v3.5 M2: revision marks, accept/reject/restore, snapshot
-│   ├── test_table_signature.py           # v3.5 M2/M9: table signature, drift thresholds, merge gating
-│   ├── test_router_capabilities.py       # v3.5 M3/M8: capability registry, unsupported input, proofread routing
-│   ├── test_excel_reliability.py         # v3.5 M4/M5: Translator shifting, formula status, object preflight
-│   ├── test_layout_qa.py                 # v3.5 M6: layout fingerprint comparison
-│   ├── test_process_ownership.py         # v3.5 M7: process identity, spawned-only cleanup, per-task logs
-│   └── test_proofread.py                 # v3.5 M8: proofread deliverable + snapshot
+├── tests/                                # Automated suite (450 tests)
+│   ├── contracts/                        # W0 contract tests (70)
+│   ├── test_e2e_v4.py                    # v4 DocumentSpec → plans → executor → QA → commit
+│   ├── test_skill_workflow_v4.py         # Runs the documented SKILL.md GENERATE chain
+│   ├── test_fixture_matrix.py            # Six structured regression fixture classes
+│   ├── test_w2_defects.py                # W2 fixture-discovered defect regressions
+│   ├── test_sdt_discovery.py             # CP-W2-002 SDT locations and PROTECTED rejection
+│   └── test_v3_engine.py                 # v3.5.9 baseline, REPAIR, REVIEW, Excel regression
 └── references/
     ├── engine-internals.md               # v3.5.9: implementation detail per engine guarantee (read when editing engine/)
     └── python-docx-engine.md             # API reference & usage examples for engine/ modules

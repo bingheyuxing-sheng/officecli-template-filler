@@ -81,7 +81,7 @@ Out of scope (must not be implemented in W0):
 - QA gate runtime wiring
 - Changes to any v3.5.9 file
 
-The current `analyze_template.py` cannot emit a 4.0 DocumentSpec. That is recorded as open issue `OI-01` and is an alpha entry condition, not a reason to relax the 4.0 schema.
+`analyze_template.py` emits a 4.0 DocumentSpec only with `--spec-version 4` (W1 closed `OI-01`); the default output remains 3.0. OI-01 was an alpha entry condition, not a reason to relax the 4.0 schema.
 
 ## 5.1 Change log (contract set)
 

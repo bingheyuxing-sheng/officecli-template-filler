@@ -4,6 +4,8 @@
 - Baseline: commit `c5fe9a8`, tag `v3.5.9`, 186 tests
 - Verdict: **additive only, no public interface changed**
 
+> Status note (post-W1/W2): `OI-01`, `OI-03` and `OI-05` are closed; `OI-02` remains an environment fact (PyMuPDF / matplotlib / OCR absent); `OI-04` remains a beta item. The gap table below is the W0 snapshot, not current status. Current contract set: **4.2.0**.
+
 ## 1. Change inventory
 
 | Path | Type | Effect on v3.5.9 |

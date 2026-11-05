@@ -23,6 +23,16 @@
 - `template_intelligence/slot_id.py`：无改动（`LOCATION_RE` 已接受 `sdt`）。
 - `examples/document-spec/cases.json`：无改动（见实现报告 §6.6）。
 
+## 文档清理后哈希（2026-11-05）
+
+本次文档清理只把 Contract 02、`contracts/README.md` 与 `contracts/compatibility-v3.5.9.md` 中已关闭的 OI-01 状态措辞改为事实陈述，未改动任何 MUST/SHOULD、字段、枚举、示例或版本号。原冻结哈希保留在上表；清理后的当前哈希如下：
+
+| 文件 | SHA-256 first-16 | SHA-256 (full) |
+|---|---|---|
+| `contracts/02-document-spec.md` | `9d5c9533ad1a6188` | `9d5c9533ad1a61888487d0ad6a7a05e4c4dbd4bcd6c9483ac133133b88917e5c` |
+| `contracts/README.md` | `8ac12ae5261cbf87` | `8ac12ae5261cbf877cc984a6e759156485a60aabe59a116ce4ef6885cc803b5f` |
+| `contracts/compatibility-v3.5.9.md` | `5b7727e8484e1857` | `5b7727e8484e18577a9ff9756cecabf75e5e8f07ff252ae02f7d65f5d3f8ddb5` |
+
 ## 验证摘要
 
 | 套件 | 结果 |
