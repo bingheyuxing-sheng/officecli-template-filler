@@ -1,8 +1,8 @@
 # 变更记录
 
-本文件记录 officecli-template-filler 各版本的变更。`dist/` 下保留部分版本的打包归档，可直接下载后作为 Agent Skill 安装（缺失与合并情况见下方说明）。
+本文件记录 officecli-template-filler 各版本的变更。发布包统一由 [Releases](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases) 提供，仓库内不再保留 `dist/` 归档。
 
-> 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.6 未单独发包，其内容与 v3.5.7 一同发布。
+> 说明：v3.3.1、v3.4.0 与 v3.5.0 未单独发布打包文件；v3.5.6 未单独发包，其内容与 v3.5.7 一同发布。
 
 ---
 
@@ -11,6 +11,7 @@
 ### Removed（移除）
 
 - 删除 `scripts/ensure-officecli.ps1` 与 `scripts/ensure-officecli.sh`。这两个脚本会从多个第三方代理（`ghfast.top` / `gh-proxy.com` / `mirror.ghproxy.com`）下载可执行文件、在校验前直接运行、写入用户全局 `PATH`，并回退到 `npm install -g`，构成供应链风险。核查确认 `officecli.exe` 未被任何代码路径调用（仅出现在注释、临时文件名与检查点文件名中），删除不影响任何功能。
+- 清空 `dist/` 目录下的 13 个历史归档 zip。这些归档内置了上述两个安装脚本的完整副本，且与 Releases 上的发布资产重复；下载统一改由 Releases 提供。历史证据保留在 `reports/w3/` 与 Git 历史中。
 
 ---
 

@@ -182,7 +182,6 @@ officecli-template-filler/
 ├── schemas/              # JSON Schema（3.0 兼容与 4.0 契约）
 ├── references/           # 引擎实现参考
 ├── reports/              # W0–W3 验收、门禁与问题记录
-├── dist/                 # 历史归档与 v4 开发快照
 └── tests/                # 单元、契约、回归与端到端测试
 ```
 
@@ -200,7 +199,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## 历史版本
 
-各版本的打包文件发布在 [Releases](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases)，仓库 `dist/` 保留同一份归档；变更细节见 [CHANGELOG.md](CHANGELOG.md)。
+各版本的打包文件发布在 [Releases](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases)，仓库内不再保留归档副本；变更细节见 [CHANGELOG.md](CHANGELOG.md)。
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
