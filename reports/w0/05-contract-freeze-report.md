@@ -7,6 +7,8 @@
 - Independent gate: `reports/w0/07-gate-review.md`
 - Decision: **FROZEN** (formal, not conditional)
 
+> Historical record: this report freezes contract set **4.0.0**. The current set is **4.2.0** (CP-W2-001/002; see `contracts/README.md` and `reports/w3/04b-manifest.md`). OI-01/OI-03/OI-05 were closed in W1/W2 (`reports/w0/issues.md`). The hashes in §5 are the 4.0.0 freeze evidence, not hashes of the current files.
+
 ## 1. Scope delivered
 
 | Artifact | Count | Location |
@@ -165,12 +167,6 @@ SHA-256, first 16 hex (full digest can be recomputed with `Get-FileHash -Algorit
 
 ## 7. Known gaps (carried forward)
 
-See `reports/w0/issues.md`. Summary:
+See `reports/w0/issues.md` for the full register. `OI-01`, `OI-03` and `OI-05` were closed in W1/W2; `OI-02` remains an environment fact (no PyMuPDF / matplotlib / OCR, so the related checks stay `UNVERIFIED`); `OI-04` and `OI-06` remain beta items.
 
-- `OI-01` **alpha blocker**: `analyze_template.py` cannot emit DocumentSpec 4.0.
-- `OI-02` environment: no PyMuPDF / matplotlib / OCR; pixel QA and OCR must stay `UNVERIFIED`.
-- `OI-03` W0 ships no runtime validators; contract tests use a reference checker.
-- `OI-04` legacy CLIs do not emit ToolEnvelope.
-- `OI-05` `logic_qa → workflow → qa_engine` dependency inversion.
-
-Freeze decision: **FROZEN as 4.0.0**. The gaps above are implementation/alpha conditions, not contract defects, and none was removed by lowering a requirement.
+Freeze decision: **FROZEN as 4.0.0**. The gaps above were implementation/alpha conditions, not contract defects, and none was removed by lowering a requirement.

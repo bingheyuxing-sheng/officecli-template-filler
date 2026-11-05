@@ -7,6 +7,8 @@
 - Inputs: `contracts/`, `schemas/`, `examples/`, `config/`, `tests/contracts/`, `reports/w0/issues.md`
 - Verdict: **PASS** (formal W0 gate)
 
+> Historical record of the W0 gate at contract set **4.0.0**. OI-01 was closed in W1 (`reports/w1/w1-acceptance.md` §6); OI-03 and OI-05 were closed in W1/W2. Current contract set: **4.2.0**.
+
 ## 1. Review method
 
 1. Read all five contracts and the compatibility matrix.
@@ -136,7 +138,7 @@ py -3.15 -m unittest discover -s tests -p "test_*.py"
 
 Conditions carried into alpha (not W0 defects):
 
-1. **OI-01 is a hard alpha blocker**: `analyze_template.py` must emit a schema-valid DocumentSpec 4.0.
+1. **OI-01 was a hard alpha blocker at W0** (closed in W1): `analyze_template.py --spec-version 4` must emit a schema-valid DocumentSpec 4.0.
 2. OI-03 runtime validators must exist before beta; W0 tests prove the rules are expressible, not that a runtime enforces them.
 3. OI-02 environment limits must be reported as `UNVERIFIED`, never `PASSED`.
 

@@ -110,16 +110,36 @@ def _convert_with_wps(executable: str, source: str, pdf_path: str) -> Tuple[Opti
     return None, _error_from_process(returncode, stdout, stderr)
 
 
+def libreoffice_user_installation_arg(profile_dir: str) -> str:
+    """`-env:UserInstallation` startup arg pinning soffice to a private profile.
+
+    Concurrent or back-to-back LibreOffice invocations share one default user
+    profile; the profile lock then serializes or hangs them (audit P2-04
+    stall). Each conversion gets its own profile directory, removed by the
+    caller's TemporaryDirectory when done.
+    """
+    import pathlib
+
+    return "-env:UserInstallation=" + pathlib.Path(profile_dir).as_uri()
+
+
 def _convert_with_libreoffice(executable: str, source: str, out_dir: str, pdf_path: str) -> Tuple[Optional[str], Optional[str]]:
-    try:
-        returncode, stdout, stderr = _run(
-            [executable, "--headless", "--convert-to", "pdf", "--outdir", out_dir, source],
-            timeout=180,
-        )
-    except subprocess.TimeoutExpired:
-        return None, "LibreOffice PDF conversion timed out after 180s"
-    except OSError as exc:
-        return None, f"LibreOffice failed to start: {exc}"
+    import tempfile as _tempfile
+
+    with _tempfile.TemporaryDirectory(prefix="lo-profile-") as profile_dir:
+        try:
+            returncode, stdout, stderr = _run(
+                [
+                    executable,
+                    libreoffice_user_installation_arg(profile_dir),
+                    "--headless", "--convert-to", "pdf", "--outdir", out_dir, source,
+                ],
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return None, "LibreOffice PDF conversion timed out after 180s"
+        except OSError as exc:
+            return None, f"LibreOffice failed to start: {exc}"
     candidate = os.path.join(out_dir, os.path.splitext(os.path.basename(source))[0] + ".pdf")
     if returncode == 0 and os.path.isfile(candidate):
         if os.path.normcase(candidate) != os.path.normcase(pdf_path):

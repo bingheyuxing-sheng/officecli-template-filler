@@ -9,7 +9,7 @@ are changing `engine/` or debugging a QA result — it is not needed for routine
 - **Never** globally strip `<w:proofErr>` or destructively merge all adjacent runs up front.
 - Always use `LogicalParagraphView(p_el)` to build a read-only character-offset map `char_map[logical_idx] -> (r_el, t_el, t_char_idx)`.
 - When replacing a cross-run token (e.g. `{{` + `project_name` + `}}`), `view.replace_span()` updates only the slice inside the affected `<w:t>` nodes, preserves `<w:t>` attributes (`xml:space="preserve"`), leaves untouched runs and `<w:proofErr>` markers intact, and removes a trailing run **only** if its `<w:t>` becomes empty and the run contains no drawings, breaks, tabs, or fields.
-- Use `iter_all_document_paragraphs_with_Wait_context(doc)` to traverse **all** document stories: body paragraphs, nested tables, headers, footers, textboxes (`w:txbxContent`), footnotes, endnotes, and comments.
+- Use `iter_all_document_paragraphs_with_Wait_context(doc)` to traverse **all** document stories: body paragraphs, nested tables, headers, footers, textboxes (`w:txbxContent`), footnotes, endnotes, and comments. The v4 iterator additionally exposes body, header/footer, cell and nested SDT content (Contract 01 §3.1).
 
 ### 2. Exact `decimal.Decimal` SSOT Mathematical Solver (`engine/ssot_engine.py` — Fixes P0-2)
 - Binary `float` and `round(..., 4)` are strictly prohibited in financial, credit, and hour calculations.
@@ -31,7 +31,7 @@ are changing `engine/` or debugging a QA result — it is not needed for routine
   - `plain_text`: Safe for donor-cloned direct fill via `fill_cell_strict_style()`.
   - `mixed_format`: Multi-run formatted cell; updated surgically via `LogicalParagraphView` token replacement without wiping surrounding runs.
   - `hyperlink_cell`: Updates text inside `<w:hyperlink>` runs without destroying the relationship `r:id`.
-  - `sdt_control`: Updates text inside `<w:sdtContent>` runs while preserving the `<w:sdtPr>` control wrapper.
+  - `sdt_control`: A legacy v3 table-cell path can rewrite text inside `<w:sdtContent>` while preserving the `<w:sdtPr>` control wrapper. The v4 FillPlan chain treats all SDT content as PROTECTED (`sdt_edit=false`) and rejects such targets with `PROTECTED_SLOT_VIOLATION`.
   - `anchored_text`: Contains bookmarks, comment ranges, or tracked-change wrappers (`w:ins`/`w:del`); filled by rewriting `<w:t>` characters only, never by deleting the wrapping nodes.
   - `image_cell`, `nested_table`, `field_code`, `unknown_complex`: Protected from destructive paragraph wiping (`status: "skipped_protected"` unless targeted by specialized handlers).
 
@@ -53,7 +53,7 @@ are changing `engine/` or debugging a QA result — it is not needed for routine
 
 ### 8. Full Package QA + Visual QA (`engine/qa_engine.py` — Fixes P1-7)
 - `audit_docx_package_integrity(docx_path)` inspects the raw ZIP archive to verify well-formed XML across all parts (`document.xml`, `styles.xml`, `numbering.xml`, `settings.xml`, `header*.xml`, `footer*.xml`, `footnotes.xml`, `endnotes.xml`, `comments.xml`), zero dangling `.rels` targets, valid `[Content_Types].xml`, and intact media binaries.
-- `run_visual_layout_qa(docx_path, reference_docx_path)` checks table grid widths against printable page margins, inline image aspect-ratio distortion, and (when LibreOffice is available) renders headless PDF previews for visual layout verification.
+- `run_visual_layout_qa(docx_path, reference_docx_path)` checks table grid widths against printable page margins, inline image aspect-ratio distortion, and (when a PDF backend — WPS or LibreOffice — is available) renders a PDF preview for visual layout verification.
 
 ### 9. Template-Driven REVIEW Mode (`engine/review_engine.py` — v3.1)
 Use REVIEW when a human must decide, not when the agent should silently rewrite. The engine splits every finding into three channels:
@@ -154,11 +154,10 @@ Rules:
 4. Format-only repairs (font, size, paragraph properties, and supported table properties) must be paired with native `w:*PrChange` formatting revisions. Unsupported or structurally unsafe changes remain comments or `manual_required`; never apply them silently.
 5. Final response format: link the `.docx`, list counts of revisions and comments, and name the file that opens in revision mode. Do not paste the Markdown report in place of the file.
 
----
+## v3.5.9 additions — pictures by role, optional OCR, figure rendering
 
-- **v3.5.9 — Pictures by role, optional OCR, figure rendering**:
-  - `find_images(doc, role=None)` walks every story part (`.//w:p` works for `w:body`, `w:hdr` and `w:ftr` roots) and returns `role`, `evidence`, `owner_part`, `paragraph_index`, `blip_index`, pixel size and caption. Role heuristics use structure first: header/footer → `logo` (or `stamp` when square and predominantly red), small square grayscale body image → `qr`, caption keywords (`示意图`/`流程图`/`二维码`) → `illustration`/`qr`, large body image → `illustration`.
-  - `replace_image_by_role()` resolves exactly one match and refuses on ambiguity, because silently replacing the wrong logo is worse than asking.
-  - `ocr_engine` probes `rapidocr_onnxruntime` → `paddleocr` → `pytesseract`+`tesseract`, normalises their three different return shapes into text, and returns `OCR_UNAVAILABLE` as a coverage gap when none exists. `audit_image_text()` reports `PLACEHOLDER_TEXT_IN_IMAGE` (medium) for `***`, `XXXX`, `___`, `待填写`, `示例文本`, `此处插入`, and records `VECTOR_IMAGE_OCR_UNSUPPORTED` for SVG/EMF/WMF parts.
-  - `chart_render.render_chart_image(spec, out)` renders `table` / `bar` / `pie` from payload data at 200 dpi. It returns `INVALID_SPEC`, `RENDER_BACKEND_UNAVAILABLE` (no matplotlib) or `CJK_FONT_UNAVAILABLE` (Chinese labels but no CJK font) instead of writing a garbled image; only `RENDERED` produces a file.
-  - `SKILL.md` was split: this file now holds engine implementation detail and per-version history, while the skill keeps routing, workflow and QA gates (64.7 KB → ~41 KB).
+- `find_images(doc, role=None)` walks every story part (`.//w:p` works for `w:body`, `w:hdr` and `w:ftr` roots) and returns `role`, `evidence`, `owner_part`, `paragraph_index`, `blip_index`, pixel size and caption. Role heuristics use structure first: header/footer → `logo` (or `stamp` when square and predominantly red), small square grayscale body image → `qr`, caption keywords (`示意图`/`流程图`/`二维码`) → `illustration`/`qr`, large body image → `illustration`.
+- `replace_image_by_role()` resolves exactly one match and refuses on ambiguity, because silently replacing the wrong logo is worse than asking.
+- `ocr_engine` probes `rapidocr_onnxruntime` → `paddleocr` → `pytesseract`+`tesseract`, normalises their three different return shapes into text, and returns `OCR_UNAVAILABLE` as a coverage gap when none exists. `audit_image_text()` reports `PLACEHOLDER_TEXT_IN_IMAGE` (medium) for `***`, `XXXX`, `___`, `待填写`, `示例文本`, `此处插入`, and records `VECTOR_IMAGE_OCR_UNSUPPORTED` for SVG/EMF/WMF parts.
+- `chart_render.render_chart_image(spec, out)` renders `table` / `bar` / `pie` from payload data at 200 dpi. It returns `INVALID_SPEC`, `RENDER_BACKEND_UNAVAILABLE` (no matplotlib) or `CJK_FONT_UNAVAILABLE` (Chinese labels but no CJK font) instead of writing a garbled image; only `RENDERED` produces a file.
+- `SKILL.md` was split: this file now holds engine implementation detail and per-version history, while the skill keeps routing, workflow and QA gates (64.7 KB → ~41 KB).

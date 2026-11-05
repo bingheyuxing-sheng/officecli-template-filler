@@ -4,6 +4,8 @@
 - 回复方：主智能体（orchestrator），全部结论以本机源码复现/阅读为证据
 - 日期：2026-11-05
 
+> 本表记录 W3 准入时的审计裁定与修复计划。实际执行清单、依赖顺序与出口条件已固化为 `reports/w3/w3-task-book.md`；当前契约集 4.2.0，全量 450 项。
+
 ## 逐项裁定
 
 | 审计项 | 裁定 | 本机证据 |
@@ -27,16 +29,6 @@
 
 接受审计的 W3 准入判断：**当前不宣布无范围 Alpha**。W0-W2 工程成果保留，进入 W3 修复波。
 
-## W3 修复计划（按依赖排序）
+## W3 修复计划
 
-| # | 项 | 内容 | Owner | 验收 |
-|---|---|---|---|---|
-| 1 | P2-02 | `convert_docx_to_pdf` 用 try/finally 清理 `pdf-src-*`；四条路径测试 | 05 | 成功/失败/超时/复制失败均无残留 |
-| 2 | P2-01 | Excel 状态合并：builtin UNSUPPORTED + 外部 `#NAME?` → 保持 UNVERIFIED 语义，记录 builtin/external/final 三级溯源；mock 测试脱离宿主机 soffice 依赖 | 03+06 | 其环境两项失败测试转绿；无 soffice 环境不回退 |
-| 3 | P1-01 短期 | body 子树结构预扫描：发现包裹段落/表格的 `w:sdt` 时，compatibility 至少降为 L3 并产出 `SDT_BODY_UNSUPPORTED` unsupported_feature + warning（阻断 L1 误报） | 01 | 审计复现脚本输出含披露；正反向测试 |
-| 4 | CP-W2-002 | 定义 body-level SDT 的 location 语法（如 `body.sdt[i].p[j]`）、指纹边界、填充/拒绝策略；Agent 07 审查后实施枚举器扩展 | 05+07→01/03 | 契约冻结 + 端到端槽位可填或显式拒绝 |
-| 5 | P2-04 | soffice 调用加 `-env:UserInstallation` 独立 profile；测试套件加模块级超时与残留 PID 报告 | 04+06 | Linux/LibreOffice 环境完整套件通过 |
-| 6 | P1-02 | SKILL.md GENERATE 默认切 v4 链（spec4→plan→executor→gate），`--data` 标注 Legacy；新增按 SKILL 步骤执行的集成测试 | 05+02+03 | 默认指令不落回 schema 3 |
-| 7 | P2-03 | ZIP 预检配额（entry 数/解压总量/压缩比/单 part 大小），超限结构化拒绝 | 05+06 | 恶意样本测试 |
-| 8 | P3-01/02 | AGENTS.md 入库并入包；README/SKILL/CHANGELOG 补 v4.0-alpha 章节；W2 报告“real-template”措辞更正 | 05 | 文档与版本一致 |
-| 9 | W3-A | 去标识化真实模板语料 + 人工标注基线 | 06 | 真实模板验证报告 |
+九项（P2-02、P2-01、P1-01、CP-W2-002、P2-04、P1-02、P2-03、P3-01/02、W3-A）的 Owner、修改范围、测试要求与验收条件见 `reports/w3/w3-task-book.md` 的任务清单和依赖图。此处不重复维护，避免两份计划漂移。

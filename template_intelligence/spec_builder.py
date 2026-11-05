@@ -498,9 +498,14 @@ def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, An
 
         has_sdt = bool(p_el.xpath(".//w:sdt"))
         has_field = bool(p_el.xpath(".//w:fldSimple | .//w:fldChar | .//w:instrText"))
-        if has_sdt or has_field:
+        # `.sdt[` covers addressable container content; the ancestor test also covers
+        # textbox paragraphs whose stable `txbx_p[i]` location hides the enclosing SDT.
+        inside_sdt = ".sdt[" in location or bool(p_el.xpath("ancestor::w:sdt"))
+        if has_sdt or has_field or inside_sdt:
             # A control/field paragraph is a protected unit. Tokens inside it are not offered
             # as fill targets; the whole paragraph is reported as `control_or_field`.
+            # CP-W2-002: any paragraph discovered inside a `w:sdt` container is protected
+            # as a whole, so no FILLABLE token is ever emitted inside SDT content.
             start = len(text) - len(text.lstrip())
             end = len(text.rstrip())
             if end > start:
@@ -743,6 +748,7 @@ def _build_protected_regions(
     contexts: Sequence[Dict[str, Any]],
     table_contexts: Sequence[Dict[str, Any]],
     slots: Sequence[Dict[str, Any]] = (),
+    sdt_containers: Sequence[Dict[str, Any]] = (),
 ) -> List[Dict[str, Any]]:
     regions: List[Dict[str, Any]] = []
     slot_locations = {slot["location_id"] for slot in slots}
@@ -855,6 +861,18 @@ def _build_protected_regions(
                 "table row 0 carries w:tblHeader (repeats across pages)",
                 severity="warning",
             )
+
+    # CP-W2-002: one blocking region per SDT container with content, addressed by the
+    # container itself (`body.sdt[0]`, `sec[0].header.sdt[0]`, cell form).
+    for container in sdt_containers:
+        location = container.get("location")
+        _add(
+            "sdt",
+            location,
+            "%s: content control (w:sdt) wraps %d paragraph(s) / %d table(s); "
+            "SDT content is read-only while sdt_edit=false"
+            % (location, container["paragraph_count"], container["table_count"]),
+        )
     return regions
 
 
@@ -980,29 +998,74 @@ def _capabilities(images: Sequence[Dict[str, Any]], tables: Sequence[Dict[str, A
 
 
 def _scan_body_sdt(doc) -> Dict[str, Any]:
-    """W3-3 fail-closed pre-scan for direct ``w:sdt`` children of ``<w:body>``.
+    """Fail-closed pre-scan for `w:sdt` containers in every addressable story.
 
-    python-docx does not expose body-level-SDT-wrapped paragraphs through
-    ``doc.paragraphs``, so the normal enumerator cannot see them. Instead of
-    silently reporting such a template as L1/L2 (audit P1-01), the scan caps
-    the compatibility level and discloses every container with content,
-    including its body child index, until CP-W2-002 adds the SDT location
-    grammar. A failed scan is treated like a found container (fail-closed).
+    CP-W2-002: the scan covers body roots, header/footer story roots and table cells
+    (including nested SDTs and tables inside SDT content). Each container is reported
+    with its concrete Contract 01 address (`body.sdt[0]`, `sec[0].header.sdt[0]`,
+    `body.tbl[0].r[0].c[0].sdt[0]`) plus direct paragraph/table counts, so disclosure
+    and protected regions can name a position instead of only a count. Any container
+    with content caps compatibility at L3; a failed scan is treated like a found
+    container (fail-closed). A scan error is never downgraded to a low warning.
     """
     scan: Dict[str, Any] = {"containers": [], "scan_error": None}
     try:
-        body = doc.element.body
-        for child_index, child in enumerate(body):
-            if child.tag != qn("w:sdt"):
-                continue
-            paragraphs = child.findall(".//" + qn("w:p"))
-            tables = child.findall(".//" + qn("w:tbl"))
+        from docx.table import Table
+
+        def _record_container(location: str, content) -> None:
+            paragraphs = content.findall(qn("w:p")) if content is not None else []
+            tables = content.findall(qn("w:tbl")) if content is not None else []
             scan["containers"].append({
-                "body_child_index": child_index,
+                "location": location,
                 "paragraph_count": len(paragraphs),
                 "table_count": len(tables),
                 "has_content": bool(paragraphs or tables),
             })
+
+        def _scan_container(root_el, prefix: str, parent_obj) -> None:
+            for sdt_index, sdt_el in enumerate(root_el.findall(qn("w:sdt"))):
+                location = f"{prefix}sdt[{sdt_index}]"
+                content = sdt_el.find(qn("w:sdtContent"))
+                _record_container(location, content)
+                if content is None:
+                    continue
+                _scan_container(content, location + ".", parent_obj)
+                table_elements = content.findall(qn("w:tbl"))
+                if table_elements:
+                    _scan_tables(
+                        [Table(tbl_el, parent_obj) for tbl_el in table_elements],
+                        location + ".",
+                        parent_obj,
+                    )
+
+        def _scan_tables(tables, prefix: str, parent_obj) -> None:
+            for t_idx, table in enumerate(tables):
+                seen_tcs: set = set()
+                for r_idx, row in enumerate(table.rows):
+                    for c_idx, cell in enumerate(row.cells):
+                        if id(cell._tc) in seen_tcs:
+                            continue
+                        seen_tcs.add(id(cell._tc))
+                        cell_prefix = f"{prefix}tbl[{t_idx}].r[{r_idx}].c[{c_idx}]"
+                        _scan_container(cell._tc, cell_prefix + ".", cell)
+                        if cell.tables:
+                            _scan_tables(cell.tables, cell_prefix + ".", cell)
+
+        _scan_container(doc.element.body, "body.", doc)
+        _scan_tables(doc.tables, "body.", doc)
+        for s_idx, section in enumerate(doc.sections):
+            for hf_name in _HF_NAMES:
+                hf = getattr(section, hf_name, None)
+                if hf is None:
+                    continue
+                try:
+                    if hf.is_linked_to_previous:
+                        continue
+                    _scan_container(hf._element, f"sec[{s_idx}].{hf_name}.", hf)
+                    if hf.tables:
+                        _scan_tables(hf.tables, f"sec[{s_idx}].{hf_name}.", hf)
+                except Exception:
+                    continue
     except Exception as exc:
         scan["scan_error"] = "%s: %s" % (type(exc).__name__, exc)
     return scan
@@ -1017,7 +1080,7 @@ def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
     sdt_with_content = [c for c in sdt_scan["containers"] if c["has_content"]]
     if (sdt_with_content or sdt_scan["scan_error"]) and \
             compatibility.get("compatibility_level") in ("L1", "L2"):
-        # fail-closed: never claim L1/L2 while body-level SDT content exists
+        # fail-closed: never claim L1/L2 while SDT content exists in any story/container
         compatibility = dict(compatibility)
         compatibility["compatibility_level"] = "L3"
         compatibility["recommended_strategy"] = "SEMI_AUTOMATIC_WITH_USER_CONFIRMATION"
@@ -1070,24 +1133,26 @@ def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
             slot["capacity"] = capacity
 
     capacity_profiles = _build_capacity_profiles(candidates, contexts_by_location, printable_width)
-    protected_regions = _build_protected_regions(doc, contexts, table_contexts, slots)
+    protected_regions = _build_protected_regions(
+        doc, contexts, table_contexts, slots, sdt_containers=sdt_with_content
+    )
     layout_constraints = _build_layout_constraints(table_contexts, contexts)
     unsupported_features = _build_unsupported_features(doc, compatibility, contexts)
     for container in sdt_with_content:
         unsupported_features.append({
             "code": "SDT_BODY_UNSUPPORTED",
             "detail": (
-                "body-level w:sdt at body child[%d] wraps %d paragraph(s) / %d table(s); "
-                "the paragraph enumerator cannot address it, so slots inside are undiscoverable "
-                "and sdt_edit stays false until CP-W2-002"
-                % (container["body_child_index"], container["paragraph_count"], container["table_count"])
+                "%s wraps %d paragraph(s) / %d table(s); the content is discovered as "
+                "protected positions and is not fillable while sdt_edit=false"
+                % (container["location"], container["paragraph_count"], container["table_count"])
             ),
+            "location_id": container["location"],
         })
     if sdt_scan["scan_error"]:
         unsupported_features.append({
             "code": "SDT_BODY_SCAN_INCOMPLETE",
             "detail": (
-                "body-level SDT pre-scan failed; compatibility was capped at L3 and filling "
+                "SDT pre-scan failed; compatibility was capped at L3 and filling "
                 "must be confirmed manually (%s)" % sdt_scan["scan_error"]
             ),
         })
@@ -1151,25 +1216,29 @@ def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
         })
     if sdt_with_content:
         warnings.append({
-            "code": "SDT_BODY_ENUMERATION_GAP",
-            "severity": "high",
+            "code": "SDT_BODY_PROTECTED_ONLY",
+            "severity": "medium",
             "detail": (
-                "%d body-level SDT container(s) with content are not enumerated into slots; "
-                "template capped at L3 (CP-W2-002 pending)" % len(sdt_with_content)
+                "%d SDT container(s) with content were discovered as protected positions "
+                "(sdt_edit=false, so they are disclosed but not fillable): %s"
+                % (
+                    len(sdt_with_content),
+                    ", ".join(container["location"] for container in sdt_with_content),
+                )
             ),
         })
     if sdt_scan["scan_error"]:
         warnings.append({
             "code": "SDT_BODY_ENUMERATION_GAP",
             "severity": "high",
-            "detail": "body SDT pre-scan incomplete (fail-closed): %s" % sdt_scan["scan_error"],
+            "detail": "SDT pre-scan incomplete (fail-closed): %s" % sdt_scan["scan_error"],
         })
     empty_sdts = [c for c in sdt_scan["containers"] if not c["has_content"]]
     if empty_sdts:
         warnings.append({
             "code": "SDT_BODY_EMPTY",
             "severity": "low",
-            "detail": "%d empty body-level SDT container(s) observed (no paragraphs/tables inside)" % len(empty_sdts),
+            "detail": "%d empty SDT container(s) observed (no direct paragraphs/tables inside)" % len(empty_sdts),
         })
 
     spec: Dict[str, Any] = {

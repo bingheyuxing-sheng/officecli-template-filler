@@ -1,8 +1,48 @@
 # 变更记录
 
-本文件记录 officecli-template-filler 各版本的变更。`dist/` 下附带对应版本的打包文件，可直接下载后作为 Agent Skill 安装。
+本文件记录 officecli-template-filler 各版本的变更。`dist/` 下保留部分版本的打包归档，可直接下载后作为 Agent Skill 安装（缺失与合并情况见下方说明）。
 
 > 说明：v3.3.1、v3.4.0 与 v3.5.0 的打包文件未随仓库提供；仓库中保留的是这些版本之后的归档。v3.5.6 未单独发包，其内容与 v3.5.7 一同发布。
+
+---
+
+## v4.0.0-dev（未发布开发快照）
+
+> **不是正式发布**：无 Git tag、无 GitHub Release、未 push。软件版本仍以 v3.5.9 引擎为兼容基线；以下内容为 v4.0 增量模块与**契约集 4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。
+
+### Added（新增）
+
+- `template_intelligence/`：DocumentSpec 4.0 生产器、语义校验器、模板指纹；`--spec-version 4` CLI 入口（默认仍为 3.0 兼容输出）。
+- `content_intelligence/`：ContentPlan / FillPlan 生成与校验；事实 `source` 溯源、SSOT 引用、容量冲突 `REJECT`。
+- `document_engine/`：FillPlan 执行器（仅写事务暂存路径）、填充台账（fill ledger）、保护/授权/容量前置拒绝。
+- `qa/`：QAReport 4.0、QA Gate、完整 QA Pipeline、环境能力运行时探测。
+- `contracts/`：五份契约 + CP-W2-001（页眉页脚位置语法，4.1.0）+ CP-W2-002（`sdt` 位置语法与 PROTECTED 发现，4.2.0）；对应 Schema、正反示例、契约测试。
+- 六类**结构化回归 Fixtures**（程序化构造，不是真实业务模板）；W3-9 真实语料登记表已建立，二进制尚未获取。
+- W3 加固：PDF 临时副本清理、Excel 三级状态溯源、SDT fail-closed 披露与 PROTECTED 发现、ZIP 输入配额、soffice 私有 profile。
+
+### Changed（变更）
+
+- `SKILL.md` / `README.md`：GENERATE 文档主链切到 v4 plan chain（`--spec-version 4` → ContentPlan/FillPlan → `--spec/--plan/--content-plan` → QA/门禁）；`--data` 明确标注为 legacy 兼容路径。
+- `analyze_template.py` / `generate_document.py`：增量参数 `--spec-version`、`--spec`、`--plan`、`--content-plan`、`--mode`、`--allow-unverified`；既有默认行为未改变。
+- `logic_qa → workflow` 依赖倒置：底层 QA 规则不再依赖具体工作流实现。
+
+### Fixed（修复）
+
+- G-01/G-02（W0 门禁）：COMMIT 与 UNVERIFIED 的矛盾、QA 策略来源可伪造。
+- W2 执行层四个缺陷：合并单元格列索引、嵌套表格目标、图片替换残留占位文本、授权图片缩放误报。
+- W3 审计修复：P1-01（SDT 静默漏检）、P1-02（默认 GENERATE 走 v3 文档）、P2-01（Excel 渲染器错误覆盖 builtin 状态）、P2-02（PDF 源文件副本残留）、P2-03（ZIP 资源限制缺失）；P2-04 已实施 profile 隔离，最终关闭待审计环境复验。
+
+### Known limitations（已知限制）
+
+- 不宣布 Alpha：W3-9 真实语料尚未获取/脱敏/人工标注；真实与合成指标必须分开报告。
+- **不支持 SDT 内填充**：`sdt_edit=false`；SDT 内容只作为 PROTECTED 位置被发现和拒绝。
+- 本机环境：WPS PDF 后端可用；PyMuPDF、matplotlib、OCR 缺失，相关检查如实 `UNVERIFIED`。
+- P2-01/P2-04 的最终关闭条件依赖审计方 Linux/LibreOffice 环境复跑。
+
+### Tests
+
+- 当前全量：**450 项通过**（186 v3.5.9 基线 + 70 契约 + 141 W1/W2 + 53 W3）；无既有测试删除或弱化。
+- Python 3.15；命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`。
 
 ---
 
