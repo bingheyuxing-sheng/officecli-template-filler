@@ -16,15 +16,20 @@ Usage:
     with tx:                      # runs preflight, aborts on exception
         doc.save(tx.stage())      # write to the staged path
         tx.record_qa(qa_report)   # QA against tx.temp_path
+        tx.record_gate(qa_report) # QAReport 4.0 second gate (optional, additive)
         tx.commit()               # atomic replace into tx.output_path
 
 `commit()` raises `TransactionAborted` when QA failed; the staged artifacts are
-already removed at that point, and `tx.record()` explains why.
+already removed at that point, and `tx.record()` explains why. When a gate was
+recorded, `commit()` additionally refuses a report that does not authorize a
+commit (`QA_GATE_REJECTED`) or that no longer describes the staged bytes
+(`QA_REPORT_STALE`).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import uuid
 from typing import Any, Dict, Iterable, Optional, Tuple
@@ -71,6 +76,25 @@ def _sha256(path: str) -> Optional[str]:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _string_list(report: Any, key: str) -> list:
+    if not isinstance(report, dict):
+        return []
+    value = report.get(key)
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _canonical_sha256(payload: Any) -> str:
+    """Stable hash of a JSON report: key order and spacing cannot change the digest."""
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _iter_issues(report: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
@@ -133,10 +157,12 @@ class DocumentTransaction:
         output_path: Optional[str],
         *,
         task_mode: str = "",
+        task_id: Optional[str] = None,
     ) -> None:
         self.source_path = os.path.abspath(source_path) if source_path else None
         self.output_path = os.path.abspath(output_path) if output_path else None
         self.task_mode = task_mode
+        self.task_id = task_id
         self.transaction_id = uuid.uuid4().hex
 
         out_dir = (
@@ -159,6 +185,8 @@ class DocumentTransaction:
         self.commit_skipped_reason: Optional[str] = None
         self.lock_info: Optional[Dict[str, Any]] = None
 
+        self._gate: Optional[Dict[str, Any]] = None
+        self._gate_eligible = False
         self._preflighted = False
         self._finished = False
 
@@ -267,6 +295,75 @@ class DocumentTransaction:
             self.qa_report_path = qa_report_path
         return self.qa_status
 
+    def record_gate(
+        self,
+        report: Dict[str, Any],
+        *,
+        expected_task_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Bind a QAReport 4.0 to this transaction (second, transaction-level gate).
+
+        ``commit()`` refuses to publish unless a recorded QAReport passes
+        :func:`qa.gate.assert_commit_eligible` — the same contract validator the
+        executor uses, not a second rule set — and still describes the staged
+        bytes that are about to be published.
+
+        ``expected_task_id`` defaults to the transaction's own ``task_id``. When
+        both the expected id and the report's ``task_id`` are present and differ,
+        the binding is invalid and the transaction is aborted with
+        ``TransactionAborted("QA_TASK_BINDING_MISMATCH")`` (a commit can no
+        longer follow, so the abort exception is the coherent one).
+
+        A report that is not a valid QAReport 4.0 is aborted immediately with
+        ``TransactionAborted("QA_GATE_REJECTED")``. A valid report that merely
+        discloses ineligibility is *recorded*; ``commit()`` then refuses with
+        ``QA_GATE_REJECTED``, so the refusal happens at the publication point.
+        """
+        # Lazy import: qa/ is optional for the v3.5 transaction layer and
+        # importing it here would create an engine -> qa -> engine cycle.
+        from qa.gate import QAGateError, assert_commit_eligible, validate_qa_report
+
+        bound_task_id = expected_task_id if expected_task_id is not None else self.task_id
+        report_task_id = report.get("task_id") if isinstance(report, dict) else None
+
+        gate: Dict[str, Any] = {
+            "recorded": True,
+            "staged_sha256": _sha256(self.temp_path),
+            "qa_report_sha256": _canonical_sha256(report),
+            "policy_source": report.get("policy_source") if isinstance(report, dict) else None,
+            "required_checks": _string_list(report, "required_checks"),
+            "missing_checks": _string_list(report, "missing_checks"),
+            "task_id": bound_task_id if bound_task_id is not None else report_task_id,
+        }
+        self._gate = gate
+        self._gate_eligible = False
+
+        if (
+            bound_task_id is not None
+            and report_task_id is not None
+            and str(report_task_id) != str(bound_task_id)
+        ):
+            gate["binding_error"] = "report task_id %r != transaction task_id %r" % (
+                report_task_id,
+                bound_task_id,
+            )
+            self.abort("QA_TASK_BINDING_MISMATCH")
+            raise TransactionAborted("QA_TASK_BINDING_MISMATCH", self.record())
+
+        try:
+            assert_commit_eligible(report)
+        except QAGateError as exc:
+            validation = validate_qa_report(report)
+            gate["validation_errors"] = list(validation["errors"])
+            if not validation["passed"]:
+                self.abort("QA_GATE_REJECTED")
+                raise TransactionAborted("QA_GATE_REJECTED", self.record()) from exc
+            # Valid report that does not authorize a commit: commit() refuses.
+            return dict(gate, eligible=False)
+
+        self._gate_eligible = True
+        return dict(gate, eligible=True)
+
     def commit(self) -> Dict[str, Any]:
         """Publish the staged file to the final path, or abort when QA did not pass."""
         if self._finished:
@@ -280,6 +377,18 @@ class DocumentTransaction:
         if self.qa_status == QA_FAILED:
             self.abort("QA_FAILED")
             raise TransactionAborted("QA_FAILED", self.record())
+
+        # Second gate: a recorded QAReport must authorize the commit and must
+        # still describe the bytes currently staged. Transactions that never
+        # call record_gate keep the v3.5 behaviour byte-identically.
+        if self._gate is not None:
+            if not self._gate_eligible:
+                self.abort("QA_GATE_REJECTED")
+                raise TransactionAborted("QA_GATE_REJECTED", self.record())
+            current_staged_sha256 = _sha256(self.temp_path)
+            if current_staged_sha256 != self._gate.get("staged_sha256"):
+                self.abort("QA_REPORT_STALE")
+                raise TransactionAborted("QA_REPORT_STALE", self.record())
 
         if self.output_path is None:
             self._remove_staged()
@@ -348,10 +457,12 @@ class DocumentTransaction:
         return {
             "transaction_id": self.transaction_id,
             "task_mode": self.task_mode,
+            "task_id": self.task_id,
             "source": self.source_path,
             "output": self.output_path,
             "preflight": self.preflight_report,
             "qa_status": self.qa_status,
+            "gate": self._gate_record(),
             "committed": self.committed,
             "commit_skipped_reason": self.commit_skipped_reason,
             "abort_reason": self.abort_reason,
@@ -361,3 +472,16 @@ class DocumentTransaction:
             "input_sha256": self.input_sha256,
             "output_sha256": self.output_sha256,
         }
+
+    def _gate_record(self) -> Dict[str, Any]:
+        if self._gate is None:
+            return {
+                "recorded": False,
+                "staged_sha256": None,
+                "qa_report_sha256": None,
+                "policy_source": None,
+                "required_checks": [],
+                "missing_checks": [],
+                "task_id": self.task_id,
+            }
+        return dict(self._gate)

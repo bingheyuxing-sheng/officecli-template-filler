@@ -3,7 +3,7 @@
 """
 CLI entrypoint: Analyze template placeholders, cell capacities, and 4-tier confirmation items.
 Usage:
-    python scripts/analyze_template.py <template.docx> [--out analysis.json]
+    python scripts/analyze_template.py <template.docx> [--out analysis.json] [--spec-version 4]
 """
 
 from __future__ import annotations
@@ -27,11 +27,33 @@ def main() -> int:
     parser.add_argument("template", nargs="?", default="", help="Path to reference .docx template")
     parser.add_argument("--input", dest="input_path", default="", help="Alias for the positional template path")
     parser.add_argument("--out", "--output", dest="out", default="", help="Optional output JSON path")
+    parser.add_argument(
+        "--spec-version",
+        dest="spec_version",
+        type=int,
+        choices=(3, 4),
+        default=3,
+        help="DocumentSpec version to emit: 3 (legacy CLI summary, default) or 4 (DocumentSpec 4.0)",
+    )
     args = parser.parse_args()
 
     template_path = args.input_path or args.template
     if not template_path:
         parser.error("a template path is required (positional or --input)")
+
+    if args.spec_version == 4:
+        from template_intelligence import build_document_spec_from_path
+
+        payload = build_document_spec_from_path(template_path)
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        if args.out:
+            os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+            with open(args.out, "w", encoding="utf-8") as f:
+                f.write(text)
+            print(f"Saved template analysis to: {args.out}")
+        else:
+            print(text)
+        return 0
 
     doc = docx.Document(template_path)
     spec = extract_document_spec(doc, file_path=template_path)
@@ -45,14 +67,14 @@ def main() -> int:
         "table_profiles": spec["table_profiles"],
         "image_profiles": spec["image_profiles"],
     }
-    payload = json.dumps(summary, ensure_ascii=False, indent=2)
+    payload_text = json.dumps(summary, ensure_ascii=False, indent=2)
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as f:
-            f.write(payload)
+            f.write(payload_text)
         print(f"Saved template analysis to: {args.out}")
     else:
-        print(payload)
+        print(payload_text)
     return 0
 
 
