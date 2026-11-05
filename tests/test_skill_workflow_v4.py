@@ -128,7 +128,8 @@ class SkillWorkflowV4Tests(unittest.TestCase):
         self.assertIn("transaction", payload)
         self.assertIn("qa_status", payload["data"])
         self.assertIsNotNone(payload["data"]["plan_validation"])
-        self.assertTrue(payload["data"]["ledger"]["operations"], "fill ledger must record operations")
+        self.assertGreater(payload["data"]["ledger"]["record_count"], 0, "fill ledger must record operations")
+        self.assertTrue(payload["data"]["ledger"]["records"])
         self.assertNotIn("replaced_occurrences", payload)
 
         written = docx.Document(str(output))
