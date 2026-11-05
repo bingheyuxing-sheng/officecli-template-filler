@@ -394,6 +394,12 @@ def recalculate_and_verify_excel_formulas(
                         formula_status[key] = "UNSUPPORTED"
 
     wb.close()
+    # W3-2: keep the builtin verdict separate from the external recalculation so a
+    # renderer limitation (e.g. LibreOffice without XLOOKUP -> #NAME?) can never be
+    # rewritten into a formula ERROR. Provenance is {builtin, external, final}.
+    builtin_status: Dict[str, str] = dict(formula_status)
+    external_status: Dict[str, str] = {}
+    external_error_value: Dict[str, str] = {}
 
     soffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
     engine_used = "builtin_decimal_evaluator"
@@ -412,18 +418,48 @@ def recalculate_and_verify_excel_formulas(
                 for s_name, coordinate in formula_coordinates:
                     key = f"{s_name}!{coordinate}"
                     if s_name not in wb_val.sheetnames:
-                        formula_status[key] = "NOT_RECALCULATED"
+                        external_status[key] = "NOT_RECALCULATED"
                         continue
                     value = wb_val[s_name][coordinate].value
                     if isinstance(value, str) and any(tok in value for tok in EXCEL_ERROR_TOKENS):
-                        formula_errors.append(f"LIBREOFFICE_EVAL_ERROR {key}: {value}")
-                        formula_status[key] = "FAILED"
+                        external_status[key] = "FAILED"
+                        external_error_value[key] = value
                     elif value is None:
                         # LibreOffice produced no cached value: unverified, not "fine".
-                        formula_status[key] = "NOT_RECALCULATED"
+                        external_status[key] = "NOT_RECALCULATED"
                     else:
-                        formula_status[key] = "VERIFIED"
+                        external_status[key] = "VERIFIED"
                 wb_val.close()
+
+    formula_provenance: Dict[str, Dict[str, Optional[str]]] = {}
+    for key, b_status in builtin_status.items():
+        e_status = external_status.get(key)
+        if b_status == "VERIFIED":
+            final = "VERIFIED"
+        elif b_status == "FAILED":
+            final = "FAILED"
+        elif e_status == "VERIFIED":
+            final = "VERIFIED_EXTERNAL"
+        elif e_status == "NOT_RECALCULATED":
+            final = "NOT_RECALCULATED"
+        else:
+            # builtin UNSUPPORTED with an external error value (#NAME?) or with no
+            # external verdict at all: still unverified, never FAILED.
+            final = "UNSUPPORTED"
+        formula_status[key] = final
+        formula_provenance[key] = {
+            "builtin_status": b_status,
+            "external_status": e_status,
+            "final_status": final,
+        }
+    # Only a genuinely failed formula (per the merged verdict) may surface as a
+    # blocking error; a renderer that cannot evaluate an unsupported function stays
+    # in the unverified bucket.
+    for key, e_status in external_status.items():
+        if e_status == "FAILED" and formula_status[key] == "FAILED":
+            formula_errors.append(
+                f"LIBREOFFICE_EVAL_ERROR {key}: {external_error_value.get(key, 'cached error value')}"
+            )
 
     status_counts: Dict[str, int] = {}
     for status in formula_status.values():
@@ -439,6 +475,7 @@ def recalculate_and_verify_excel_formulas(
         "formula_errors": formula_errors,
         "unsupported_formulas": unsupported_formulas,
         "formula_status": formula_status,
+        "formula_provenance": formula_provenance,
         "status_counts": status_counts,
         "unverified_count": unverified_count,
         "coverage_gaps": ["FORMULAS_UNVERIFIED"] if unverified_count else [],
