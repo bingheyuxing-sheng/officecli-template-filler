@@ -2,17 +2,18 @@
 
 - 日期：2026-11-05
 - 产物：`dist/officecli-template-filler-v4.0.0-dev-w3.zip`
-- 来源：`git archive HEAD`（commit `b74f059`，含 W3-8 文档同步）
+- 来源：`git archive HEAD`（commit `4406083`，含 W3-8 文档同步与全量 Markdown 清理）
 - 性质：**开发快照，不是正式发布**；无 tag、无 Release、未 push
-- 注意：本清单记录 commit `b74f059` 的包。之后的文档清理未重新打包，包内文档与当前工作树可能存在措辞差异；本任务明确不重建包。
+- 版本关系：本包取代 `b74f059` 构建的旧包（旧 SHA-256 `8266d550…`）；旧包不再作为当前交付物
+- 自引用处理：本清单文件不进入包内（`:(exclude)reports/w3/08-package-manifest.md`），否则清单记录自身哈希会形成循环依赖
 
 ## 校验值
 
 | 项 | 值 |
 |---|---|
-| 大小 | 879,896 字节 |
-| SHA-256 | `8266d5509eae5be38563fa2b5f3127a1a44945bd40a5f6755ba581424bbd643b` |
-| 条目数 | 234 |
+| 大小 | 886,363 字节 |
+| SHA-256 | `f12b90f4f6e8963803484b2682ec22219b00f5551b2e1aeb971a7fe7b1eb93f9` |
+| 条目数 | 235 |
 | 前缀 | `officecli-template-filler/` |
 
 ## 内容核对
@@ -29,7 +30,7 @@
 py -3.15 -m unittest discover -s tests -p "test_*.py"
 ```
 
-结果：**450 tests, OK，167.078s**；`AGENTS.md` 存在，包内无 `dist/`。
+结果：**450 tests, OK，180.058s**；`AGENTS.md` 存在，包内无 `dist/`。
 
 ## 已知限制（与包一同声明）
 
