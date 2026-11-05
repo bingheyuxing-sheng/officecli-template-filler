@@ -250,6 +250,26 @@
       "owner": "AGENT04",
       "message_template": "Dangling relationship {detail}",
       "introduced_in": "3.5.9"
+    },
+    {
+      "code": "PACKAGE_LIMIT_EXCEEDED",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT05",
+      "message_template": "Input package exceeds pre-parse quota: {violations}",
+      "introduced_in": "4.1.0"
+    },
+    {
+      "code": "PACKAGE_NOT_READABLE",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT05",
+      "message_template": "Input package is not a readable ZIP container: {detail}",
+      "introduced_in": "4.1.0"
     }
   ]
 }

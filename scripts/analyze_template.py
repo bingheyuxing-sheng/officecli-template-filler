@@ -19,6 +19,15 @@ if ROOT_DIR not in sys.path:
 
 import docx
 from engine import extract_document_spec, install_auto_cleanup
+from engine.package_guard import check_package, load_limits
+
+
+def _quota_reject(path: str) -> "str | None":
+    """W3-7: refuse oversized/hostile containers before any parser runs."""
+    verdict = check_package(path, load_limits())
+    if verdict["ok"]:
+        return None
+    return json.dumps({"error": verdict["code"], "package_guard": verdict}, ensure_ascii=False)
 
 
 def main() -> int:
@@ -40,6 +49,11 @@ def main() -> int:
     template_path = args.input_path or args.template
     if not template_path:
         parser.error("a template path is required (positional or --input)")
+
+    rejected = _quota_reject(template_path)
+    if rejected:
+        print(rejected)
+        return 2
 
     if args.spec_version == 4:
         from template_intelligence import build_document_spec_from_path

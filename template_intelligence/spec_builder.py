@@ -1263,6 +1263,15 @@ def _error_spec(file_path: str, exc: Exception) -> Dict[str, Any]:
 
 def build_document_spec_from_path(path: str) -> Dict[str, Any]:
     """Build DocumentSpec 4.0 from a `.docx` path, returning an error spec when unreadable."""
+    from engine.package_guard import check_package, load_limits
+
+    verdict = check_package(path, load_limits())
+    if not verdict["ok"]:
+        # W3-7: hostile/oversized packages are rejected BEFORE any parser touches them.
+        return _error_spec(
+            path,
+            RuntimeError("%s: %s" % (verdict["code"], str(verdict["violations"])[:300])),
+        )
     try:
         document = docx.Document(path)
     except Exception as exc:  # corrupt zip, missing file, not a Word package

@@ -69,6 +69,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # W3-7: pre-parse quota for the user template before openpyxl reads it.
+    from engine.package_guard import check_package, load_limits
+
+    verdict = check_package(args.template, load_limits())
+    if not verdict["ok"]:
+        print(json.dumps({"output": args.out, "error": verdict["code"],
+                          "package_guard": verdict}, ensure_ascii=False))
+        return 2
+
     with open(args.data, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
     replacements = _replacement_map(payload)

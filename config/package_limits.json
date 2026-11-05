@@ -1,0 +1,13 @@
+{
+  "schema_version": "4.0",
+  "description": "W3-7 pre-parse resource quotas for untrusted Office ZIP inputs (audit P2-03). Values here override engine/package_guard.py defaults; unknown keys are ignored.",
+  "limits": {
+    "max_input_bytes": 67108864,
+    "max_entries": 4096,
+    "max_entry_bytes": 67108864,
+    "max_total_uncompressed_bytes": 268435456,
+    "max_compression_ratio": 200,
+    "ratio_min_entry_bytes": 1048576,
+    "max_total_image_pixels": 200000000
+  }
+}
