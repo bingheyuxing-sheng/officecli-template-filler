@@ -1,7 +1,7 @@
 # Contract 02 — DocumentSpec 4.0
 
 - Contract version: **1.2.0**
-- Status: **FROZEN at 4.1.0; CP-W2-002 extension (4.2.0) frozen pending Agent 07 post-implementation review**
+- Status: **FROZEN (4.2.0, 2026-11-05; CP-W2-001 + CP-W2-002)**
 - Owner: Agent 01 (Template Intelligence)
 - Consumers: Agent 02 (ContentPlan), Agent 03 (FillPlan executor), Agent 04 (Fidelity QA)
 - Schema: `schemas/document_spec-4.0.schema.json` (draft 2020-12)
@@ -132,12 +132,14 @@ Capacity is **evidence**, not an authority. A slot may be rejected for capacity 
 
 ### 7.2 SDT discovery (CP-W2-002)
 
-1. Every paragraph discovered inside a `w:sdt` container (body, header/footer story,
+1. Every paragraph with non-whitespace text discovered inside a `w:sdt` container (body, header/footer story,
    table cell, or nested container; see Contract 01 §3.1) MUST be reported as a slot
    with `candidate_type: control_or_field`, `protection_status: PROTECTED` and
    `confirmation_tier: PROTECTED_DO_NOT_TOUCH`. The whole trimmed paragraph is the
    protected unit; no `explicit_token`, `red_run_clue` or `internal_fact` slot may be
-   emitted inside SDT content.
+   emitted inside SDT content. Empty or whitespace-only SDT paragraphs remain in
+   `structure.paragraphs` (so the container is visible) but do not produce a slot:
+   there is no protected text to name.
 2. The same rule applies to paragraphs whose stable location hides the enclosing
    control (textbox paragraphs keep `txbx_p[i]` inside an SDT): they are still inside
    an SDT and MUST be `PROTECTED`.
@@ -168,6 +170,10 @@ Regions are absolute: an operation targeting a protected region MUST be rejected
    and the direct paragraph/table counts inside it.
 3. Because region matching is prefix-based, the container region covers every slot
    discovered deeper inside it, including table-cell and nested-container paths.
+   Exception: a textbox paragraph keeps its stable `txbx_p[i]` location, which is not
+   a prefix extension of the SDT container; it is protected by the slot rule in §7.2.2
+   (PROTECTED status), not by the container region. This exception is deliberate:
+   re-addressing textboxes would change existing `slot_id` values.
 4. Empty SDT containers are disclosed by analysis warnings but do not produce a
    region (there is no content to protect).
 

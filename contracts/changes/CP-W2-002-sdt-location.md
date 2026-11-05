@@ -64,7 +64,7 @@ Filling SDT content (in-place `w:sdtContent` text replacement with format inheri
 | `contracts/01-slot-id.md` §3 | element set adds `sdt`; indexing rules; story coverage incl. header/footer; **and the "MUST match the v3.5.9 iterator" sentence is revised to "MUST match the v4 iterator, which is a superset of the v3.5.9 story set" (gate amendment B4)** | additive |
 | `contracts/02-document-spec.md` §7/§8 | SDT discovery semantics (rules above) | additive |
 | `schemas/document_spec-4.0.schema.json`, `schemas/fill_plan-4.0.schema.json` | **no edit required**: the location patterns already accept any `[a-z_]+` element name (gate review fact-check; the earlier "pattern adds sdt" claim was wrong) | none |
-| `template_intelligence/slot_id.py`, `tests/contracts/helpers.py` | `LOCATION_RE` widened to name `sdt` explicitly (code-side grammar is stricter than the schema today) | additive |
+| `template_intelligence/slot_id.py`, `tests/contracts/helpers.py` | **no code edit required** (post-review fact-check): `LOCATION_RE` already matches any `[a-z_]+` element, so `sdt` was accepted before this CP; only the contract prose was missing it | none |
 | `engine/ooxml_utils.py` | iterators expose body/cell/header-level SDT content with new locations; direct-children-only, no txbxContent descent (B3) | **frozen primitive** — full regression + 07 review |
 | `engine/docx_parser.py` | `assess_template_compatibility_level` sees sdt paragraphs via same iterator (no code change expected; verify) | verify |
 | `template_intelligence/spec_builder.py` | discovery as control_or_field/PROTECTED; regions kind=sdt; W3-3 rewording with B1 split | change |
@@ -95,7 +95,8 @@ Filling SDT content (in-place `w:sdtContent` text replacement with format inheri
 |---|---|
 | Agent 05 (author) | proposed; gate amendments B1-B4 + schema fact-check folded in (revision 2) |
 | Agent 07 (independent gate, proposal) | **CONDITIONAL_PASS** (`reports/w3/07-cp-w2-002-gate-review.md`): implementation may start once B1-B4 are folded into this text (done in revision 2); implementation completion requires a second 07 review |
-| Implementation (W3-4B) | unblocked (proposal gate satisfied); gated again by 07 post-implementation review before 4.2.0 freeze |
+| Agent 07 (post-implementation) | **PASS** (`reports/w3/07-cp-w2-002-post-review.md`): three text corrections (§7.2.1 empty paragraphs, §8.1.3 textbox exception, §4 LOCATION_RE fact-check) verified closed; 4.2.0 may be frozen |
+| Implementation (W3-4B) | **FROZEN 4.2.0 (2026-11-05)** by Agent 05; commit `5417f8a` + freeze text commit |
 
 ## 8. Revision log
 
@@ -103,3 +104,4 @@ Filling SDT content (in-place `w:sdtContent` text replacement with format inheri
 |---|---|
 | 1 | Initial proposal (commit `143cb74`) |
 | 2 | Gate review folded: B1 warning-rename split; B2 header/footer story coverage; B3 direct-children-only, no txbxContent descent; B4 Contract 01 iterator sentence revision; §4 corrected — schema location regexes already generic, no schema edit needed |
+| 3 | Post-implementation review folded: §7.2.1 non-whitespace-only paragraphs; §8.1.3 textbox exception; §4 LOCATION_RE no-code-change fact-check; frozen 4.2.0 |
