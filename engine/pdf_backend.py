@@ -145,19 +145,28 @@ def convert_docx_to_pdf(
 
     os.makedirs(out_dir, exist_ok=True)
     # Convert a private copy: a preview process can hold the original path locked.
+    # The copy holds the FULL source document, so every return path (success, WPS
+    # failure, LibreOffice failure, timeout, unknown backend) must remove it: a
+    # leftover copy inside the output directory can be synced, packaged or
+    # delivered and would extend the document's lifetime beyond the task (W3-1).
     source_dir = tempfile.mkdtemp(prefix="pdf-src-", dir=out_dir)
-    source = os.path.join(source_dir, os.path.basename(docx_path))
     try:
-        shutil.copy2(docx_path, source)
-    except OSError as exc:
-        return None, f"SOURCE_COPY_FAILED: {exc}", name
-    pdf_path = os.path.join(out_dir, os.path.splitext(os.path.basename(docx_path))[0] + ".pdf")
+        source = os.path.join(source_dir, os.path.basename(docx_path))
+        try:
+            shutil.copy2(docx_path, source)
+        except OSError as exc:
+            return None, f"SOURCE_COPY_FAILED: {exc}", name
+        pdf_path = os.path.join(out_dir, os.path.splitext(os.path.basename(docx_path))[0] + ".pdf")
 
-    if name == _BACKEND_WPS:
-        return (*_convert_with_wps(executable, source, pdf_path), name)
-    if name == _BACKEND_LIBREOFFICE:
-        return (*_convert_with_libreoffice(executable, source, out_dir, pdf_path), name)
-    return None, f"UNKNOWN_PDF_BACKEND: {name}", name
+        if name == _BACKEND_WPS:
+            return (*_convert_with_wps(executable, source, pdf_path), name)
+        if name == _BACKEND_LIBREOFFICE:
+            return (*_convert_with_libreoffice(executable, source, out_dir, pdf_path), name)
+        return None, f"UNKNOWN_PDF_BACKEND: {name}", name
+    finally:
+        # ignore_errors keeps cleanup failures from masking the conversion result;
+        # the conversion (or its exception) is always what the caller observes.
+        shutil.rmtree(source_dir, ignore_errors=True)
 
 
 def pdf_page_count(pdf_path: str, backend: Optional[Dict[str, Any]] = None) -> Tuple[Optional[int], Optional[str], Optional[str]]:
