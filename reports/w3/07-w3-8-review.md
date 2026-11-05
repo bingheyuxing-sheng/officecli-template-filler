@@ -1,7 +1,9 @@
 # W3-8 抽查复审：文档措辞更正（Agent 07）
 
 **结论：PASS（本次措辞抽查通过，无阻断项）。**
-**可接受性**：W3-8 的文档/措辞部分可接受；但 task book W3-8 ⑤「重新打包 zip 并核对包内清单」（`reports/w3/w3-task-book.md:103,105`）尚未完成，故 W3-8 整行与 W3 出口条件 6（同书 `:137`）不能凭本次审查宣称完成。
+**可接受性**：W3-8 的文档/措辞部分可接受；但 task book W3-8 ⑤「重新打包 zip 并核对包内清单」（`reports/w3/w3-task-book.md:103,105`）当时尚未完成，故 W3-8 整行与 W3 出口条件 6（同书 `:137`）不能凭本次审查宣称完成。
+
+> 后续状态：`reports/w3/08-package-manifest.md` 已记录 `v4.0.0-dev-w3` 包（commit `b74f059`，450 tests OK，含 AGENTS.md 且无 `dist/`）。W3-8 ⑤ 的完成以该清单为准。
 
 ## 逐项证据
 
@@ -15,5 +17,5 @@
 
 ## 非阻断问题
 
-- `dist/officecli-template-filler-v4.0.0-dev.zip` 仍为 `aa6e44d` 的 W0–W2 旧包（397 项、无 AGENTS.md、无 CP-W2-002），重打包待做。
+- `dist/officecli-template-filler-v4.0.0-dev.zip` 当时仍为 `aa6e44d` 的 W0–W2 旧包（397 项、无 AGENTS.md、无 CP-W2-002）；后续已由 `v4.0.0-dev-w3.zip` 补充，旧包保留为历史归档。
 - `d:\docs\AGENTS.md` 工作区副本仍写 `4.0.0`/W2；建议同步或声明仓内副本为权威，否则 W2-I4 的关闭依据需注明为"仓内副本"。

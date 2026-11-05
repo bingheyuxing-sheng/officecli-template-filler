@@ -23,7 +23,7 @@ It MUST NOT contain generated business content. It describes the template only.
 | Consumer (FillPlan executor) | MUST validate every `target.location_id` against `slots[].location_id` |
 | Consumer (Fidelity QA) | MUST treat `fingerprint_ref` + `slots[]` as the only authorized-change mask |
 
-**Open issue OI-01**: `scripts/analyze_template.py` currently emits a reduced summary and cannot produce 4.0. W0 validates the actual output against the legacy CLI schema; the 4.0 producer is a W1 deliverable and an alpha entry condition. The 4.0 schema is **not** relaxed to accommodate this.
+**OI-01 (closed in W1)**: at W0, `scripts/analyze_template.py` emitted only a reduced summary. W1 added `--spec-version 4`, which emits a schema-valid DocumentSpec 4.0; the default CLI output remains 3.0 and validates against the legacy CLI schema. The 4.0 schema was **not** relaxed. Evidence: `reports/w1/w1-acceptance.md`.
 
 ## 3. Top-level object
 

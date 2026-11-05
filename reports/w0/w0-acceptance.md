@@ -6,6 +6,8 @@
 - Inputs: `reports/w0/05-contract-freeze-report.md`, `reports/w0/07-gate-review.md`, `reports/w0/issues.md`
 - Decision: **W0 COMPLETE — CONTRACTS FROZEN (4.0.0)**
 
+> Historical W0 acceptance record. Current contract set is **4.2.0**; the full 450-test suite covers later weeks. OI-01/OI-03/OI-05 status is maintained in `reports/w0/issues.md`.
+
 ## 1. Entry-rule checklist
 
 | # | Entry rule | Verdict | Evidence |
@@ -75,16 +77,7 @@ Environment: Python 3.15.0; `jsonschema 4.26.0`; `python-docx`, `openpyxl`, `lxm
 
 ## 5. Open issue register (summary)
 
-| ID | Issue | Blocks W0? | Blocks alpha? | Owner | Target |
-|---|---|---|---|---|---|
-| OI-01 | `analyze_template.py` cannot emit DocumentSpec 4.0 | No | **Yes** | Agent 01 | W1 |
-| OI-02 | No PyMuPDF / matplotlib / OCR on this machine | No | No (must stay UNVERIFIED) | Agent 04 | W2 |
-| OI-03 | No runtime validators / gate wiring | No | No (required before beta) | Agents 01–04 | W1/W2 |
-| OI-04 | Legacy CLIs do not emit ToolEnvelope | No | No | Agent 05 | Beta |
-| OI-05 | `logic_qa → workflow → qa_engine` inversion | No | No | Agents 04–05 | W1 |
-| OI-06 | FillPlan `policy` vs `mode` naming overlap | No | No | Agent 03 | Beta |
-
-Full detail: `reports/w0/issues.md`.
+At W0 the register carried OI-01 through OI-06. `reports/w0/issues.md` is the maintained source of status: OI-01, OI-03 and OI-05 are now closed; OI-02 remains an environment fact; OI-04 and OI-06 remain beta items.
 
 ## 6. Alpha entry conditions (next gate)
 

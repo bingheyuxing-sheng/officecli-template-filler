@@ -2,11 +2,10 @@
 
 - 任务：W3-4B（Agent 01 + Agent 03 角色实施）
 - 提案：`contracts/changes/CP-W2-002-sdt-location.md`（rev 2，已折入 Agent 07 门禁修正 B1–B4）
-- 契约集版本：4.2.0 **候选**（`contracts/01-slot-id.md` 1.2.0、`contracts/02-document-spec.md` 1.2.0）
-- 冻结状态：**未冻结**。CP §7 要求实现完成后由 Agent 07 复审；本报告不构成冻结证据。
+- 契约集版本：4.2.0（实施时为候选；07 实施后复审 PASS 后正式冻结）
+- 冻结状态：**已冻结**（`reports/w3/07-cp-w2-002-post-review.md`、`reports/w3/04b-manifest.md`）。本报告是实施记录，本身不构成冻结证据。
 - 日期：2026-11-05
 - 环境：Windows / PowerShell 7 / `py -3.15`（Python 3.15.0）/ python-docx 1.2.0 / `unittest`
-- 工作目录：`d:\docs\officecli-template-filler`
 
 ## 1. 目标与非目标
 
@@ -120,7 +119,7 @@ body.sdt[0].tbl[0].r[0].c[0].tbl[0]           scope=nested_table  depth=1
 | 2 | `py -3.15 -m unittest discover -s tests -p "test_sdt_detection.py"` | **Ran 7 tests, OK**（1.999s） |
 | 3 | `py -3.15 -m unittest discover -s tests -p "test_spec_builder.py"` | **Ran 25 tests, OK**（8.118s） |
 | 4 | `py -3.15 -m unittest discover -s tests/contracts -t tests` | **Ran 70 tests, OK**（1.254s） |
-| 5 | `py -3.15 -m unittest discover -s tests -p "test_*.py"` | **Ran 447 tests, OK**（159.545s；含 0 fail / 0 error / 0 skip） |
+| 5 | `py -3.15 -m unittest discover -s tests -p "test_*.py"` | **Ran 447 tests, OK**（实施时；159.545s；0 fail / 0 error / 0 skip） |
 
 `test_sdt_discovery.py` 覆盖：body/多段、header、even_page_footer、cell、嵌套、SDT 内表格、
 locked+plain、内联 SDT 非容器、非 SDT 地址回归不变、textbox 地址与 slot id 不变、两轮一致、
@@ -147,7 +146,7 @@ locked+plain、内联 SDT 非容器、非 SDT 地址回归不变、textbox 地�
 
 ## 7. 已知限制与风险
 
-1. 4.2.0 **未冻结**；必须完成 Agent 07 实施后复审（任务书 W3-4 行）。
+1. 4.2.0 已冻结（07 实施后复审 PASS）；实施当时处于未冻结候选状态。
 2. 不提供 SDT 填充能力；`sdt_edit=false`。锁定、`w:dataBinding`、sdtContent 内多 run 等
    填充问题仍在 W4 提案范围。
 3. textbox 段落的容器级 `kind:"sdt"` 区域不会以 `body.sdt[…]` 前缀覆盖 `body.txbx_p[i]`；
@@ -156,4 +155,4 @@ locked+plain、内联 SDT 非容器、非 SDT 地址回归不变、textbox 地�
    扫描）；这与迭代器地址语义一致，但若未来需要“继承链逐节地址”，属新变更。
 5. 既有 header/footer 代理的惰性实例化是 python-docx 的既有行为；扫描本身不创建 header
    定义（先判断 linked）。
-6. 全量 447 项通过只能说明现有 Fixtures 覆盖范围；不对任意 DOCX SDT 结构作普适性声明。
+6. 全量 447 项（实施时）通过只说明现有 Fixtures 覆盖范围；当前全量为 450 项，仍不对任意 DOCX SDT 结构作普适性声明。

@@ -3,6 +3,8 @@
 - 审查对象：`contracts/changes/CP-W2-002-sdt-location.md`（commit 143cb74，仅新增该文件，无代码改动）
 - 结论：**CONDITIONAL_PASS** —— 设计成立、安全闭合，但 B1–B4 必须先在提案文本内修正（均为编辑性修正，不改变方案结构）后方可实施。
 
+> 后续状态：B1–B4 已折入提案 rev 2，实施后复审 **PASS**（`07-cp-w2-002-post-review.md`），契约集 4.2.0 已冻结。本记录保留提案阶段裁定。
+
 ## 逐项核查
 
 1. **契约缺口而非映射错误：成立。** Contract 01 §3 语法枚举 `p|tbl|r|c|txbx_p`，且规定语法"MUST match v3.5.9 iterator"；迭代器 `engine/ooxml_utils.py:465/459/491` 仅取直接子级（python-docx `paragraphs` 语义），body/cell 级 SDT 内容无任何既有路径可命名。W3-3 披露（`spec_builder.py:982-1093`）只给计数与 body 子级序号，FillPlan/QA 无法绑定位置，audit-triage P1-01 行亦要求精确拒绝。选项 A 为最小增广，与 CP-W2-001 先例一致。

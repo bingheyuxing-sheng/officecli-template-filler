@@ -2,9 +2,9 @@
 
 - Report ID: W2-ACCEPT-01
 - Date: 2026-11-05
-- Contract set: **4.1.0** (CP-W2-001, Agent 07 PASS)
+- Contract set: **4.1.0** (historical; current set is 4.2.0 — see the correction record)
 - Decision: **W2 PASS**, with one declared unsupported structure (body-level `w:sdt`)
-- Test baseline: **397 passed** (186 v3.5.9 + 70 W0 contracts + 141 W1/W2)
+- Test baseline: **397 passed** at W2 (historical; current full suite is 450)
 
 ## 1. Exit-condition checklist
 
@@ -69,25 +69,11 @@ Required capability unavailable → corresponding check `UNVERIFIED`, report can
 
 ## 6. Fixture-discovered defects fixed in W2
 
-| # | Defect | Fix |
-|---|---|---|
-| 1 | Merged-cell physical column index resolved densely | `_resolve_cell` uses physical `table.rows[r].cells[c]` mapping |
-| 2 | Nested-table plan targeted the outer cell | Plan parser takes the **last** `.tbl[n].r[r].c[c]`; executor fills the nested table |
-| 3 | `replace_image` left `{{图1}}` residue | Surgical token removal unless a separate text op consumes the same slot |
-| 4 | Authorized image resize failed structural fingerprint | `wp:extent`/`a:ext` cx/cy excluded from structural hash; layout hash still tracks size |
-
-Each has a regression test in `tests/test_w2_defects.py` (5 tests). Unauthorized paragraph/structure changes still fail FIDELITY.
+Four defects were found by the fixtures and fixed: merged-cell physical column index, nested-table target resolution, `replace_image` placeholder residue, and authorized-image-resize fingerprint drift. Fixes and regression tests are recorded in `reports/w2/issues.md` ("Closed W2 defects"); `tests/test_w2_defects.py` holds 5 regression tests. Unauthorized paragraph/structure changes still fail FIDELITY.
 
 ## 7. Remaining limitations / open issues
 
-| ID | Issue | Severity | Owner | Next |
-|---|---|---|---|---|
-| W2-I1 | Body-level `w:sdt` wrapping an entire paragraph is not enumerated by `doc.paragraphs`; no slot/protected region is produced. Inline SDT is handled. | High | Agent 01 + 05 | Needs a contract location grammar for `body.sdt_p[i]` or equivalent; not fixed in W2 |
-| W2-I2 | PyMuPDF / OCR / matplotlib absent | Medium | Agent 04 | Pixel/OCR/chart checks stay `UNVERIFIED` |
-| W2-I3 | Legacy CLIs still do not emit ToolEnvelope 4.0 | Low | Agent 05 | Beta/W3 |
-| W2-I4 | `AGENTS.md` still states contract baseline 4.0.0; current frozen set is 4.1.0 | Low | Project owner | Update project rules or record a waiver |
-| W2-I5 | `class_04` fixture uses a relative image path; CLI contract requires an absolute path (test resolves it) | Low | Agent 06 | Normalize fixture or document test-only resolution |
-| W2-I6 | An earlier W2 wave used three agents on one worktree, contrary to AGENTS §4.5 | Process | Orchestrator | Remediated: stop parallel writes, independent re-review, sequential fixtures/fixes |
+`reports/w2/issues.md` is the maintained register. At W2 close, W2-I1 (body-level SDT) was high severity and not yet fixed; W2-I2 (PyMuPDF / OCR / matplotlib absent) remains an environment fact; W2-I3 (legacy CLI envelope) remains a beta item; W2-I5 (fixture relative image path) remains a test-fixture note. W2-I4 and W2-I6 are closed. W2-I1 was subsequently addressed by CP-W2-002 (see the correction record).
 
 ## 8. Process and ownership notes
 

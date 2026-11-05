@@ -8,11 +8,11 @@
 
 | ID | Severity | Blocks W0 | Blocks alpha | Owner | Target | Status |
 |---|---|---|---|---|---|---|
-| OI-01 | High | No | **Yes** | Agent 01 | W1 | OPEN |
+| OI-01 | High | No | **Yes** (at W0) | Agent 01 | W1 | **CLOSED** (W1) |
 | OI-02 | Medium | No | No | Agent 04 | W2 | OPEN (environment) |
-| OI-03 | High | No | No (beta gate) | Agents 01–04 | W1/W2 | OPEN |
+| OI-03 | High | No | No (beta gate) | Agents 01–04 | W1/W2 | **CLOSED** (W1/W2) |
 | OI-04 | Low | No | No | Agent 05 | Beta | OPEN |
-| OI-05 | Medium | No | No | Agents 04–05 | W1 | OPEN |
+| OI-05 | Medium | No | No | Agents 04–05 | W1 | **CLOSED** (W2) |
 | OI-06 | Low | No | No | Agent 03 | Beta | OPEN |
 | G-01 | Blocking (contract) | Yes | — | Agent 05 | W0 | **CLOSED** |
 | G-02 | Blocking (contract) | Yes | — | Agent 04 | W0 | **CLOSED** |
@@ -26,6 +26,7 @@
 - **Constraint:** the 4.0 schema must not be relaxed to accept the legacy summary.
 - **Acceptance:** CLI output validates against `document_spec-4.0.schema.json` on at least 6 fixtures; legacy 3.0 output remains available via a compatibility path or version flag.
 - **Owner:** Agent 01. **Target:** W1.
+- **Resolution (W1):** `analyze_template.py --spec-version 4` emits a schema- and semantic-valid DocumentSpec 4.0; the default CLI output stays 3.0. Evidence: `reports/w1/w1-acceptance.md` §6 and `test_e2e_v4.py::test_09_analyze_template_emits_spec_4_cli`. **CLOSED.**
 
 ## OI-02 — Visual pixel QA and OCR unavailable in this environment
 
@@ -40,6 +41,7 @@
 - **Impact:** cross-field rules (policy binding, slot uniqueness, region containment, overflow) are proven expressible but not enforced at runtime.
 - **Acceptance:** runtime validators under `content_intelligence/` and `qa/gate.py`; `transaction.py` refuses commit when a required check was not executed.
 - **Owner:** Agents 01–04. **Target:** W1 (validators) / W2 (gate wiring).
+- **Resolution (W1/W2):** `spec_validator`, plan validators and `qa.gate` exist and run end-to-end; `DocumentTransaction.record_gate` binds the QA report to the staged hash and refuses stale or ineligible reports. Evidence: `reports/w1/w1-acceptance.md` §6; `reports/w2/w2-acceptance.md` §5; `test_transaction_gate.py` (9 tests). **CLOSED.**
 
 ## OI-04 — Legacy CLIs do not emit ToolEnvelope 4.0
 
@@ -54,6 +56,7 @@
 - **Impact:** changing logic QA can cascade into workflow and QA modules owned by different agents.
 - **Acceptance:** move `is_heading_paragraph` to `alignment.py` (or a neutral `structure_utils.py`), remove the `logic_qa → workflow` edge, keep 186 baseline green.
 - **Owner:** Agents 04–05. **Target:** W1.
+- **Resolution (W2):** `engine/logic_qa.py` no longer imports `workflow`; dependent tests pass unchanged. Evidence: `reports/w2/w2-acceptance.md` §1 (dependency-inversion exit condition) and `test_logic_alignment.py` (6 tests). **CLOSED.**
 
 ## OI-06 — FillPlan `policy` vs `mode` naming overlap
 

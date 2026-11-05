@@ -1,4 +1,4 @@
-# Office Document Intelligence Engine Reference (`v3.5.5` — Modular `engine/` & `scripts/` API Guide)
+# Office Document Intelligence Engine Reference (v3.5.9 engine baseline; v4.0 contract set 4.2.0)
 
 All core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repair, Process Guard, Transaction, REVIEW/PROOFREAD, and Package/Visual QA logic lives in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/` and formal JSON Schemas in `schemas/`.
 
@@ -14,8 +14,7 @@ if ($LASTEXITCODE -ne 0) {
     pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 }
 
-# Run the full engine unit test suite (138 tests across engine, transaction, review lifecycle,
-# table signatures, router capabilities, Excel reliability, layout QA, process ownership and proofread)
+# Run the full suite (450 tests: v3.5.9 engine baseline, W0 contracts, W1-W3 regressions, E2E)
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
@@ -27,7 +26,7 @@ Add the skill root directory to `sys.path` and import directly from `engine`:
 
 ```python
 import sys
-sys.path.insert(0, r"D:\docs\officecli-template-filler")
+sys.path.insert(0, r"<skill_root>")  # directory containing engine/ and scripts/
 
 from engine import (
     # P0-1: Non-Destructive Cross-Run Mapping & Full-Story Traversal
@@ -174,7 +173,8 @@ res = replace_inline_image_in_paragraph(
 
 doc.save("output.docx")
 img_qa = verify_docx_images_integrity("output.docx")
-assert img_qa["passed"], img_qa["issues"]
+if not img_qa["passed"]:
+    raise RuntimeError(img_qa["issues"])
 ```
 
 ### 3.4 PID-Scoped Process Guard (`engine/process_guard.py` — Fixes P0-4)
@@ -245,7 +245,8 @@ qa = audit_excel_formula_and_style_qa(
     "budget_output.xlsx",
     expected_formula_cells={"经费预算表": ["E5", "E6", "E10"]},
 )
-assert qa["passed"], qa["issues"]
+if not qa["passed"]:
+    raise RuntimeError(qa["issues"])
 ```
 
 ### 3.7 Dual-Document `REPAIR` Mode (`engine/repair_engine.py` — v3.0 New Module)
@@ -276,12 +277,13 @@ plan = build_review_plan(
 )
 result = execute_review_plan(plan, "reviewed.docx")
 qa = audit_review_integrity("reviewed.docx")
-assert qa["passed"], qa["issues"]
+if not qa["passed"]:
+    raise RuntimeError(qa["issues"])
 ```
 
 Review channel rules:
 
-- Format drift (`sz`, fonts, spacing, indents, residual red) is restored directly; tracked changes cannot represent format edits.
+- Format drift (`sz`, fonts, spacing, indents, residual red) is restored; REPAIR applies it directly, while REVIEW pairs every restore with a native `w:*PrChange` formatting revision so the human can accept or reject it.
 - Table structure drift (grid widths, `tblLayout`, `jc`, cell margins, borders) becomes a `RESTORE_TABLE_STYLE` action handled by `restore_table_style_from_reference()`, which never touches cell text or merges.
 - Each `text_revisions` entry becomes `<w:del>` (`w:delText`) plus `<w:ins>` (`w:t`) with the configured author and a UTC timestamp.
 - Residual `{{...}}` / `【...】` placeholders become native Word comments anchored by `commentRangeStart`/`commentRangeEnd`/`commentReference`.
@@ -294,7 +296,8 @@ import docx
 from engine import audit_docx_package_integrity, audit_format_and_text_qa, run_visual_layout_qa
 
 pkg_qa = audit_docx_package_integrity("output.docx")
-assert pkg_qa["passed"], pkg_qa["issues"]
+if not pkg_qa["passed"]:
+    raise RuntimeError(pkg_qa["issues"])
 
 out_doc = docx.Document("output.docx")
 fmt_qa = audit_format_and_text_qa(
@@ -304,7 +307,8 @@ fmt_qa = audit_format_and_text_qa(
     reference_docx_path="template.docx",  # required to prove the output matches the template's sizes, fonts and tables
     comparison_profile="STYLE_GUIDE",     # GENERATE: align by text/heading/caption anchors
 )
-assert fmt_qa["passed"], (fmt_qa["size_anomalies"], fmt_qa["font_anomalies"], fmt_qa["table_style_anomalies"])
+if not fmt_qa["passed"]:
+    raise RuntimeError((fmt_qa["size_anomalies"], fmt_qa["font_anomalies"], fmt_qa["table_style_anomalies"]))
 print(fmt_qa["comparison_profile"], fmt_qa["size_baseline_source"], fmt_qa["template_sizes"], fmt_qa["template_fonts"])
 
 vis_qa = run_visual_layout_qa(
@@ -312,7 +316,8 @@ vis_qa = run_visual_layout_qa(
     reference_docx_path="template.docx",
     comparison_profile="STYLE_GUIDE",
 )
-assert vis_qa["passed"], vis_qa["layout_warnings"]
+if not vis_qa["passed"]:
+    raise RuntimeError(vis_qa["layout_warnings"])
 ```
 
 `STYLE_GUIDE` is for GENERATE: added/removed paragraphs and new tables are reported as

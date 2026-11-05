@@ -4,6 +4,7 @@
 - 产物：`dist/officecli-template-filler-v4.0.0-dev-w3.zip`
 - 来源：`git archive HEAD`（commit `b74f059`，含 W3-8 文档同步）
 - 性质：**开发快照，不是正式发布**；无 tag、无 Release、未 push
+- 注意：本清单记录 commit `b74f059` 的包。之后的文档清理未重新打包，包内文档与当前工作树可能存在措辞差异；本任务明确不重建包。
 
 ## 校验值
 
