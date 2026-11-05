@@ -326,11 +326,31 @@ if not vis_qa["passed"]:
 Only `high` severity issues make `passed` false; `medium` / `low` findings are returned in
 `warnings` and remain visible without blocking delivery.
 
-`font_anomalies` reports runs whose resolved Chinese font differs from the matched template
-paragraph, and `table_style_anomalies` reports per-table grid/layout/border drift. When a table was
-regenerated at a uniformly larger size, that drift appears as `table_dominant_size` and the old
-document-wide size allowlist could never catch it. A new table with no template counterpart is
-reported as `NEW_TABLE`, not as style drift.
+Verification mechanics — what each check actually compares (referenced from SKILL.md pillar 6):
+
+- **Size cascade.** The effective font size of a run resolves through run `w:sz` -> character
+  style -> paragraph style -> `w:docDefaults`, then compares against the **matched** template
+  paragraph or table. `STYLE_GUIDE` skips size comparison for unmatched/new paragraphs and new
+  tables; `REPLICA` keeps the strict template baseline for REPAIR/REVIEW.
+- **Fonts.** Run `w:rFonts` resolves through the same cascade, then compares against the matched
+  paragraph's font set (`font_anomalies`). Chinese family names are normalized against Windows'
+  English registry names (`黑体` ↔ `SimHei`, `仿宋` ↔ `FangSong`, `宋体` ↔ `SimSun`,
+  `Courier` ↔ `Courier New`), so an installed font is not reported missing.
+- **Tables.** Tables are aligned by caption, header row, column count and grid geometry, then
+  compared with the matched template table: grid column widths and ratios, total width,
+  `tblLayout`, `jc`, `tblCellMar`, `tblBorders` (including border size and color), `w:tblStyle`,
+  header-row `w:shd` fill, cell `w:vAlign` distribution, and per-row `trHeight`
+  (`table_style_anomalies`). A table with no template counterpart is reported as `NEW_TABLE`
+  and is not compared to an unrelated neighbour.
+- **Pagination.** Row-level pagination is verified only where the template proves it: if the
+  template sets `w:cantSplit` on all rows or `w:tblHeader` on row 0, the output must match
+  (`pagination_anomalies`).
+- **Dominant table values.** Table font and size are compared against the matched table's
+  dominant value (`table_dominant_size` / `table_dominant_font`). Row-level cell checks run only
+  when both tables have the same row count; otherwise the row-count change is reported separately
+  and the shifted rows are not compared. Never accept a document-wide size allowlist here: a
+  table regenerated at a uniformly larger size still uses a size the template used somewhere
+  else, which is exactly how drifting tables slipped through before.
 
 Every QA function returns machine-readable issues so callers never parse prose:
 
