@@ -979,10 +979,49 @@ def _capabilities(images: Sequence[Dict[str, Any]], tables: Sequence[Dict[str, A
     }
 
 
+def _scan_body_sdt(doc) -> Dict[str, Any]:
+    """W3-3 fail-closed pre-scan for direct ``w:sdt`` children of ``<w:body>``.
+
+    python-docx does not expose body-level-SDT-wrapped paragraphs through
+    ``doc.paragraphs``, so the normal enumerator cannot see them. Instead of
+    silently reporting such a template as L1/L2 (audit P1-01), the scan caps
+    the compatibility level and discloses every container with content,
+    including its body child index, until CP-W2-002 adds the SDT location
+    grammar. A failed scan is treated like a found container (fail-closed).
+    """
+    scan: Dict[str, Any] = {"containers": [], "scan_error": None}
+    try:
+        body = doc.element.body
+        for child_index, child in enumerate(body):
+            if child.tag != qn("w:sdt"):
+                continue
+            paragraphs = child.findall(".//" + qn("w:p"))
+            tables = child.findall(".//" + qn("w:tbl"))
+            scan["containers"].append({
+                "body_child_index": child_index,
+                "paragraph_count": len(paragraphs),
+                "table_count": len(tables),
+                "has_content": bool(paragraphs or tables),
+            })
+    except Exception as exc:
+        scan["scan_error"] = "%s: %s" % (type(exc).__name__, exc)
+    return scan
+
+
 def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
     """Build the complete DocumentSpec 4.0 object for a parsed `docx.Document`."""
     template_sha256, sha_source = _template_sha256(doc, file_path)
     compatibility = assess_template_compatibility_level(doc, file_path=file_path or "")
+
+    sdt_scan = _scan_body_sdt(doc)
+    sdt_with_content = [c for c in sdt_scan["containers"] if c["has_content"]]
+    if (sdt_with_content or sdt_scan["scan_error"]) and \
+            compatibility.get("compatibility_level") in ("L1", "L2"):
+        # fail-closed: never claim L1/L2 while body-level SDT content exists
+        compatibility = dict(compatibility)
+        compatibility["compatibility_level"] = "L3"
+        compatibility["recommended_strategy"] = "SEMI_AUTOMATIC_WITH_USER_CONFIRMATION"
+        compatibility["l3_features"] = list(compatibility.get("l3_features") or []) + ["sdt_body_prescan"]
 
     all_contexts = list(iter_all_document_paragraphs_with_Wait_context(doc))
     contexts = [ctx for ctx in all_contexts if _is_location(ctx["location_id"])]
@@ -1034,6 +1073,24 @@ def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
     protected_regions = _build_protected_regions(doc, contexts, table_contexts, slots)
     layout_constraints = _build_layout_constraints(table_contexts, contexts)
     unsupported_features = _build_unsupported_features(doc, compatibility, contexts)
+    for container in sdt_with_content:
+        unsupported_features.append({
+            "code": "SDT_BODY_UNSUPPORTED",
+            "detail": (
+                "body-level w:sdt at body child[%d] wraps %d paragraph(s) / %d table(s); "
+                "the paragraph enumerator cannot address it, so slots inside are undiscoverable "
+                "and sdt_edit stays false until CP-W2-002"
+                % (container["body_child_index"], container["paragraph_count"], container["table_count"])
+            ),
+        })
+    if sdt_scan["scan_error"]:
+        unsupported_features.append({
+            "code": "SDT_BODY_SCAN_INCOMPLETE",
+            "detail": (
+                "body-level SDT pre-scan failed; compatibility was capped at L3 and filling "
+                "must be confirmed manually (%s)" % sdt_scan["scan_error"]
+            ),
+        })
     for story in skipped_stories:
         unsupported_features.append({
             "code": "SLOT_STRUCTURE_UNSUPPORTED",
@@ -1091,6 +1148,28 @@ def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
             "code": "SLOT_STRUCTURE_UNSUPPORTED",
             "severity": "medium",
             "detail": "unsupported story location(s): " + ", ".join(skipped_stories),
+        })
+    if sdt_with_content:
+        warnings.append({
+            "code": "SDT_BODY_ENUMERATION_GAP",
+            "severity": "high",
+            "detail": (
+                "%d body-level SDT container(s) with content are not enumerated into slots; "
+                "template capped at L3 (CP-W2-002 pending)" % len(sdt_with_content)
+            ),
+        })
+    if sdt_scan["scan_error"]:
+        warnings.append({
+            "code": "SDT_BODY_ENUMERATION_GAP",
+            "severity": "high",
+            "detail": "body SDT pre-scan incomplete (fail-closed): %s" % sdt_scan["scan_error"],
+        })
+    empty_sdts = [c for c in sdt_scan["containers"] if not c["has_content"]]
+    if empty_sdts:
+        warnings.append({
+            "code": "SDT_BODY_EMPTY",
+            "severity": "low",
+            "detail": "%d empty body-level SDT container(s) observed (no paragraphs/tables inside)" % len(empty_sdts),
         })
 
     spec: Dict[str, Any] = {
