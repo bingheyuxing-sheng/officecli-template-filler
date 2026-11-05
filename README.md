@@ -71,7 +71,14 @@ pip install -r requirements.txt
 # 路由判断：先看输入该走哪个模式
 python scripts/inspect_document.py --inputs template.docx --intent "按模板生成"
 
-# 模板填充
+# v4.0 plan chain（GENERATE 默认）：spec 4.0 -> ContentPlan/FillPlan -> 执行器 -> QA/门禁
+python scripts/analyze_template.py --input template.docx --spec-version 4 --out spec.json
+# ContentPlan/FillPlan 由 Agent 按 schemas/ 生成（可用 content_intelligence.build_*），并先校验
+python scripts/generate_document.py --template template.docx --spec spec.json `
+  --content-plan content_plan.json --plan fill_plan.json --out output.docx `
+  --mode STANDARD --allow-unverified
+
+# Legacy token mode（兼容路径，不是 v4 主链）
 python scripts/generate_document.py --template template.docx --data payload.json --out output.docx
 
 # 按模板修复格式（双文档 REPAIR）

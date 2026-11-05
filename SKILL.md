@@ -41,7 +41,7 @@ Run `python scripts/inspect_document.py --inputs <file1> [<file2> ...] --intent 
 
 | Task Mode | Trigger Condition | Primary Engine Pipeline | Web Search Policy | Default Confirmation Tier |
 |---|---|---|---|---|
-| **`GENERATE`** | 1 `.docx` template + user topic/data to populate; an accompanying `.xlsx` is recorded as `data_sources` when the intent is generation | `analyze_template.py` → Research → `ssot_engine` → `generate_document.py` → `run_qa.py` | **ENABLED** (Standards + Official Institution Site) | `FULL_CONFIRM` (if unsearchable internal slots exist) or `LIGHT_CONFIRM` |
+| **`GENERATE`** | 1 `.docx` template + user topic/data to populate; an accompanying `.xlsx` is recorded as `data_sources` when the intent is generation | `analyze_template.py --spec-version 4` → validate DocumentSpec → ContentPlan + FillPlan → `generate_document.py --spec/--plan/--content-plan` → QAReport + commit gate | **ENABLED** (Standards + Official Institution Site) | `FULL_CONFIRM` (if unsearchable internal slots exist) or `LIGHT_CONFIRM` |
 | **`REPAIR`** | exactly 2 `.docx` files (`reference_template.docx` + `broken_target.docx`) | `repair_document.py` (`build_repair_plan` → `repair_plan.json` → `execute_repair_plan`) → `run_qa.py` | **DISABLED BY DEFAULT** (Strict content preservation from broken doc) | `SKIP` (or `HOLD_AND_ASK` if `L4` structural mismatch) |
 | **`REVIEW`** | 2 `.docx` files + intent containing 审核/审阅/修订/留痕/review/track changes/按模板修正 | `review_document.py` (`build_review_plan` → `execute_review_plan`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** (No external rewriting during audit) | `LIGHT_CONFIRM` for the revision list; `HOLD_AND_ASK` if `L4` regions need manual edits |
 | **`POLISH`** | 1 `.docx` draft + request to refine wording/terminology while keeping layout | **NO HANDLER — `CAPABILITY_NOT_AVAILABLE`** (planned: `analyze_template.py` → `LogicalParagraphView` surgical replacement → `run_qa.py`) | **DISABLED BY DEFAULT** (On-demand only if user asks to verify standards) | `LIGHT_CONFIRM` |
@@ -172,13 +172,13 @@ python scripts/inspect_document.py --inputs "$INPUT_1" --intent "$USER_PROMPT" -
 ### Step 2: Analyze Template & Emit `DocumentSpec`
 Pick the analyzer by container type — never run the Word analyzer on a workbook:
 ```powershell
-# .docx / .docm
-python scripts/analyze_template.py --input "$INPUT_1" --output "$TEMP/document_spec.json"
+# .docx / .docm — GENERATE must use the v4 spec
+python scripts/analyze_template.py --input "$INPUT_1" --spec-version 4 --output "$TEMP/document_spec.json"
 
 # .xlsx / .xlsm
 python scripts/analyze_excel_template.py --input "$INPUT_1" --output "$TEMP/document_spec.json"
 ```
-Inspect `compatibility.level` (`L1`–`L4`) and the placeholder inventory (`candidate_hits` for Word, `placeholder_tokens` for Excel).
+For `GENERATE`, **always pass `--spec-version 4`**. The default (`3`) is the legacy CLI summary kept for the old `--data` token path and non-generation modes; it is never the v4 plan chain. Inspect the v4 artifact's `slots`, `protected_regions`, `unsupported_features` and `warnings` — not `candidate_hits` (`L1`–`L4` still appears under `template.compatibility`). A body-level `w:sdt` is discovered as PROTECTED (`kind: "sdt"` region); `sdt_edit` stays false.
 
 Also read `routing.capability` from Step 1 before executing anything:
 
@@ -268,7 +268,7 @@ else:
 1. `Preflight` — source exists, extension is supported, output directory is writable, container family matches (Word → Word, Excel → Excel).
 2. `Execute` — the document is saved to a sibling `.<name>.tmp-<transaction_id>.<ext>` staged file.
 3. `QA` — each entrypoint runs the checks its deliverable contract requires against that staged file: `GENERATE` → package integrity + format; `REPAIR` → package integrity + format against the reference; `REVIEW` / `PROOFREAD` → package integrity + revision/comment integrity; `EXCEL_GENERATE` → formula + style; `RENDER` → visual. The full package/format/formula/visual suite still runs separately through `run_qa.py` (Step 5).
-4. `Commit` — two atomic `os.replace` calls publish the file only when `qa_status` is `PASSED`, `PENDING_HUMAN_REVIEW` or `UNVERIFIED`.
+4. `Commit` — two atomic `os.replace` calls, but only when the deliverable's contract allows it. **v4 `GENERATE` plan path**: commit only on `PASSED`, or on `UNVERIFIED` when `--allow-unverified` was passed and `missing_checks` is disclosed; `PENDING_HUMAN_REVIEW` and `FAILED` never commit. Legacy entrypoints (`REPAIR`, `REVIEW`, `PROOFREAD`, `RENDER`, Excel) keep their existing commit rules (`PASSED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED`).
 
 Every entrypoint ends with a `transaction` object:
 
@@ -282,12 +282,18 @@ Every entrypoint ends with a `transaction` object:
 - `qa_status: "UNVERIFIED"` still publishes the file, but it must be described as unverified, never as a pass.
 - Do not hand-write the final path in ad-hoc scripts; use the entrypoints or `engine.DocumentTransaction` so a failed run leaves no `.tmp` / `.pending` artifact behind.
 
-- **For `GENERATE` only**:
-  Build `ssot_payload.json` (validated via `build_ssot_master_data()`) and run:
+- **For `GENERATE` only (v4 plan chain — the default workflow)**:
+  1. Analyze with `--spec-version 4`, then validate the artifact (`template_intelligence.spec_validator.validate_document_spec`) before building anything.
+  2. Build `ContentPlan` (facts with `source`, sections, target slots) and `FillPlan` (operations, preconditions, `overflow.strategy: REJECT`) per `schemas/content_plan-4.0.schema.json` / `fill_plan-4.0.schema.json`. Canonical builders: `content_intelligence.build_content_plan()` and `build_fill_plan()`; validate with `validate_content_plan()` / `validate_fill_plan()`. Never invent facts; missing sources stay missing and fail validation.
+  3. Execute the deterministic chain:
   ```powershell
-  python scripts/generate_document.py --template "$INPUT_1" --payload "$TEMP/payload.json" --output "$OUTPUT_FILE"
+  python scripts/generate_document.py --template "$INPUT_1" --spec "$TEMP/document_spec.json" `
+      --content-plan "$TEMP/content_plan.json" --plan "$TEMP/fill_plan.json" `
+      --output "$OUTPUT_FILE" --mode STANDARD --allow-unverified
   ```
-  *(Or import `engine` directly in a task-specific Python script using the canonical APIs documented in [references/python-docx-engine.md](references/python-docx-engine.md)).*
+  - `STRICT` commits only a `PASSED` QAReport; `STANDARD` may commit `UNVERIFIED` only with `--allow-unverified` and the missing checks disclosed.
+  - The executor writes only to a staging path, emits a per-operation fill ledger, and rejects protected/unauthorized/overflow targets before mutation.
+  - Legacy token mode `--data payload.json` (no `--plan`) remains available as a **compatibility path** for simple token maps; it is not the v4 chain and must be labeled as legacy if used.
 - **For `POLISH` / `MERGE`**: these modes have no handler. Report `CAPABILITY_NOT_AVAILABLE` and stop — never substitute `generate_document.py` or any other script.
 - **For `REFORMAT` (align formatting to a template, content preserved)**:
   ```powershell
