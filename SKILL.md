@@ -78,7 +78,7 @@ officecli-template-filler/
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
 ├── engine/                               # v3.5.9 standalone, importable Python engine package
 ├── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
-├── tests/                                # Automated suite (473 tests)
+├── tests/                                # Automated suite (479 tests)
 ├── reports/                              # W0–W3 acceptance, gate and issue records
 └── references/                           # engine-internals.md / python-docx-engine.md
 ```
