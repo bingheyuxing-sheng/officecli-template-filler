@@ -115,6 +115,10 @@ def _iter_story_parts(doc) -> List[Any]:
                 hf = getattr(section, hf_attr, None)
                 if hf is not None:
                     try:
+                        # ``hf.part`` materializes a phantom definition for linked
+                        # headers/footers; skip them before touching the part.
+                        if hf.is_linked_to_previous:
+                            continue
                         parts.append(hf.part)
                     except Exception:
                         pass

@@ -71,6 +71,10 @@ def _story_paragraphs(document) -> Iterable[Tuple[str, Any]]:
             if hf is None:
                 continue
             try:
+                # Reading ``.paragraphs`` on a linked header/footer makes python-docx
+                # create a phantom part and a reference in ``w:sectPr``; skip first.
+                if hf.is_linked_to_previous:
+                    continue
                 paragraphs = list(hf.paragraphs)
             except Exception:
                 continue

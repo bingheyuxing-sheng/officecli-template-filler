@@ -55,13 +55,24 @@ def _local_name_key(key: Any) -> str:
     return name.split("}")[-1] if "}" in name else name
 
 
+# Formatting-only elements do not belong to the structural tree: an authorized
+# fill removes a red placeholder colour (w:color) while keeping the run and rPr
+# wrappers, and that must not read as an unauthorized structure change. Direct
+# formatting is covered by FORMAT QA and the style hash, not here.
+_FORMAT_ELEMENTS = frozenset({"color"})
+
+
 def _canonical_node(el) -> Dict[str, Any]:
     name = _local_name(el)
     if name in _TEXT_BEARING:
         children = []
         attributes: List[List[str]] = []
     else:
-        children = [_canonical_node(child) for child in el if isinstance(child.tag, str)]
+        children = [
+            _canonical_node(child)
+            for child in el
+            if isinstance(child.tag, str) and _local_name(child) not in _FORMAT_ELEMENTS
+        ]
         excluded = _LAYOUT_ATTRIBUTES.get(name, frozenset())
         attributes = sorted(
             [str(key), str(value)]

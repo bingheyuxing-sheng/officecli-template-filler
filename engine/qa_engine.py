@@ -110,7 +110,22 @@ def _text_issues(text_residuals) -> List[Dict[str, Any]]:
     return issues
 
 
-def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
+_XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
+
+
+def _count_missing_space_preserve(document) -> int:
+    """Count body `w:t` values that carry spaces without `xml:space="preserve"`."""
+    count = 0
+    for t_el in document.element.body.xpath(".//w:t"):
+        value = t_el.text or ""
+        if (
+            value.startswith(" ") or value.endswith(" ") or "  " in value
+        ) and t_el.get(_XML_SPACE_NS) != "preserve":
+            count += 1
+    return count
+
+
+def audit_docx_package_integrity(docx_path: str, baseline_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Perform a comprehensive OOXML package-level audit on `docx_path` covering:
     - All XML parts (`document.xml`, `styles.xml`, `numbering.xml`, `settings.xml`,
@@ -244,13 +259,34 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
     # 3. Verify image binaries & MIME types
     image_qa = verify_docx_images_integrity(docx_path)
 
+    # A `w:t` without `xml:space` loses leading/trailing spaces in some consumers.
+    # WPS itself emits such runs, and a template-filler cannot repair its read-only
+    # template, so findings that the template baseline already carries are disclosed
+    # instead of blocking. Any run beyond the baseline count is still blocking.
+    inherited_space_preserve = 0
+    baseline_space_preserve = None
+    effective_space_preserve = missing_space_preserve
+    if baseline_path and os.path.isfile(baseline_path) and missing_space_preserve:
+        try:
+            baseline_report = audit_docx_package_integrity(baseline_path)
+            baseline_space_preserve = int(baseline_report.get("missing_space_preserve") or 0)
+        except Exception:
+            baseline_space_preserve = None
+        if (
+            baseline_space_preserve is not None
+            and baseline_space_preserve > 0
+            and missing_space_preserve <= baseline_space_preserve
+        ):
+            inherited_space_preserve = missing_space_preserve
+            effective_space_preserve = 0
+
     passed = (
         len(xml_parse_errors) == 0
         and len(dangling_rels) == 0
         and len(unresolved_rids) == 0
         and len(duplicate_para_ids) == 0
         and len(duplicate_docpr_ids) == 0
-        and missing_space_preserve == 0
+        and effective_space_preserve == 0
         and image_qa["passed"]
     )
 
@@ -260,9 +296,19 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
     structured_issues.extend(_issue("PACKAGE_UNRESOLVED_RID", "document_package", item) for item in unresolved_rids)
     structured_issues.extend(_issue("PACKAGE_DUPLICATE_PARA_ID", "w14:paraId", item) for item in duplicate_para_ids)
     structured_issues.extend(_issue("PACKAGE_DUPLICATE_DOCPR_ID", "wp:docPr", item) for item in duplicate_docpr_ids)
-    if missing_space_preserve:
+    if effective_space_preserve:
         structured_issues.append(
-            _issue("PACKAGE_SPACE_PRESERVE_MISSING", "w:t", f"{missing_space_preserve} runs lack xml:space")
+            _issue("PACKAGE_SPACE_PRESERVE_MISSING", "w:t", f"{effective_space_preserve} runs lack xml:space")
+        )
+    elif inherited_space_preserve:
+        structured_issues.append(
+            _issue(
+                "PACKAGE_SPACE_PRESERVE_MISSING",
+                "w:t",
+                "%d run(s) lack xml:space but the template baseline already carries %d"
+                % (inherited_space_preserve, baseline_space_preserve),
+                severity="medium",
+            )
         )
     structured_issues.extend(
         _issue("PACKAGE_IMAGE_INTEGRITY", "media", item) for item in image_qa.get("issues", [])
@@ -290,6 +336,9 @@ def audit_docx_package_integrity(docx_path: str) -> Dict[str, Any]:
         "duplicate_para_ids": duplicate_para_ids,
         "duplicate_docpr_ids": duplicate_docpr_ids,
         "missing_space_preserve": missing_space_preserve,
+        "effective_space_preserve": effective_space_preserve,
+        "inherited_space_preserve": inherited_space_preserve,
+        "baseline_space_preserve": baseline_space_preserve,
         "proof_err_unbalanced": proof_err_unbalanced,
         "image_integrity": image_qa,
     }
@@ -705,6 +754,16 @@ def audit_format_and_text_qa(
         if (t_val.startswith(" ") or t_val.endswith(" ") or "  " in t_val) and t_el.get("{http://www.w3.org/XML/1998/namespace}space") != "preserve":
             missing_space_preserve.append(("w:t", idx, repr(t_val[:20])))
 
+    # Findings the read-only template already carries cannot be fixed by a fill and
+    # must not block it; report them as a disclosed warning instead.
+    inherited_space_preserve = 0
+    baseline_space_preserve = None
+    if ref_doc is not None and missing_space_preserve:
+        baseline_space_preserve = _count_missing_space_preserve(ref_doc)
+        if baseline_space_preserve > 0 and len(missing_space_preserve) <= baseline_space_preserve:
+            inherited_space_preserve = len(missing_space_preserve)
+            missing_space_preserve = []
+
     seen_para_ids = set()
     w14_para_id_attr = "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"
     for p_el in doc.element.body.xpath(".//w:p"):
@@ -723,10 +782,15 @@ def audit_format_and_text_qa(
             seen_docpr_ids.add(did)
 
     package_report = None
+    package_issues: List[Dict[str, Any]] = []
     if docx_path and os.path.isfile(docx_path):
-        package_report = audit_docx_package_integrity(docx_path)
+        package_report = audit_docx_package_integrity(
+            docx_path, baseline_path=reference_docx_path
+        )
         if not package_report["passed"]:
-            raise QAValidationError(f"DOCX Package Integrity QA failed: {package_report}")
+            package_issues = list(package_report.get("structured_issues") or [])
+            if raise_on_failure:
+                raise QAValidationError(f"DOCX Package Integrity QA failed: {package_report}")
 
     issues: List[Dict[str, Any]] = []
     issues.extend(_red_issues(red_Wait_residuals))
@@ -735,7 +799,18 @@ def audit_format_and_text_qa(
     issues.extend(_table_issues(table_style_anomalies, profile))
     issues.extend(pagination_anomalies)
     issues.extend(_text_issues(text_residuals))
+    issues.extend(package_issues)
     issues.extend(_issue("XML_SPACE_MISSING", "w:t", item) for item in missing_space_preserve)
+    if inherited_space_preserve:
+        issues.append(
+            _issue(
+                "XML_SPACE_MISSING",
+                "w:t",
+                "%d run(s) lack xml:space but the template baseline already carries %d"
+                % (inherited_space_preserve, baseline_space_preserve),
+                severity="medium",
+            )
+        )
     issues.extend(_issue("DUPLICATE_OOXML_ID", item[0], item[1]) for item in duplicate_ids)
 
     blocking, warnings, _pending = split_issues(issues)
@@ -775,6 +850,8 @@ def audit_format_and_text_qa(
         "template_fonts": sorted({ea for (_ascii, ea) in reference_font_inventory if ea}),
         "text_residuals": text_residuals,
         "missing_space_preserve": missing_space_preserve,
+        "inherited_space_preserve": inherited_space_preserve,
+        "baseline_space_preserve": baseline_space_preserve,
         "duplicate_ids": duplicate_ids,
         "package_integrity": package_report,
         "coverage_gaps": [],
@@ -800,7 +877,9 @@ def _collect_declared_font_names(doc) -> Set[str]:
             getattr(section, "even_page_footer", None),
         ):
             try:
-                if hf is not None:
+                # ``hf._element`` lazily materializes a phantom part for linked
+                # headers/footers; skip them before any content access.
+                if hf is not None and not hf.is_linked_to_previous:
                     containers.append(hf._element)
             except Exception:
                 continue
