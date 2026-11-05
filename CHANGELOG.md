@@ -6,12 +6,25 @@
 
 ---
 
-## 未发布（Unreleased）
+## v4.0.2（2026-11-05，稳定版补丁）
+
+> 软件版本 **4.0.2**；契约集保持 **4.2.0**，产物 `schema_version` 保持 `4.0`。本补丁移除两个供应链风险的安装脚本与 `dist/` 归档副本，并清理静态检查发现；不改变契约、Schema 或文档处理行为。
+
+### Changed（变更）
+
+- `engine.__version__`：`4.0.1` → `4.0.2`；`tests/contracts/test_legacy_compat.py` 的版本断言同步更新。
+- `SKILL.md` 架构细节下沉到 `references/`，正文精简至 400 行以内；`description` 改为触发导向，补充中英文触发词与不适用场景。
+- 新增 `ruff.toml`，对 `scripts/`、`tests/` 的 `sys.path` 引导声明 E402 豁免；修复 F821 缺失类型导入、B904 异常链、F841 死变量、F811 重复导入、B905 `zip` 显式 `strict`、F401 死导入等问题。
+- `tests/test_p0_semantic_qa.py` 的裸 `assertRaises(Exception)` 收窄为 `QAValidationError`。
 
 ### Removed（移除）
 
 - 删除 `scripts/ensure-officecli.ps1` 与 `scripts/ensure-officecli.sh`。这两个脚本会从多个第三方代理（`ghfast.top` / `gh-proxy.com` / `mirror.ghproxy.com`）下载可执行文件、在校验前直接运行、写入用户全局 `PATH`，并回退到 `npm install -g`，构成供应链风险。核查确认 `officecli.exe` 未被任何代码路径调用（仅出现在注释、临时文件名与检查点文件名中），删除不影响任何功能。
 - 清空 `dist/` 目录下的 13 个历史归档 zip。这些归档内置了上述两个安装脚本的完整副本，且与 Releases 上的发布资产重复；下载统一改由 Releases 提供。历史证据保留在 `reports/w3/` 与 Git 历史中。
+
+### Tests
+
+- 全量 **479 项通过**，0 失败、0 跳过；`python -m unittest discover`（Python 3.15，Windows）。
 
 ---
 

@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Office document engine for Word (.docx) and Excel (.xlsx/.xlsm). Routes tasks into eight modes (GENERATE, REPAIR, REFORMAT, REVIEW, PROOFREAD, EXCEL_GENERATE, POLISH, MERGE), classifies template compatibility L1-L4, fills through a strict FillPlan executor with Zero Unintended Formatting Delta and native tracked changes, and gates delivery with four-state QA plus honest coverage_gaps. Use whenever the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA — e.g. 模板填充, 按模板生成文档, 按模板修复/对齐格式, 审阅留痕修订, 课程计划生成, Excel 模板填数 — even if no mode name is given; unimplemented modes (POLISH/MERGE) are reported as CAPABILITY_NOT_AVAILABLE. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v4.0.1 stable — contract set 4.2.0; v3.5.9 compatibility baseline)
+# OfficeCLI + Python Office Document Intelligence Skill (v4.0.2 stable — contract set 4.2.0; v3.5.9 compatibility baseline)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 

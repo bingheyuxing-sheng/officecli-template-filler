@@ -8,7 +8,7 @@
 
 | 项目 | 状态 |
 |---|---|
-| 版本 | **v4.0.1 稳定版**（契约集 **4.2.0**，W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经独立门禁） |
+| 版本 | **v4.0.2 稳定版**（契约集 **4.2.0**，W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经独立门禁） |
 | 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
 | Skill 工作流 | GENERATE 文档主链使用 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
 | 测试基线 | **479 项通过**；六类**结构化回归 Fixtures**（非真实业务模板） |
@@ -203,6 +203,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v4.0.2 | 本地构建包（尚未发布 Release） | 供应链风险修复：删除第三方镜像安装脚本与 `dist/` 归档副本；静态检查清理；SKILL.md 精简 |
 | v4.0.1 | [Release v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1) | v4.0.0 稳定版补丁：移除测试中残留的外部语料正文，统一测试计数，补齐真实语料报告可复现信息 |
 | v4.0.0 | [Release v4.0.0](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.0) | v4 文档主链（DocumentSpec 4.0 → 计划 → 事务执行 → QA 门禁）、契约集 4.2.0、真实语料无损评测、授权填充零结构漂移 |
 | v3.5.9 | [Release v3.5.9](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.9) | 按角色定位图片、可选 OCR、图形重绘、流程闭环（MUST_ASK_USER、自动文字 diff、校对自动检查、SSOT 证据）与 workflow 编排辅助 |
