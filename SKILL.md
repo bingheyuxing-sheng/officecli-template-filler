@@ -99,7 +99,6 @@ CLI surface an agent orchestrates through (`scripts/`):
 | `render_document.py` | DOCX visual QA; PDF via WPS word2pdf / LibreOffice, else `RENDER_PDF_NOT_PRODUCED` |
 | `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
 | `cleanup_editor_sdk.py` | Manual diagnostic only — auto cleanup runs inside every entrypoint |
-| `ensure-officecli.ps1` / `.sh` | Windows / macOS-Linux OfficeCLI installer |
 
 Per-module internals of `engine/` (LogicalParagraphView, SSOT solver, image/process/table/excel engines, transaction, workflow & research helpers) live in [`references/engine-internals.md`](references/engine-internals.md) — read it before editing `engine/`. Python API usage and QA verification mechanics live in [`references/python-docx-engine.md`](references/python-docx-engine.md).
 

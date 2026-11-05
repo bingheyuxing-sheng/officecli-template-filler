@@ -6,6 +6,14 @@
 
 ---
 
+## 未发布（Unreleased）
+
+### Removed（移除）
+
+- 删除 `scripts/ensure-officecli.ps1` 与 `scripts/ensure-officecli.sh`。这两个脚本会从多个第三方代理（`ghfast.top` / `gh-proxy.com` / `mirror.ghproxy.com`）下载可执行文件、在校验前直接运行、写入用户全局 `PATH`，并回退到 `npm install -g`，构成供应链风险。核查确认 `officecli.exe` 未被任何代码路径调用（仅出现在注释、临时文件名与检查点文件名中），删除不影响任何功能。
+
+---
+
 ## v4.0.0（2026-11-05，稳定版）
 
 > 软件版本 **4.0.0**；契约集 **4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。本版是 v4 架构的首个稳定发布，取代预发布 `v4.0.0-dev.1`。
