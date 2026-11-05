@@ -18,7 +18,7 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from .workflow import is_heading_paragraph
+from .alignment import is_heading_paragraph
 
 _LIST_NUMBER_RE = re.compile(r"^\s*(\d{1,2})\s*[.、．)]\s+\S")
 _DATE_RE = re.compile(r"(\d{4})\s*[年\-/]\s*(\d{1,2})\s*[月\-/]\s*(\d{1,2})")

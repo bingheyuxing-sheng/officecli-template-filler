@@ -1,0 +1,112 @@
+{
+  "class_key": "class_05_nested_structure",
+  "schema_version": "4.0",
+  "template_sha256": "4ea2286557553c3450adb0a78b1374d0ebdb57b427aa159fc7ba1595da756340",
+  "compatibility": "L2",
+  "capabilities": {
+    "text_fill": true,
+    "table_fill": true,
+    "image_replace": false,
+    "nested_table": true,
+    "field_update": false,
+    "sdt_edit": false,
+    "smartart_edit": false,
+    "visual_render": true
+  },
+  "slots": [
+    {
+      "slot_id": "S_78b36d570525",
+      "slot_key": "d88eae6354b33f66",
+      "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[0].p[0]",
+      "matched_text": "{{子项名称}}",
+      "occurrence": 1,
+      "candidate_type": "explicit_token",
+      "protection_status": "FILLABLE",
+      "confirmation_tier": "AUTO_DERIVE_OR_BIND",
+      "scope": "table"
+    },
+    {
+      "slot_id": "S_c425c00d16f0",
+      "slot_key": "07697b82487026b7",
+      "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[1].p[0]",
+      "matched_text": "{{子项金额}}",
+      "occurrence": 1,
+      "candidate_type": "explicit_token",
+      "protection_status": "FILLABLE",
+      "confirmation_tier": "AUTO_DERIVE_OR_BIND",
+      "scope": "table"
+    }
+  ],
+  "protected_regions": [],
+  "unsupported_features": [],
+  "scenarios": [
+    {
+      "name": "primary_builder_plan",
+      "plan": "fill_plan.json",
+      "content_plan": "content_plan.json",
+      "allowed_status": [
+        "SUCCESS",
+        "UNVERIFIED"
+      ],
+      "committed": true,
+      "expect_text": [
+        {
+          "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[0].p[0]",
+          "text": "设备采购"
+        },
+        {
+          "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[1].p[0]",
+          "text": "5000"
+        }
+      ],
+      "expect_unchanged_text": [
+        {
+          "location_id": "body.p[0]",
+          "text": "嵌套结构模板"
+        },
+        {
+          "location_id": "body.tbl[0].r[1].c[0].p[0]",
+          "text": "明细"
+        }
+      ]
+    },
+    {
+      "name": "paragraph_level_plan",
+      "plan": "fill_plan_paragraph_level.json",
+      "content_plan": "content_plan.json",
+      "allowed_status": [
+        "SUCCESS",
+        "UNVERIFIED"
+      ],
+      "committed": true,
+      "expect_text": [
+        {
+          "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[0].p[0]",
+          "text": "设备采购"
+        },
+        {
+          "location_id": "body.tbl[0].r[1].c[1].tbl[0].r[0].c[1].p[0]",
+          "text": "5000"
+        }
+      ],
+      "expect_unchanged_text": [
+        {
+          "location_id": "body.p[0]",
+          "text": "嵌套结构模板"
+        },
+        {
+          "location_id": "body.tbl[0].r[1].c[0].p[0]",
+          "text": "明细"
+        }
+      ]
+    }
+  ],
+  "nested": {
+    "outer_table": "body.tbl[0]",
+    "inner_table": "body.tbl[0].r[1].c[1].tbl[0]",
+    "outer_cell_text": "明细"
+  },
+  "known_production_gaps": [
+    "Nested-table fill_cell targeting is fixed: the plan resolves body.tbl[0].r[1].c[1].tbl[0] directly. Legacy plans that still declare table_id=body.tbl[0] for a nested slot are now rejected as TARGET_FIELD_MISMATCH instead of silently addressing the outer cell."
+  ]
+}

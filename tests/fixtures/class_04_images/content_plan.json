@@ -1,0 +1,37 @@
+{
+  "schema_version": "4.0",
+  "plan_id": "CP_FIXTURE_04",
+  "template_id": "T_f25d2a630dce",
+  "sections": [
+    {
+      "section_id": "SEC_301",
+      "purpose": "配图",
+      "target_slots": [
+        "S_34dd7d8f3e34"
+      ],
+      "fact_refs": [
+        "F_IMG"
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "F_IMG",
+      "label": "图注",
+      "value": "图1：项目示意",
+      "unit": "none",
+      "source": "USER_INPUT",
+      "verification_status": "VERIFIED",
+      "used_by_slots": [
+        "S_34dd7d8f3e34"
+      ]
+    }
+  ],
+  "completeness": {
+    "required_slots": [
+      "S_34dd7d8f3e34"
+    ],
+    "optional_slots": [],
+    "allow_missing": []
+  }
+}

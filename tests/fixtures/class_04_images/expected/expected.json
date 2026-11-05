@@ -1,0 +1,68 @@
+{
+  "class_key": "class_04_images",
+  "schema_version": "4.0",
+  "template_sha256": "f25d2a630dce7c73bfcbaf13de8215ca4447d6b9b70c3733ad31f07cebaa7c3c",
+  "compatibility": "L1",
+  "capabilities": {
+    "text_fill": true,
+    "table_fill": true,
+    "image_replace": true,
+    "nested_table": false,
+    "field_update": false,
+    "sdt_edit": false,
+    "smartart_edit": false,
+    "visual_render": true
+  },
+  "slots": [
+    {
+      "slot_id": "S_34dd7d8f3e34",
+      "slot_key": "636f5554bd2c48a4",
+      "location_id": "body.p[1]",
+      "matched_text": "{{图1}}",
+      "occurrence": 1,
+      "candidate_type": "explicit_token",
+      "protection_status": "FILLABLE",
+      "confirmation_tier": "AUTO_DERIVE_OR_BIND",
+      "scope": "body"
+    }
+  ],
+  "protected_regions": [],
+  "unsupported_features": [],
+  "scenarios": [
+    {
+      "name": "primary",
+      "plan": "fill_plan.json",
+      "content_plan": "content_plan.json",
+      "allowed_status": [
+        "SUCCESS",
+        "UNVERIFIED"
+      ],
+      "committed": true,
+      "expect_text": [
+        {
+          "location_id": "body.p[1]",
+          "text": "图1：项目示意"
+        }
+      ],
+      "expect_unchanged_text": [
+        {
+          "location_id": "body.p[0]",
+          "text": "项目示意图如下。"
+        },
+        {
+          "location_id": "body.p[2]",
+          "text": "图后说明。"
+        }
+      ],
+      "image": "replacement.png"
+    }
+  ],
+  "image": {
+    "replacement_file": "replacement.png",
+    "replacement_sha256": "24a2b6fc08ab0bfb0642ea4d2a2287ce916682bc3a229d37775c0231bfab34b7",
+    "extent_cx": 2160000,
+    "extent_cy": 1542857,
+    "slot_location": "body.p[1]",
+    "plan_value_is_relative": true
+  }
+}

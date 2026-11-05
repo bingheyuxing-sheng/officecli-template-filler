@@ -1,0 +1,51 @@
+{
+  "schema_version": "4.0",
+  "plan_id": "CP_FIXTURE_05",
+  "template_id": "T_4ea228655755",
+  "sections": [
+    {
+      "section_id": "SEC_401",
+      "purpose": "子项明细",
+      "target_slots": [
+        "S_78b36d570525",
+        "S_c425c00d16f0"
+      ],
+      "fact_refs": [
+        "F_401",
+        "F_402"
+      ]
+    }
+  ],
+  "facts": [
+    {
+      "fact_id": "F_401",
+      "label": "子项名称",
+      "value": "设备采购",
+      "unit": "none",
+      "source": "USER_INPUT",
+      "verification_status": "VERIFIED",
+      "used_by_slots": [
+        "S_78b36d570525"
+      ]
+    },
+    {
+      "fact_id": "F_402",
+      "label": "子项金额",
+      "value": "5000",
+      "unit": "yuan",
+      "source": "USER_INPUT",
+      "verification_status": "VERIFIED",
+      "used_by_slots": [
+        "S_c425c00d16f0"
+      ]
+    }
+  ],
+  "completeness": {
+    "required_slots": [
+      "S_78b36d570525",
+      "S_c425c00d16f0"
+    ],
+    "optional_slots": [],
+    "allow_missing": []
+  }
+}
