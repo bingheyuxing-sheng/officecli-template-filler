@@ -1,5 +1,9 @@
 {
-  "generated_at": "2026-11-05T21:02:55+08:00",
+  "generated_at": "2026-11-05T21:51:09+08:00",
+  "run_info": {
+    "command": "python tests/real_corpus_eval.py --corpus <external-dir> --fill-sample 25 --timeout 120 --limit 0",
+    "environment": "Python 3.15.0; Windows-11-10.0.26300-SP0; python-docx 1.2.0"
+  },
   "totals": {
     "docx_analyzed": 46,
     "analyze_classification": {
@@ -36,7 +40,7 @@
         "PASSED": 12
       }
     },
-    "elapsed_s": 212.1
+    "elapsed_s": 219.7
   },
   "records": [
     {
@@ -47,7 +51,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.09,
+        "elapsed_s": 1.07,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -69,7 +73,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.06,
+        "elapsed_s": 1.21,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -122,7 +126,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.3,
+        "elapsed_s": 1.27,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -151,7 +155,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.01,
+        "elapsed_s": 1.09,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -273,7 +277,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.02,
+        "elapsed_s": 1.1,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -311,7 +315,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.04,
+        "elapsed_s": 1.09,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -333,7 +337,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.99,
+        "elapsed_s": 1.13,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -451,7 +455,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.32,
+        "elapsed_s": 1.19,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -510,7 +514,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.17,
+        "elapsed_s": 1.27,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -537,7 +541,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.18,
+        "elapsed_s": 1.25,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -597,7 +601,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.2,
+        "elapsed_s": 1.37,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -622,7 +626,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.09,
+        "elapsed_s": 1.12,
         "spec_valid": true,
         "summary": {
           "compatibility": "L3",
@@ -649,7 +653,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.16,
+        "elapsed_s": 1.28,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -712,7 +716,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.1,
+        "elapsed_s": 1.17,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -769,7 +773,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.08,
+        "elapsed_s": 1.0,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -800,7 +804,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.02,
+        "elapsed_s": 1.08,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -859,7 +863,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.95,
+        "elapsed_s": 1.17,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -889,7 +893,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.84,
+        "elapsed_s": 1.0,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -918,7 +922,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.92,
+        "elapsed_s": 1.09,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -956,7 +960,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.8,
+        "elapsed_s": 0.87,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -982,7 +986,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.82,
+        "elapsed_s": 0.95,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1017,7 +1021,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.15,
+        "elapsed_s": 1.42,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1084,7 +1088,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.77,
+        "elapsed_s": 1.08,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1106,7 +1110,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.03,
+        "elapsed_s": 1.31,
         "spec_valid": true,
         "summary": {
           "compatibility": "L3",
@@ -1143,7 +1147,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.83,
+        "elapsed_s": 0.91,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1165,7 +1169,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.74,
+        "elapsed_s": 0.87,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1221,7 +1225,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.09,
+        "elapsed_s": 1.22,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1286,7 +1290,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.94,
+        "elapsed_s": 1.15,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1316,7 +1320,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.81,
+        "elapsed_s": 1.11,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1341,7 +1345,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.94,
+        "elapsed_s": 1.12,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1382,7 +1386,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.16,
+        "elapsed_s": 1.18,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1407,7 +1411,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.96,
+        "elapsed_s": 1.11,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1431,7 +1435,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.97,
+        "elapsed_s": 1.12,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1462,7 +1466,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.94,
+        "elapsed_s": 1.13,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1521,7 +1525,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.99,
+        "elapsed_s": 1.2,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1543,7 +1547,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 2.09,
+        "elapsed_s": 2.23,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1610,7 +1614,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.72,
+        "elapsed_s": 1.91,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1688,7 +1692,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.91,
+        "elapsed_s": 1.15,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1710,7 +1714,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.44,
+        "elapsed_s": 1.63,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1770,7 +1774,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.48,
+        "elapsed_s": 1.53,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1796,7 +1800,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.94,
+        "elapsed_s": 1.1,
         "spec_valid": true,
         "summary": {
           "compatibility": "L1",
@@ -1854,7 +1858,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 0.96,
+        "elapsed_s": 1.18,
         "spec_valid": true,
         "summary": {
           "compatibility": "L2",
@@ -1876,7 +1880,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.21,
+        "elapsed_s": 1.43,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1930,7 +1934,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.04,
+        "elapsed_s": 1.37,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -1957,7 +1961,7 @@
       "template_bytes_changed": false,
       "analyze": {
         "classification": "OK",
-        "elapsed_s": 1.13,
+        "elapsed_s": 1.28,
         "spec_valid": true,
         "summary": {
           "compatibility": "L4",
@@ -2018,6 +2022,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 2
     },
@@ -2029,6 +2037,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 2
     },
@@ -2040,6 +2052,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 99
     },
@@ -2051,6 +2065,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 95
     },
@@ -2062,6 +2078,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 2
     },
@@ -2073,6 +2091,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 4
     },
@@ -2084,6 +2106,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 1
     },
@@ -2095,6 +2121,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 3
     },
@@ -2106,6 +2134,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 5
     },
@@ -2117,6 +2149,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 2
     },
@@ -2128,6 +2164,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 12
     },
@@ -2139,6 +2177,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 33
     },
@@ -2150,6 +2190,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 7
     },
@@ -2161,6 +2205,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 7
     },
@@ -2172,6 +2218,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 2
     },
@@ -2183,6 +2231,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 1
     },
@@ -2194,6 +2246,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 2
     },
@@ -2205,6 +2259,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 1
     },
@@ -2216,6 +2272,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 36
     },
@@ -2227,6 +2285,8 @@
       "classification": "OK",
       "status": "SUCCESS",
       "qa_status": "PASSED",
+      "missing_checks": [],
+      "coverage_gaps": [],
       "committed": true,
       "filled_slots": 46
     },
@@ -2238,6 +2298,10 @@
       "classification": "OK",
       "status": "UNVERIFIED",
       "qa_status": "UNVERIFIED",
+      "missing_checks": [],
+      "coverage_gaps": [
+        "FLOATING_IMAGE_LAYOUT_UNSUPPORTED"
+      ],
       "committed": true,
       "filled_slots": 1
     }

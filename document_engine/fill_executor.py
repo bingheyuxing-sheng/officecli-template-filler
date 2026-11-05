@@ -1244,6 +1244,7 @@ def execute_fill_plan(
         missing_checks = normalized["missing_checks"]
         data["qa_status"] = qa_status
         data["missing_checks"] = missing_checks
+        data["coverage_gaps"] = list(normalized["coverage_gaps"])
 
         # -- 7. commit only when the QA report is eligible --------------------
         if qa_status == QA_FAILED:

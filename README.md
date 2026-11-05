@@ -8,10 +8,10 @@
 
 | 项目 | 状态 |
 |---|---|
-| 版本 | **v4.0.0 稳定版**（契约集 **4.2.0**，W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经独立门禁） |
+| 版本 | **v4.0.1 稳定版**（契约集 **4.2.0**，W0 五份契约 + CP-W2-001/002，均 MINOR 加法；已冻结并经独立门禁） |
 | 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
 | Skill 工作流 | GENERATE 文档主链使用 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
-| 测试基线 | **473 项通过**；六类**结构化回归 Fixtures**（非真实业务模板） |
+| 测试基线 | **479 项通过**；六类**结构化回归 Fixtures**（非真实业务模板） |
 | 真实验证 | 46 份外部真实 `.docx`：解析 46/46、0 字节改动、0 Spec 校验失败；21 份可填模板全部完成填充并提交（12 PASSED / 9 UNVERIFIED 如实披露） |
 | 状态 | W0–W3 完成；真实语料无损评测已记录（`reports/w3/real-corpus-eval.md`，仅聚合指标，不含路径/文件名/正文） |
 
@@ -194,7 +194,7 @@ officecli-template-filler/
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-当前完整套件：**473 项通过**（v3.5.9 基线、W0 契约、W1–W3 回归与端到端测试共同计入）。
+当前完整套件：**479 项通过**（v3.5.9 基线、W0 契约、W1–W3 回归与端到端测试共同计入）。
 
 ---
 
@@ -204,6 +204,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v4.0.1 | [Release v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1) | v4.0.0 稳定版补丁：移除测试中残留的外部语料正文，统一测试计数，补齐真实语料报告可复现信息 |
 | v4.0.0 | [Release v4.0.0](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.0) | v4 文档主链（DocumentSpec 4.0 → 计划 → 事务执行 → QA 门禁）、契约集 4.2.0、真实语料无损评测、授权填充零结构漂移 |
 | v3.5.9 | [Release v3.5.9](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.9) | 按角色定位图片、可选 OCR、图形重绘、流程闭环（MUST_ASK_USER、自动文字 diff、校对自动检查、SSOT 证据）与 workflow 编排辅助 |
 | v3.5.8 | [Release v3.5.8](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.8) | 内容真值 QA（数值冲突/合计闭合/名称漂移）、SVG 双嵌入修复、VML 图片替换、矢量图显式未验证、事实溯源校验 |
