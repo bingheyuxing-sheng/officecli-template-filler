@@ -20,7 +20,7 @@ class LegacyPublicApiTests(unittest.TestCase):
     def test_engine_version_and_exports(self) -> None:
         import engine
 
-        self.assertEqual(engine.__version__, "4.0.0")
+        self.assertEqual(engine.__version__, "4.0.1")
         missing = [name for name in engine.__all__ if not hasattr(engine, name)]
         self.assertEqual(missing, [], f"removed public symbols: {missing}")
 

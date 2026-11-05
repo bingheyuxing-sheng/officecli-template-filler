@@ -103,7 +103,7 @@ class TestOcrSuite(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_placeholder_patterns(self) -> None:
-        self.assertEqual(find_placeholder_text("姓名：***"), ["***"])
+        self.assertEqual(find_placeholder_text("项目：***"), ["***"])
         self.assertEqual(find_placeholder_text("请在此处填写XXXX"), ["XXXX"])
         self.assertEqual(find_placeholder_text("正常文字"), [])
 

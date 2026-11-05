@@ -6,6 +6,32 @@
 
 ---
 
+## v4.0.1（2026-11-05，稳定版补丁）
+
+> 软件版本 **4.0.1**；契约集保持 **4.2.0**，产物 `schema_version` 保持 `4.0`。本补丁由独立出口审查发现的问题驱动；不改变任何运行时行为、契约、Schema 或错误码。
+
+### Fixed（修复）
+
+- **外部语料隔离（阻断项 B1）**：删除测试代码中残留的外部语料正文片段与来源归属措辞，回归语义改用完全合成的通用文本；仓库与发布包内不再出现语料路径、文件名或正文。
+- 文档测试计数统一为 **479 项**（`AGENTS.md`、`CHANGELOG.md`、`README.md`、`SKILL.md`、`references/python-docx-engine.md`）。
+- 真实语料报告措辞与可复现性：说明改为“匿名序号 + 技术元数据 + 聚合指标”，报告记录运行命令、参数、环境与时间；smoke 记录补充 `coverage_gaps` 与 `final.reasons`，使“9 份 UNVERIFIED 的原因”可直接复核。
+
+### Changed（变更）
+
+- `engine.__version__`：`4.0.0` → `4.0.1`；`tests/contracts/test_legacy_compat.py` 的版本断言同步更新。
+- 新增独立出口审查记录 `reports/w3/12-independent-exit-review.md`（v4.0.0 时裁定 FAIL，B1 由本补丁关闭）。
+
+### Known limitations（已知限制）
+
+- **阻断项 B2 未关闭**：审计方 Linux/LibreOffice 环境复验仍未完成；P2-01/P2-04 的关闭条件不变。本补丁不声称该环境已验证。
+- 其余限制与 v4.0.0 相同：无人工标注基线、不支持 SDT 内填充、浮动图片 QA 为 `UNVERIFIED`、可选依赖缺失时如实 `UNVERIFIED`。
+
+### Tests
+
+- 全量 **479 项通过**，0 失败、0 跳过；发布包解包复跑结果见 `reports/w3/14-package-manifest-v4.0.1.md`。
+
+---
+
 ## v4.0.0（2026-11-05，稳定版）
 
 > 软件版本 **4.0.0**；契约集 **4.2.0**（契约版本 ≠ 软件版本，产物 `schema_version` 仍为 `4.0`）。本版是 v4 架构的首个稳定发布，取代预发布 `v4.0.0-dev.1`。
@@ -13,7 +39,7 @@
 ### Added（新增）
 
 - v4 文档主链：DocumentSpec 4.0 生产/校验 → ContentPlan/FillPlan → 事务执行器 → QA Pipeline → 二次门禁 → 原子提交（沿用 v4.0.0-dev 的全部模块与契约 4.2.0）。
-- W3-9 真实语料评测工具 `tests/real_corpus_eval.py`：语料目录仅在运行时通过 `--corpus` 传入，仓库内不保存路径、文件名或文档内容；报告只含匿名序号与聚合指标。
+- W3-9 真实语料评测工具 `tests/real_corpus_eval.py`：语料目录仅在运行时通过 `--corpus` 传入，仓库内不保存路径、文件名或文档内容；报告只含匿名序号、技术元数据与聚合指标。
 - 真实语料评测结果（46 份 `.docx`）：解析 46/46 成功、0 字节改动、0 Spec 校验失败；21 份含可填槽位的模板全部完成填充并提交（12 PASSED、9 UNVERIFIED 因浮动图片覆盖缺口如实披露），模板字节 0 改动。
 
 ### Changed（变更）
@@ -38,7 +64,7 @@
 
 ### Tests
 
-- 全量 **473 项通过**，无跳过、无既有测试删除或弱化；`python -m unittest discover`（Python 3.15，Windows）。
+- 全量 **479 项通过**，无跳过、无既有测试删除或弱化；`python -m unittest discover`（Python 3.15，Windows）。
 - 真实语料评测与合成 Fixture 测试分列，不合并统计。
 
 ---
