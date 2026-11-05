@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/v4.0/schemas/tool_envelope-4.0.schema.json",
+  "title": "ToolEnvelope 4.0",
+  "description": "Uniform outer object for every v4.0 tool. Arrays are always present so absence of findings is explicit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "status",
+    "data",
+    "warnings",
+    "errors",
+    "artifacts",
+    "next_action"
+  ],
+  "properties": {
+    "schema_version": { "const": "4.0" },
+    "task_id": { "type": "string", "pattern": "^TASK_[0-9A-Za-z_-]{1,64}$" },
+    "status": { "enum": ["SUCCESS", "PARTIAL", "NEEDS_CONFIRMATION", "BLOCKED", "FAILED", "UNVERIFIED"] },
+    "data": { "type": "object" },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } },
+    "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+    "next_action": { "enum": ["RUN_QA", "ASK_USER", "RETRY", "COMMIT", "STOP", "NONE"] },
+    "transaction": { "type": "object" },
+    "metrics": { "type": "object", "additionalProperties": { "type": "number" } }
+  },
+  "$defs": {
+    "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/code" },
+        "message": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "severity",
+        "retryable",
+        "rollback_required",
+        "human_intervention"
+      ],
+      "properties": {
+        "code": { "$ref": "#/$defs/code" },
+        "message": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["low", "medium", "high", "blocking"] },
+        "retryable": { "type": "boolean" },
+        "rollback_required": { "type": "boolean" },
+        "human_intervention": { "type": "boolean" },
+        "details": { "type": "object" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "required"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["docx", "pdf", "json", "png", "other"] },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "required": { "type": "boolean" }
+      }
+    }
+  }
+}

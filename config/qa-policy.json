@@ -1,0 +1,22 @@
+{
+  "version": "4.0",
+  "description": "System-owned required-check matrix. Callers must not override it.",
+  "policies": {
+    "GENERATE/STRICT": {
+      "required": ["PACKAGE", "FORMAT", "FIDELITY", "CONTENT", "DATA", "VISUAL_PAGE_COUNT"],
+      "optional": ["VISUAL_PIXEL", "OCR"]
+    },
+    "GENERATE/STANDARD": {
+      "required": ["PACKAGE", "FORMAT", "FIDELITY", "CONTENT", "DATA", "VISUAL_PAGE_COUNT"],
+      "optional": ["VISUAL_PIXEL", "OCR"]
+    },
+    "REPAIR/REPLICA": {
+      "required": ["PACKAGE", "FORMAT", "FIDELITY", "DATA"],
+      "optional": ["VISUAL_PAGE_COUNT"]
+    },
+    "REVIEW/REPLICA": {
+      "required": ["PACKAGE", "FORMAT", "REVIEW_INTEGRITY"],
+      "optional": ["VISUAL_PAGE_COUNT"]
+    }
+  }
+}

@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/v4.0/schemas/document_spec-4.0.schema.json",
+  "title": "DocumentSpec 4.0",
+  "description": "Template understanding artifact for Office Skill v4.0. Superset of DocumentSpec 3.0; legacy keys are optional.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "template",
+    "document",
+    "structure",
+    "slots",
+    "protected_regions",
+    "capacity_profiles",
+    "layout_constraints",
+    "fingerprint_ref",
+    "unsupported_features",
+    "warnings",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "4.0" },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_id", "template_sha256", "compatibility", "protection_mode", "capabilities"],
+      "properties": {
+        "template_id": { "$ref": "#/$defs/template_id" },
+        "template_sha256": { "$ref": "#/$defs/sha256" },
+        "parent_sha256": { "$ref": "#/$defs/sha256" },
+        "compatibility": { "enum": ["L1", "L2", "L3", "L4"] },
+        "protection_mode": { "enum": ["STRICT", "STANDARD"] },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text_fill",
+            "table_fill",
+            "image_replace",
+            "nested_table",
+            "field_update",
+            "sdt_edit",
+            "smartart_edit",
+            "visual_render"
+          ],
+          "properties": {
+            "text_fill": { "type": "boolean" },
+            "table_fill": { "type": "boolean" },
+            "image_replace": { "type": "boolean" },
+            "nested_table": { "type": "boolean" },
+            "field_update": { "type": "boolean" },
+            "sdt_edit": { "type": "boolean" },
+            "smartart_edit": { "type": "boolean" },
+            "visual_render": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sections"],
+      "properties": {
+        "page_size": { "type": ["string", "null"] },
+        "orientation": { "type": ["string", "null"] },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/section" }
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paragraphs", "tables", "images"],
+      "properties": {
+        "paragraphs": { "type": "array", "items": { "$ref": "#/$defs/structure_paragraph" } },
+        "tables": { "type": "array", "items": { "$ref": "#/$defs/structure_table" } },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/structure_image" } }
+      }
+    },
+    "slots": { "type": "array", "items": { "$ref": "#/$defs/slot" } },
+    "protected_regions": { "type": "array", "items": { "$ref": "#/$defs/protected_region" } },
+    "capacity_profiles": { "type": "array", "items": { "$ref": "#/$defs/capacity_profile" } },
+    "layout_constraints": { "type": "array", "items": { "$ref": "#/$defs/layout_constraint" } },
+    "fingerprint_ref": { "$ref": "#/$defs/fingerprint_ref" },
+    "unsupported_features": { "type": "array", "items": { "$ref": "#/$defs/unsupported_feature" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } },
+    "compatibility": {
+      "type": "object",
+      "description": "Legacy 3.0 compatibility block; read-only for v4 consumers.",
+      "required": ["compatibility_level", "recommended_strategy"],
+      "properties": {
+        "compatibility_level": { "enum": ["L1", "L2", "L3", "L4"] },
+        "recommended_strategy": { "type": "string" },
+        "l2_features": { "type": "array", "items": { "type": "string" } },
+        "l3_features": { "type": "array", "items": { "type": "string" } },
+        "l4_features": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "sections": { "type": "array", "items": { "type": "object" } },
+    "paragraphs": { "type": "array", "items": { "type": "object" } },
+    "candidate_hits": { "type": "array", "items": { "type": "object" } },
+    "table_profiles": { "type": "array", "items": { "type": "object" } },
+    "image_profiles": { "type": "array", "items": { "type": "object" } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "template_id": { "type": "string", "pattern": "^T_[0-9a-f]{12}$" },
+    "slot_id": { "type": "string", "pattern": "^S_[0-9a-f]{12}(-c[2-9][0-9]*)?$" },
+    "slot_key": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "location_id": {
+      "type": "string",
+      "pattern": "^(body|footnotes|endnotes|comments|sec\\[[0-9]+\\]\\.(header|footer|first_page_header|first_page_footer|even_page_header|even_page_footer))(\\.[a-z_]+\\[[0-9]+\\])+$"
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["section_index"],
+      "properties": {
+        "section_index": { "type": "integer", "minimum": 0 },
+        "page_width_twips": { "type": ["integer", "null"] },
+        "page_height_twips": { "type": ["integer", "null"] },
+        "orientation": { "type": ["integer", "null"] },
+        "margins": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "top": { "type": ["integer", "null"] },
+            "bottom": { "type": ["integer", "null"] },
+            "left": { "type": ["integer", "null"] },
+            "right": { "type": ["integer", "null"] }
+          }
+        },
+        "header_distance_twips": { "type": ["integer", "null"] },
+        "footer_distance_twips": { "type": ["integer", "null"] }
+      }
+    },
+    "structure_paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location_id", "scope"],
+      "properties": {
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "scope": { "enum": ["body", "table", "header_footer", "textbox", "footnote", "endnote", "comment"] },
+        "style_name": { "type": ["string", "null"] },
+        "effective_sz_half_pt": { "type": ["string", "null"] },
+        "font_east_asia": { "type": ["string", "null"] },
+        "text_preview": { "type": "string" }
+      }
+    },
+    "structure_table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table_id", "scope", "depth"],
+      "properties": {
+        "table_id": { "$ref": "#/$defs/location_id" },
+        "scope": { "enum": ["body", "nested_table", "header", "first_page_header", "even_page_header", "footer", "first_page_footer", "even_page_footer"] },
+        "depth": { "type": "integer", "minimum": 0 },
+        "rows": { "type": "integer", "minimum": 0 },
+        "cols": { "type": "integer", "minimum": 0 },
+        "headers": { "type": "array", "items": { "type": "string" } },
+        "cell_type_counts": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
+    "structure_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location_id", "object_type"],
+      "properties": {
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "object_type": { "enum": ["inline_blip", "anchored_blip", "vml", "svg", "chart", "smartart", "ole_object"] },
+        "rId": { "type": ["string", "null"] },
+        "width_cm": { "type": "number", "minimum": 0 },
+        "height_cm": { "type": "number", "minimum": 0 },
+        "partname": { "type": "string" },
+        "content_type": { "type": "string" },
+        "ref_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_id",
+        "slot_key",
+        "location_id",
+        "scope",
+        "candidate_type",
+        "matched_text",
+        "span",
+        "occurrence",
+        "semantic_role",
+        "protection_status",
+        "confirmation_tier"
+      ],
+      "properties": {
+        "slot_id": { "$ref": "#/$defs/slot_id" },
+        "slot_key": { "$ref": "#/$defs/slot_key" },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "scope": { "enum": ["body", "table", "header_footer", "textbox", "footnote", "endnote", "comment"] },
+        "candidate_type": { "enum": ["explicit_token", "red_run_clue", "internal_fact", "control_or_field"] },
+        "matched_text": { "type": "string" },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end"],
+          "properties": {
+            "start": { "type": "integer", "minimum": 0 },
+            "end": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "occurrence": { "type": "integer", "minimum": 1 },
+        "semantic_role": { "type": ["string", "null"] },
+        "style_reference": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "style_name": { "type": ["string", "null"] },
+            "effective_sz_half_pt": { "type": ["string", "null"] },
+            "font_east_asia": { "type": ["string", "null"] }
+          }
+        },
+        "capacity": { "$ref": "#/$defs/capacity" },
+        "protection_status": { "enum": ["FILLABLE", "CONDITIONAL", "PROTECTED"] },
+        "confirmation_tier": {
+          "enum": ["AUTO_DERIVE_OR_BIND", "DEFAULT_FILL_WITH_NOTICE", "MUST_ASK_USER", "PROTECTED_DO_NOT_TOUCH"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "candidate_type": { "const": "internal_fact" } } },
+          "then": { "properties": { "confirmation_tier": { "const": "MUST_ASK_USER" } } }
+        },
+        {
+          "if": { "properties": { "candidate_type": { "const": "control_or_field" } } },
+          "then": {
+            "properties": {
+              "protection_status": { "const": "PROTECTED" },
+              "confirmation_tier": { "const": "PROTECTED_DO_NOT_TOUCH" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "protection_status": { "const": "PROTECTED" } } },
+          "then": { "properties": { "confirmation_tier": { "const": "PROTECTED_DO_NOT_TOUCH" } } }
+        },
+        {
+          "if": { "properties": { "confirmation_tier": { "const": "PROTECTED_DO_NOT_TOUCH" } } },
+          "then": { "properties": { "protection_status": { "const": "PROTECTED" } } }
+        }
+      ]
+    },
+    "capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidence", "method"],
+      "properties": {
+        "max_chars_per_line": { "type": ["integer", "null"], "minimum": 0 },
+        "estimated_lines": { "type": ["integer", "null"], "minimum": 0 },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "method": { "type": "string", "minLength": 1 },
+        "hard_limit": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "value"],
+              "properties": {
+                "kind": { "enum": ["explicit_charlimit", "fixed_height_cell"] },
+                "value": { "type": "integer", "minimum": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "protected_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region_id", "kind", "location_id", "evidence"],
+      "properties": {
+        "region_id": { "type": "string", "pattern": "^PR_[0-9]{3,}$" },
+        "kind": {
+          "enum": ["fixed_title", "header", "footer", "field", "sdt", "logo", "stamp", "repeated_header", "other"]
+        },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "evidence": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["blocking", "warning"] }
+      }
+    },
+    "capacity_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "location_id", "available_width_twips", "confidence", "method"],
+      "properties": {
+        "profile_id": { "type": "string", "pattern": "^CAP_[0-9]{3,}$" },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "available_width_twips": { "type": "integer", "minimum": 0 },
+        "available_height_twips": { "type": ["integer", "null"], "minimum": 0 },
+        "effective_sz_half_pt": { "type": ["string", "null"] },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "method": { "type": "string", "minLength": 1 }
+      }
+    },
+    "layout_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraint_id", "kind", "location_id", "source"],
+      "properties": {
+        "constraint_id": { "type": "string", "pattern": "^LC_[0-9]{3,}$" },
+        "kind": {
+          "enum": ["page_break", "section_break", "repeated_header", "cant_split", "floating_anchor", "fixed_table_layout", "other"]
+        },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "fingerprint_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint_id", "structural_hash", "style_hash", "protected_hash", "layout_hash"],
+      "properties": {
+        "fingerprint_id": { "type": "string", "pattern": "^FP_[0-9]{3,}$" },
+        "structural_hash": { "$ref": "#/$defs/sha256" },
+        "style_hash": { "$ref": "#/$defs/sha256" },
+        "protected_hash": { "$ref": "#/$defs/sha256" },
+        "layout_hash": { "$ref": "#/$defs/sha256" },
+        "baseline_path": { "type": ["string", "null"] }
+      }
+    },
+    "unsupported_feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "detail"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "detail": { "type": "string", "minLength": 1 },
+        "location_id": { "$ref": "#/$defs/location_id" }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "detail"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["low", "medium", "high"] },
+        "detail": { "type": "string", "minLength": 1 },
+        "location_id": { "$ref": "#/$defs/location_id" }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "detail"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["low", "medium", "high", "blocking"] },
+        "detail": { "type": "string", "minLength": 1 },
+        "location_id": { "$ref": "#/$defs/location_id" }
+      }
+    }
+  }
+}

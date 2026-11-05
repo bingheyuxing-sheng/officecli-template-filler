@@ -1,0 +1,255 @@
+{
+  "schema_version": "4.0",
+  "codes": [
+    {
+      "code": "SLOT_ID_CONFLICT",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT01",
+      "message_template": "Duplicate slot_id {slot_id} at {location_id}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "SLOT_LOCATION_UNRESOLVED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT01",
+      "message_template": "Slot location {location_id} no longer resolves",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "SLOT_TEMPLATE_MISMATCH",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT01",
+      "message_template": "Slot namespace {slot_id} does not match template {template_sha256}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "SLOT_ID_COLLISION_RESOLVED",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT01",
+      "message_template": "12-hex slot_id collision resolved with suffix {suffix}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "TEMPLATE_SHA_MISMATCH",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Declared {expected} does not match actual {actual}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "INVALID_FILL_PLAN",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT02",
+      "message_template": "FillPlan failed validation: {reason}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "INVALID_CONTENT_PLAN",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT02",
+      "message_template": "ContentPlan failed validation: {reason}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "SOURCE_REF_MISSING",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT02",
+      "message_template": "Operation {op_id} has no source_ref",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "FACT_SOURCE_MISSING",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT02",
+      "message_template": "Fact {fact_id} has no source",
+      "introduced_in": "3.5.9"
+    },
+    {
+      "code": "UNKNOWN_SLOT",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT02",
+      "message_template": "Slot {slot_id} does not exist in DocumentSpec",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "PROTECTED_SLOT_VIOLATION",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT03",
+      "message_template": "Operation {op_id} targets protected slot {slot_id}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "UNAUTHORIZED_SLOT_TARGET",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Slot {slot_id} is outside baseline.allowed_slot_ids",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "CAPACITY_EXCEEDED",
+      "severity": "high",
+      "retryable": true,
+      "rollback_required": true,
+      "human_intervention": true,
+      "owner": "AGENT03",
+      "message_template": "Operation {op_id} measured {measured} > limit {limit}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "FORMAT_REPAIR_FORBIDDEN",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Automatic format change is forbidden in STRICT mode: {detail}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "UNAUTHORIZED_TEMPLATE_CHANGE",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": true,
+      "owner": "AGENT04",
+      "message_template": "Unauthorized template difference at {location}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_POLICY_OVERRIDE_FORBIDDEN",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "required_checks differs from policy {policy_source}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_FALSE_PASS",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "Report claims PASSED while {count} required checks are missing",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_EVIDENCE_MISSING",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "Check {check_id} has no usable evidence",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_REPAIR_UNVERIFIED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "Repair {repair_id} was applied without a recheck",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_ELIGIBILITY_CONTRADICTION",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "eligible_for_commit disagrees with status {status} under {policy_source}",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "QA_FIDELITY_BYPASS",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "Unauthorized template difference was marked non-blocking",
+      "introduced_in": "4.0.0"
+    },
+    {
+      "code": "OUTPUT_FILE_LOCKED",
+      "severity": "high",
+      "retryable": true,
+      "rollback_required": true,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Output path {output_path} is held by {pids}",
+      "introduced_in": "3.5.9"
+    },
+    {
+      "code": "SSOT_VALIDATION_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "SSOT rule {rule} failed for metric {metric}",
+      "introduced_in": "3.5.9"
+    },
+    {
+      "code": "TEMPLATE_TEXT_RESIDUAL",
+      "severity": "medium",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template placeholder residue at {location}",
+      "introduced_in": "3.5.9"
+    },
+    {
+      "code": "PACKAGE_DANGLING_REL",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT04",
+      "message_template": "Dangling relationship {detail}",
+      "introduced_in": "3.5.9"
+    }
+  ]
+}

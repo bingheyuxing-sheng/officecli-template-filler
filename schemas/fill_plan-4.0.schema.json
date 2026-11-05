@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/v4.0/schemas/fill_plan-4.0.schema.json",
+  "title": "FillPlan 4.0",
+  "description": "Deterministic DOCX execution plan. Structure changes are forbidden in this version; overflow is REJECT-only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "template_id", "mode", "baseline", "operations", "global_policy"],
+  "properties": {
+    "schema_version": { "const": "4.0" },
+    "task_id": { "type": "string", "pattern": "^TASK_[0-9A-Za-z_-]{1,64}$" },
+    "template_id": { "type": "string", "pattern": "^T_[0-9a-f]{12}$" },
+    "mode": { "enum": ["STRICT", "STANDARD"] },
+    "baseline": { "$ref": "#/$defs/baseline" },
+    "operations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/operation" } },
+    "global_policy": { "$ref": "#/$defs/global_policy" },
+    "warnings": { "type": "array", "items": { "type": "object" } }
+  },
+  "$defs": {
+    "slot_id": { "type": "string", "pattern": "^S_[0-9a-f]{12}(-c[2-9][0-9]*)?$" },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_sha256", "spec_schema_version", "fingerprint_id", "allowed_slot_ids"],
+      "properties": {
+        "template_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "spec_schema_version": { "const": "4.0" },
+        "fingerprint_id": { "type": "string", "pattern": "^FP_[0-9]{3,}$" },
+        "allowed_slot_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/slot_id" } }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op_id",
+        "sequence",
+        "type",
+        "slot_id",
+        "target",
+        "source_ref",
+        "policy",
+        "preconditions",
+        "overflow"
+      ],
+      "properties": {
+        "op_id": { "type": "string", "pattern": "^OP_[0-9A-Za-z_-]{1,32}$" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "type": { "enum": ["replace_text", "fill_paragraph", "fill_cell", "replace_image"] },
+        "slot_id": { "$ref": "#/$defs/slot_id" },
+        "target": { "$ref": "#/$defs/target" },
+        "source_ref": { "type": "string", "minLength": 1 },
+        "value": { "type": "string" },
+        "value_ref": { "type": ["string", "null"], "pattern": "^F_[0-9A-Za-z_-]{1,32}$" },
+        "policy": { "const": "STRICT" },
+        "preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["slot_exists", "not_protected", "capacity_ok", "source_verified", "template_sha_match"] }
+        },
+        "depends_on": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^OP_[0-9A-Za-z_-]{1,32}$" } },
+        "overflow": { "$ref": "#/$defs/overflow" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "fill_cell" } } },
+          "then": {
+            "required": ["value"],
+            "properties": {
+              "target": {
+                "required": ["table_id", "row", "col"]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "replace_image" } } },
+          "then": {
+            "required": ["value"],
+            "properties": {
+              "target": { "required": ["image_role"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "enum": ["replace_text", "fill_paragraph"] } }
+          },
+          "then": { "required": ["value"] }
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location_id"],
+      "properties": {
+        "location_id": {
+          "type": "string",
+          "pattern": "^(body|footnotes|endnotes|comments|sec\\[[0-9]+\\]\\.(header|footer|first_page_header|first_page_footer|even_page_header|even_page_footer))(\\.[a-z_]+\\[[0-9]+\\])+$"
+        },
+        "table_id": { "type": "string" },
+        "row": { "type": "integer", "minimum": 0 },
+        "col": { "type": "integer", "minimum": 0 },
+        "image_role": { "enum": ["logo", "stamp", "qr", "illustration", "photo"] }
+      }
+    },
+    "overflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measured_chars", "limit_source", "strategy"],
+      "properties": {
+        "measured_chars": { "type": "integer", "minimum": 0 },
+        "limit_source": { "enum": ["explicit_charlimit", "fixed_height_cell", "none"] },
+        "limit_value": { "type": ["integer", "null"], "minimum": 0 },
+        "strategy": { "const": "REJECT" }
+      }
+    },
+    "global_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_structure_change", "deny_operations", "styles", "page_setup"],
+      "properties": {
+        "allow_structure_change": { "const": false },
+        "deny_operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "modify_page_margin",
+              "modify_section_properties",
+              "modify_global_styles",
+              "rebuild_table",
+              "move_existing_image",
+              "delete_protected_content",
+              "insert_row",
+              "insert_paragraph",
+              "merge_cells"
+            ]
+          }
+        },
+        "styles": { "const": "DENY" },
+        "page_setup": { "const": "DENY" }
+      }
+    }
+  }
+}
