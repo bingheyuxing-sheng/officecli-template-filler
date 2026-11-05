@@ -212,7 +212,7 @@ def _compare_paragraph_pair(
             f"output={len(out_p['runs'])} reference={len(ref_p['runs'])}",
             severity="low",
         ))
-    for run_index, (out_run, ref_run) in enumerate(zip(out_p["runs"], ref_p["runs"])):
+    for run_index, (out_run, ref_run) in enumerate(zip(out_p["runs"], ref_p["runs"], strict=False)):
         for key in ("font", "size"):
             out_value, ref_value = out_run[key], ref_run[key]
             if out_value not in (None, "None") and ref_value not in (None, "None") and out_value != ref_value:
@@ -260,7 +260,7 @@ def _compare_table_pair(
     if ref_t["column_widths"] and out_t["column_widths"]:
         ref_total = float(ref_t["total_width"] or 1)
         out_total = float(out_t["total_width"] or 1)
-        for column_index, (out_w, ref_w) in enumerate(zip(out_t["column_widths"], ref_t["column_widths"])):
+        for column_index, (out_w, ref_w) in enumerate(zip(out_t["column_widths"], ref_t["column_widths"], strict=False)):
             if abs(out_w / out_total - ref_w / ref_total) > _WIDTH_DRIFT:
                 issues.append(_issue(
                     "LAYOUT_TABLE_DRIFT", f"{location}.col[{column_index}]",
@@ -287,7 +287,7 @@ def compare_layout_fingerprints(
         _count_issue(issues, "LAYOUT_TABLE_COUNT", "tables", out_fp["tables"], ref_fp["tables"])
         _count_issue(issues, "LAYOUT_IMAGE_COUNT", "images", out_fp["images"], ref_fp["images"])
 
-    for index, (out_sec, ref_sec) in enumerate(zip(out_fp["sections"], ref_fp["sections"])):
+    for index, (out_sec, ref_sec) in enumerate(zip(out_fp["sections"], ref_fp["sections"], strict=False)):
         for key in ("page_width", "page_height", "orientation"):
             if out_sec[key] != ref_sec[key]:
                 issues.append(_issue(
@@ -354,7 +354,7 @@ def compare_layout_fingerprints(
             continue
         ref_stories.setdefault(_story_prefix(item["location"]), []).append(item)
     for story, out_items in out_stories.items():
-        for out_p, ref_p in zip(out_items, ref_stories.get(story, [])):
+        for out_p, ref_p in zip(out_items, ref_stories.get(story, []), strict=False):
             _compare_paragraph_pair(out_p, ref_p, out_p["location"], profile, issues)
 
     out_tables = {
@@ -390,7 +390,7 @@ def compare_layout_fingerprints(
                 severity="low",
             ))
 
-    for out_img, ref_img in zip(out_fp["images"], ref_fp["images"]):
+    for out_img, ref_img in zip(out_fp["images"], ref_fp["images"], strict=False):
         location = ref_img["location"]
         if (out_img["width"], out_img["height"]) != (ref_img["width"], ref_img["height"]):
             issues.append(_issue(

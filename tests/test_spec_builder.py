@@ -29,7 +29,6 @@ if str(ROOT) not in sys.path:
 from jsonschema import Draft202012Validator  # noqa: E402
 
 from template_intelligence import (  # noqa: E402
-    build_document_spec,
     build_document_spec_from_path,
     make_slot_id,
     make_slot_key,

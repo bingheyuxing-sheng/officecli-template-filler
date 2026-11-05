@@ -199,7 +199,7 @@ class NestedTableTargetTests(unittest.TestCase):
         self.assertTrue(validate_fill_plan(plan, spec, content)["passed"])
 
         nested_id = "body.tbl[0].r[1].c[1].tbl[0]"
-        for operation, expected_value in zip(plan["operations"], ("设备采购", "5000")):
+        for operation, expected_value in zip(plan["operations"], ("设备采购", "5000"), strict=False):
             self.assertEqual(operation["type"], "fill_cell")
             self.assertEqual(operation["target"]["table_id"], nested_id)
             self.assertIn("tbl[0]", operation["target"]["location_id"])

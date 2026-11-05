@@ -434,7 +434,7 @@ def run_full_qa(
     try:
         docx.Document(staged)
     except Exception as exc:
-        raise ValueError("staged document cannot be read: %s" % exc)
+        raise ValueError("staged document cannot be read: %s" % exc) from exc
 
     comparison_profile = "STYLE_GUIDE" if task_mode == "GENERATE" else "REPLICA"
     checks: List[Dict[str, Any]] = []

@@ -16,7 +16,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List
 
 ROOT = Path(__file__).resolve().parents[1]
 YAML_PATH = ROOT / "config" / "environment_capabilities.yaml"

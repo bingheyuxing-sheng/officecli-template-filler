@@ -611,7 +611,7 @@ def _assign_slot_identities(
             items.append((canonical, base_id))
 
     resolved = resolve_slot_id_collisions(items)
-    by_canonical = {canonical: slot_id for canonical, slot_id in zip(sorted(c for c, _ in items), resolved)}
+    by_canonical = {canonical: slot_id for canonical, slot_id in zip(sorted(c for c, _ in items), resolved, strict=True)}
     for candidate in candidates:
         candidate["slot_id"] = by_canonical[candidate["_canonical"]]
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import difflib
 import re
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, Sequence
 
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph

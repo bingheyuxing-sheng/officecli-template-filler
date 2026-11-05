@@ -18,6 +18,7 @@ from docx.shared import Pt
 
 from engine import (
     DocumentTransaction,
+    QAValidationError,
     TransactionAborted,
     audit_format_and_text_qa,
     check_font_availability,
@@ -130,7 +131,7 @@ class TestP0SemanticQaSuite(unittest.TestCase):
     def test_style_guide_still_reports_real_body_drift(self) -> None:
         template = self._template_docx()
         output = self._output_docx(template, body_pt=16)
-        with self.assertRaises(Exception):
+        with self.assertRaises(QAValidationError):
             audit_format_and_text_qa(
                 docx.Document(output),
                 docx_path=output,

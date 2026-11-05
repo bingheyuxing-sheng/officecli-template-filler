@@ -307,7 +307,7 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
     if ref_sig["col_widths"] and out_sig["col_widths"]:
         ref_total = float(ref_sig["total_width"] or 1)
         out_total = float(out_sig["total_width"] or 1)
-        for col_index, (out_w, ref_w) in enumerate(zip(out_sig["col_widths"], ref_sig["col_widths"])):
+        for col_index, (out_w, ref_w) in enumerate(zip(out_sig["col_widths"], ref_sig["col_widths"], strict=False)):
             if abs(out_w / out_total - ref_w / ref_total) > 0.05:
                 issues.append(("table_column_ratio", table_index, col_index, round(out_w / out_total, 3), round(ref_w / ref_total, 3)))
                 break
@@ -365,7 +365,7 @@ def compare_table_style(out_sig: Dict[str, Any], ref_sig: Dict[str, Any], table_
             issues.append(("table_band_size", table_index, out_sig.get(band_key), ref_band))
 
     for row_index, (out_entry, ref_entry) in enumerate(
-        zip(out_sig.get("row_heights") or [], ref_sig.get("row_heights") or [])
+        zip(out_sig.get("row_heights") or [], ref_sig.get("row_heights") or [], strict=False)
     ):
         if not rows_comparable:
             break
@@ -524,7 +524,7 @@ def _restore_merges(target_tbl, reference_tbl, result: TableRestoreResult) -> No
         result["manual_required"].append({"property": "merge", "reason": "row_count_mismatch"})
         return
 
-    for row_index, (target_row, reference_row) in enumerate(zip(target_tbl.rows, reference_tbl.rows)):
+    for row_index, (target_row, reference_row) in enumerate(zip(target_tbl.rows, reference_tbl.rows, strict=True)):
         # `row.cells` yields one entry per grid column, repeating merged cells, so the
         # column count of a merged and an unmerged row stays comparable.
         target_cells = list(target_row.cells)
@@ -665,7 +665,7 @@ def restore_table_style_from_reference(target_tbl, reference_tbl) -> TableRestor
         })
         return result
 
-    for target_col, reference_col in zip(target_cols, reference_cols):
+    for target_col, reference_col in zip(target_cols, reference_cols, strict=True):
         width = reference_col.get(qn("w:w"))
         if width:
             target_col.set(qn("w:w"), width)
@@ -708,7 +708,7 @@ def _restore_cell_tcw_and_margins(target_tbl, reference_tbl) -> int:
             break
         for target_cell, reference_cell in zip(
             get_unique_row_cells(target_tbl.rows[row_index]),
-            get_unique_row_cells(reference_row),
+            get_unique_row_cells(reference_row), strict=False,
         ):
             for tag_name in ("tcW", "tcMar"):
                 if _sync_tcpr_child(target_cell, reference_cell, tag_name):
@@ -724,10 +724,10 @@ def _restore_cell_text_styles(target_tbl, reference_tbl) -> int:
             break
         target_cells = get_unique_row_cells(target_tbl.rows[row_index])
         reference_cells = get_unique_row_cells(reference_row)
-        for target_cell, reference_cell in zip(target_cells, reference_cells):
+        for target_cell, reference_cell in zip(target_cells, reference_cells, strict=False):
             if classify_cell_structure(target_cell) in ("nested_table", "image_cell", "sdt_control", "field_code", "unknown_complex"):
                 continue
-            for target_p, reference_p in zip(target_cell.paragraphs, reference_cell.paragraphs):
+            for target_p, reference_p in zip(target_cell.paragraphs, reference_cell.paragraphs, strict=False):
                 reference_pPr = reference_p._p.pPr
                 if reference_pPr is not None:
                     target_pPr = target_p._p.get_or_add_pPr()
@@ -777,7 +777,7 @@ def _restore_header_shading(target_tbl, reference_tbl) -> int:
     restored = 0
     for target_cell, reference_cell in zip(
         get_unique_row_cells(target_tbl.rows[0]),
-        get_unique_row_cells(reference_tbl.rows[0]),
+        get_unique_row_cells(reference_tbl.rows[0]), strict=False,
     ):
         if _sync_tcpr_child(target_cell, reference_cell, "shd"):
             restored += 1
@@ -792,7 +792,7 @@ def _restore_cell_valign(target_tbl, reference_tbl) -> int:
             break
         for target_cell, reference_cell in zip(
             get_unique_row_cells(target_tbl.rows[row_index]),
-            get_unique_row_cells(reference_row),
+            get_unique_row_cells(reference_row), strict=False,
         ):
             if _sync_tcpr_child(target_cell, reference_cell, "vAlign"):
                 restored += 1

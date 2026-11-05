@@ -292,7 +292,7 @@ def _edit_distance_one(left: str, right: str) -> bool:
     if left == right or abs(len(left) - len(right)) > 1:
         return False
     if len(left) == len(right):
-        return sum(1 for a, b in zip(left, right) if a != b) == 1
+        return sum(1 for a, b in zip(left, right, strict=True) if a != b) == 1
     shorter, longer = (left, right) if len(left) < len(right) else (right, left)
     for index in range(len(longer)):
         if longer[:index] + longer[index + 1:] == shorter:

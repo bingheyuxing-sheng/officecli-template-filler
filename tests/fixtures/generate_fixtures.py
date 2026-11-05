@@ -29,8 +29,8 @@ if str(ROOT) not in sys.path:
 
 import docx  # noqa: E402
 from docx.oxml import OxmlElement, parse_xml  # noqa: E402
-from docx.oxml.ns import nsdecls, qn  # noqa: E402
-from docx.shared import Cm, RGBColor  # noqa: E402
+from docx.oxml.ns import nsdecls  # noqa: E402
+from docx.shared import Cm  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
@@ -516,7 +516,7 @@ def build_class_05(class_dir: Path) -> Dict[str, Any]:
     # on the nested paragraph location.  The builder emits a `fill_cell` target for
     # the nested table itself; this second plan keeps the paragraph-level path covered.
     paragraph_plan = copy.deepcopy(plan)
-    for operation, slot in zip(paragraph_plan["operations"], [name_slot, amount_slot]):
+    for operation, slot in zip(paragraph_plan["operations"], [name_slot, amount_slot], strict=False):
         operation["type"] = "replace_text"
         operation["target"] = {"location_id": slot["location_id"]}
     assert validate_fill_plan(paragraph_plan, spec, content)["passed"], \

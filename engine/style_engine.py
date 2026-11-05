@@ -14,7 +14,6 @@ from docx.oxml.ns import qn
 
 from .ooxml_utils import (
     LogicalParagraphView,
-    RED_HEX_SET,
     _is_red_rgb,
     is_red_run,
     ensure_xml_space_preserve_on_run,

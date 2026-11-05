@@ -46,7 +46,6 @@ from engine import (
     release_office_file_locks,
     LogicalParagraphView,
     iter_all_document_paragraphs_with_Wait_context,
-    sanitize_ooxml_whitespace_and_pagination,
     build_ssot_master_data,
     parse_ratio_bound,
     compute_exact_percentages,
@@ -56,7 +55,6 @@ from engine import (
     classify_cell_structure,
     fill_cell_strict_style,
     clone_excel_template_row,
-    shift_excel_formula_row_refs,
     recalculate_and_verify_excel_formulas,
     audit_excel_formula_and_style_qa,
     route_document_task,
@@ -74,12 +72,10 @@ from engine import (
     execute_review_plan,
     audit_review_integrity,
     apply_tracked_replacement,
-    recalculate_and_verify_excel_formulas,
     enable_track_changes,
     add_paragraph_comment,
     EditorSdkSession,
     list_process_pids,
-    install_auto_cleanup,
     read_auto_cleanup_log,
     AUTO_CLEANUP_LOG,
     table_style_signature,
@@ -127,8 +123,8 @@ class TestV3EngineSuite(unittest.TestCase):
         pe = OxmlElement("w:proofErr")
         pe.set(qn("w:type"), "spellStart")
         p._p.append(pe)
-        r2 = p.add_run("ect_")
-        r3 = p.add_run("name}}（重点工程）")
+        p.add_run("ect_")
+        p.add_run("name}}（重点工程）")
 
         # Nested table placeholder
         outer_tbl = doc.add_table(rows=1, cols=1)
@@ -371,7 +367,7 @@ class TestV3EngineSuite(unittest.TestCase):
         plan = build_repair_plan(ref_path, brk_path)
         self.assertGreaterEqual(plan["total_actions"], 3)
 
-        exec_res = execute_repair_plan(plan, out_path)
+        execute_repair_plan(plan, out_path)
         self.assertTrue(os.path.isfile(out_path))
 
         repaired_doc = docx.Document(out_path)
@@ -1281,7 +1277,6 @@ class TestV3EngineSuite(unittest.TestCase):
         tt = tgt.add_table(rows=2, cols=2)
         tt.cell(0, 0).paragraphs[0].add_run("A")
         tt.cell(1, 0).paragraphs[0].add_run("B")
-        ref_row0 = docx.Document(ref_path).tables[0].rows[0]
         # no merge in template; give target a vMerge the template does not have
         tc_pr = tt.rows[1].cells[0]._tc.get_or_add_tcPr()
         vm = _OE("w:vMerge")

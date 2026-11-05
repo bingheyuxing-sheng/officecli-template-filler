@@ -422,10 +422,10 @@ class DocumentTransaction:
                 ),
             }
             self.abort("OUTPUT_FILE_LOCKED")
-            raise TransactionAborted("OUTPUT_FILE_LOCKED", self.record())
+            raise TransactionAborted("OUTPUT_FILE_LOCKED", self.record()) from exc
         except OSError as exc:
             self.abort(f"COMMIT_FAILED: {exc}")
-            raise TransactionAborted(f"COMMIT_FAILED: {exc}", self.record())
+            raise TransactionAborted(f"COMMIT_FAILED: {exc}", self.record()) from exc
 
         self.committed = True
         self._finished = True

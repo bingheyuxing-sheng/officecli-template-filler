@@ -19,12 +19,12 @@ import os
 import re
 import shutil
 import tempfile
-from copy import copy, deepcopy
+from copy import copy
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import openpyxl
 from openpyxl.formula.translate import Translator
-from openpyxl.utils import column_index_from_string, get_column_letter, range_boundaries
+from openpyxl.utils import get_column_letter, range_boundaries
 
 from .process_guard import TaskResourceGuard
 from .pdf_backend import libreoffice_user_installation_arg

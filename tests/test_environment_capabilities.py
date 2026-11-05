@@ -8,7 +8,6 @@ missing required capability can never yield a PASSED report.
 
 from __future__ import annotations
 
-import copy
 import importlib
 import json
 import sys

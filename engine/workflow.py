@@ -24,7 +24,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-import docx
 from docx.oxml.ns import qn
 
 from .alignment import is_heading_paragraph as _is_heading_paragraph

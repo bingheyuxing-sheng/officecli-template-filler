@@ -16,15 +16,12 @@ Core capabilities:
 
 from __future__ import annotations
 
-import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
-import docx
+from typing import Any, Dict, List
 from docx.oxml.ns import qn
 
 from .ooxml_utils import (
     LogicalParagraphView,
-    RED_HEX_SET,
     TOKEN_PATTERN,
     is_red_run,
     iter_all_document_paragraphs_with_Wait_context,

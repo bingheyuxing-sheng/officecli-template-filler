@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence
 
 SLOT_ID_RE = re.compile(r"^S_[0-9a-f]{12}(-c[2-9][0-9]*)?$")
 SLOT_KEY_RE = re.compile(r"^[0-9a-f]{16}$")

@@ -19,7 +19,6 @@ import difflib
 import json
 import os
 import re
-import tempfile
 import zipfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -302,7 +301,7 @@ def _replace_in_run_list(p_el, runs, old_text, new_text, author, date, revision_
     nodes: List[Any] = []
     cursor = 0
     inserted = False
-    for r_el, text in zip(runs, texts):
+    for r_el, text in zip(runs, texts, strict=True):
         r_start, r_end = cursor, cursor + len(text)
         cursor = r_end
         overlap_start = max(start, r_start)
@@ -494,7 +493,7 @@ def _apply_paragraph_profile_tracked(paragraph, profile, strip_red: bool, author
         if _serialize_nodes(_base_children(new_ppr, _PPR_BASE_TAGS)) != _serialize_nodes(old_ppr_nodes):
             _append_format_change(new_ppr, "w:pPrChange", old_ppr_nodes, ids.take(), author, date)
             added += 1
-    for run, old_nodes in zip(paragraph.runs, old_run_nodes):
+    for run, old_nodes in zip(paragraph.runs, old_run_nodes, strict=False):
         new_nodes = _base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS)
         if _serialize_nodes(new_nodes) != _serialize_nodes(old_nodes):
             _append_format_change(run._r.get_or_add_rPr(), "w:rPrChange", old_nodes, ids.take(), author, date)
@@ -553,29 +552,29 @@ def _restore_table_style_tracked(target_tbl, reference_tbl, author: str, date: s
         _append_format_change(tblPr, "w:tblPrChange", old_tblpr, ids.take(), author, date)
         added += 1
 
-    for row, old_nodes in zip(target_tbl.rows, old_trpr):
+    for row, old_nodes in zip(target_tbl.rows, old_trpr, strict=False):
         trPr = row._tr.find(qn("w:trPr"))
         if _serialize_nodes(_base_children(trPr, TRPR_ORDER)) != _serialize_nodes(old_nodes):
             trPr = _get_or_add_trPr(row._tr)
             _append_format_change(trPr, "w:trPrChange", old_nodes, ids.take(), author, date)
             added += 1
 
-    for row, old_row in zip(target_tbl.rows, old_tcpr):
-        for cell, old_nodes in zip(get_unique_row_cells(row), old_row):
+    for row, old_row in zip(target_tbl.rows, old_tcpr, strict=False):
+        for cell, old_nodes in zip(get_unique_row_cells(row), old_row, strict=False):
             tcPr = cell._tc.find(qn("w:tcPr"))
             if _serialize_nodes(_base_children(tcPr, tcpr_tags)) != _serialize_nodes(old_nodes):
                 _append_format_change(cell._tc.get_or_add_tcPr(), "w:tcPrChange", old_nodes, ids.take(), author, date)
                 added += 1
 
-    for row, old_row_marks in zip(target_tbl.rows, old_marks):
-        for cell, old_cell_marks in zip(get_unique_row_cells(row), old_row_marks):
-            for p, (old_mark, old_runs) in zip(cell.paragraphs, old_cell_marks):
+    for row, old_row_marks in zip(target_tbl.rows, old_marks, strict=False):
+        for cell, old_cell_marks in zip(get_unique_row_cells(row), old_row_marks, strict=False):
+            for p, (old_mark, old_runs) in zip(cell.paragraphs, old_cell_marks, strict=False):
                 new_mark = _base_children(_paragraph_mark_rpr(p._p), _RPR_BASE_TAGS)
                 if (new_mark or old_mark) and _serialize_nodes(new_mark) != _serialize_nodes(old_mark):
                     target = p._p.get_or_add_pPr().get_or_add_rPr()
                     _append_format_change(target, "w:rPrChange", old_mark, ids.take(), author, date)
                     added += 1
-                for run, old_nodes in zip(p.runs, old_runs):
+                for run, old_nodes in zip(p.runs, old_runs, strict=False):
                     new_nodes = _base_children(run._r.find(qn("w:rPr")), _RPR_BASE_TAGS)
                     if _serialize_nodes(new_nodes) != _serialize_nodes(old_nodes):
                         _append_format_change(run._r.get_or_add_rPr(), "w:rPrChange", old_nodes, ids.take(), author, date)

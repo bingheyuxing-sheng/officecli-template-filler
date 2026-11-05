@@ -25,7 +25,6 @@ from __future__ import annotations
 import os
 import posixpath
 import re
-import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -35,7 +34,7 @@ from xml.etree import ElementTree as ET
 import docx
 from docx.oxml.ns import qn
 
-from .ooxml_utils import RED_HEX_SET, TOKEN_PATTERN, is_red_run, iter_all_document_paragraphs_with_Wait_context
+from .ooxml_utils import TOKEN_PATTERN, is_red_run, iter_all_document_paragraphs_with_Wait_context
 from .qa_policy import resolve_comparison_profile, split_issues
 from .pdf_backend import find_pdf_backend, convert_docx_to_pdf, pdf_page_count
 from .style_engine import resolve_run_effective_sz, resolve_run_effective_font
@@ -600,7 +599,6 @@ def audit_format_and_text_qa(
     reference_inventory: Set[str] = set()
     reference_baseline = None
     reference_font_inventory: Set[Tuple[str, str]] = set()
-    reference_body_font = None
     reference_tables: List[Any] = []
     profile = resolve_comparison_profile(
         comparison_profile, reference_provided=bool(reference_docx_path)
@@ -618,9 +616,6 @@ def audit_format_and_text_qa(
         reference_baseline = _document_body_baseline(ref_doc)
         reference_font_inventory = set(_font_text_weights(list(_body_run_pairs(ref_doc))))
         reference_font_inventory |= set(_font_text_weights(list(_table_run_pairs(ref_doc))))
-        reference_body_font = _dominant_font(
-            _font_text_weights([(p, r) for p, r in _body_run_pairs(ref_doc) if not _is_heading_like(p)])
-        )
         reference_tables = list(ref_doc.tables)
         paragraph_alignment = align_paragraphs(doc.paragraphs, ref_doc.paragraphs)
         paragraph_matches = dict(paragraph_alignment["matches"])
@@ -1185,7 +1180,7 @@ def run_visual_layout_qa(
                             if (out_pix.width, out_pix.height) != (ref_pix.width, ref_pix.height):
                                 page_diffs.append((page_index, 1.0))
                                 continue
-                            diff_count = sum(1 for a, b in zip(out_pix.samples, ref_pix.samples) if abs(a - b) > 24)
+                            diff_count = sum(1 for a, b in zip(out_pix.samples, ref_pix.samples, strict=False) if abs(a - b) > 24)
                             ratio = diff_count / max(len(out_pix.samples), 1)
                             if ratio > 0.02:
                                 page_diffs.append((page_index, round(ratio, 4)))

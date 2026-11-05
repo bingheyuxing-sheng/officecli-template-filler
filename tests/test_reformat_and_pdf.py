@@ -15,9 +15,8 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 import docx
-from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, Twips
+from docx.shared import Pt
 
 from engine import (
     build_reformat_plan,
@@ -27,7 +26,6 @@ from engine import (
     list_format_revisions,
     pdf_page_count,
 )
-from engine import pdf_backend
 
 
 class TestPdfBackendSuite(unittest.TestCase):

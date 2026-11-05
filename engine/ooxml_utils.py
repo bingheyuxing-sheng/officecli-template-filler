@@ -14,10 +14,8 @@ Key v3.0 architectural changes over v2.9:
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional, Set, Tuple
-from docx.oxml import OxmlElement
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 from docx.oxml.ns import qn
 from lxml import etree
 

@@ -55,7 +55,7 @@ class TestLayoutQaSuite(unittest.TestCase):
         table = document.add_table(rows=2, cols=len(widths))
         grid = table._tbl.tblGrid
         columns = grid.findall(qn("w:gridCol"))
-        for column, width in zip(columns, widths):
+        for column, width in zip(columns, widths, strict=False):
             column.set(qn("w:w"), str(width))
         for row in table.rows:
             for cell in row.cells:
@@ -205,8 +205,7 @@ class TestLayoutQaSuite(unittest.TestCase):
             conversion_dirs.append(destination)
             return os.path.join(destination, os.path.splitext(os.path.basename(source))[0] + ".pdf"), None
 
-        with mock.patch("engine.qa_engine.shutil.which", return_value="soffice"), \
-                mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "libreoffice", "executable": "soffice"}), \
+        with mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "libreoffice", "executable": "soffice"}), \
                 mock.patch("engine.qa_engine._convert_docx_to_pdf", side_effect=convert), \
                 mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}), \
                 mock.patch.dict(sys.modules, {"fitz": fake_fitz}):
@@ -230,8 +229,7 @@ class TestLayoutQaSuite(unittest.TestCase):
     def test_visual_qa_reports_fitz_unavailable(self) -> None:
         output = self._docx("fitz_out.docx", "正文")
         reference = self._docx("fitz_ref.docx", "正文")
-        with mock.patch("engine.qa_engine.shutil.which", return_value="soffice"), \
-                mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "libreoffice", "executable": "soffice"}), \
+        with mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "libreoffice", "executable": "soffice"}), \
                 mock.patch("engine.qa_engine._convert_docx_to_pdf", return_value=("fake.pdf", None)), \
                 mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}), \
                 mock.patch.dict(sys.modules, {"fitz": None}):
@@ -242,8 +240,7 @@ class TestLayoutQaSuite(unittest.TestCase):
 
     def test_visual_qa_reference_coverage_and_schema_enum(self) -> None:
         output = self._docx("no_ref.docx", "正文")
-        with mock.patch("engine.qa_engine.shutil.which", return_value=None), \
-                mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "none", "executable": None}), \
+        with mock.patch("engine.qa_engine.find_pdf_backend", return_value={"name": "none", "executable": None}), \
                 mock.patch("engine.qa_engine.check_font_availability", return_value={"checked": True, "missing": []}):
             no_reference = run_visual_layout_qa(output)
             missing_reference = run_visual_layout_qa(output, reference_docx_path=os.path.join(self.work_dir, "missing.docx"))

@@ -18,15 +18,14 @@ Core capabilities:
 
 from __future__ import annotations
 
-import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from .ooxml_utils import sanitize_ooxml_whitespace_and_pagination, is_red_run
-from .style_engine import resolve_style_sz_and_font, normalize_rPr_fonts_and_strip_red
+from .style_engine import resolve_style_sz_and_font
 from .table_engine import classify_cell_structure, restore_table_style_from_reference
 
 
@@ -199,7 +198,7 @@ def build_repair_plan(
     for t_idx, brk_tbl in enumerate(brk_doc.tables):
         ref_tbl = ref_doc.tables[t_idx] if t_idx < len(ref_doc.tables) else (ref_doc.tables[0] if ref_doc.tables else None)
         missing_cant_split = 0
-        for r_idx, row in enumerate(brk_tbl.rows):
+        for row in brk_tbl.rows:
             trPr = row._tr.find(qn("w:trPr"))
             if trPr is None or trPr.find(qn("w:cantSplit")) is None:
                 missing_cant_split += 1

@@ -18,7 +18,7 @@ from __future__ import annotations
 import io
 import zipfile
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import docx
 from docx.oxml.ns import qn
 from PIL import Image

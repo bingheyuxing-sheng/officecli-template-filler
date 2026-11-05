@@ -15,7 +15,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import uuid
 from typing import Any, Dict, Optional, Tuple
 
 _BACKEND_WPS = "wps"

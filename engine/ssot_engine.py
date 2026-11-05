@@ -360,7 +360,7 @@ def build_ssot_master_data(
                 decimals=2,
                 zero_total_policy="zero",
             )
-            for gv, pct in zip(distinct_vals, pcts):
+            for gv, pct in zip(distinct_vals, pcts, strict=True):
                 grouped[gk][gv][f"{primary_nf}_pct"] = pct
 
     # 3. Minimum grand-total rules
