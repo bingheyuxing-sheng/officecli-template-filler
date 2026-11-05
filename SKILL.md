@@ -1,6 +1,6 @@
 ---
 name: officecli-template-filler
-description: Office Document Intelligence engine for Word (.docx) and Excel (.xlsx/.xlsm) templates. Routes tasks via an 8-mode Task Router (GENERATE, POLISH, REPAIR, REVIEW, MERGE, REFORMAT, EXCEL_GENERATE, PROOFREAD), classifies template compatibility (L1-L4), and applies non-destructive cross-run replacement, Decimal SSOT solving, MIME/reference-counted image replacement, PID-scoped resource cleanup with proof-based ownership, and Package plus Format/Font/Table/Layout QA. REVIEW and PROOFREAD write native Word tracked changes (w:ins/w:del plus w:*PrChange format revisions) and comments so a human accepts or rejects every change. L1-L3 targets Zero Unintended Formatting Delta; L4 objects are preserved read-only and reported in coverage_gaps rather than claimed as 100 percent fidelity.
+description: Template-driven Office document engine for Word (.docx) and Excel (.xlsx/.xlsm). Routes tasks into eight modes (GENERATE, REPAIR, REFORMAT, REVIEW, PROOFREAD, EXCEL_GENERATE, POLISH, MERGE), classifies template compatibility L1-L4, fills through a strict FillPlan executor with Zero Unintended Formatting Delta and native tracked changes, and gates delivery with four-state QA plus honest coverage_gaps. Use whenever the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA — e.g. 模板填充, 按模板生成文档, 按模板修复/对齐格式, 审阅留痕修订, 课程计划生成, Excel 模板填数 — even if no mode name is given; unimplemented modes (POLISH/MERGE) are reported as CAPABILITY_NOT_AVAILABLE. Do not use for PDF, PPTX, or writing without a template.
 ---
 
 # OfficeCLI + Python Office Document Intelligence Skill (v4.0.0 stable — contract set 4.2.0; v3.5.9 compatibility baseline)
@@ -22,16 +22,11 @@ Follow six architectural pillars across **every** `.docx` and `.xlsx` document t
 5. **Modular, Unit-Tested Python Engine (`engine/` + `scripts/`) — Never Reinvent Ad-Hoc Helpers**:
    All core OOXML, Decimal SSOT, Table, Image, Excel, Repair, Process Guard, and QA algorithms reside in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/`. Never write ad-hoc destructive `set_par_text` or `taskkill /F /IM` commands.
    **Validation never uses `assert`**: `python -O` strips assertions, so every quality gate raises a real exception instead — `SSOTValidationError` from `engine.ssot_engine` and `QAValidationError` from `engine.qa_engine`. Pass `raise_on_failure=False` to `audit_format_and_text_qa()` when a structured `{"passed": false, "issues": [...]}` report is preferred over an exception.
-   **Universal process cleanup (applies to ALL eight modes, not only red-text QA)**: the cleanup is automatic, not a manual step. Every document-processing entrypoint (`inspect_document`, `analyze_template`, `analyze_excel_template`, `generate_document`, `generate_excel`, `repair_document`, `review_document`, `proofread_document`, `render_document`, `run_qa`) calls `install_auto_cleanup()` on startup, which snapshots live `editor_sdk.exe` identities `(pid, image, creation time)` and registers an exit hook that terminates only PIDs explicitly recorded as spawned by the task. A process that merely appeared after the snapshot is reported in `unowned_pids` and left running, because a concurrent task may own it; an owned candidate whose creation time cannot be read is reported in `unreleased_pids` instead of being killed on a guess. Each task writes `officecli_editor_sdk_cleanup_<task_id>.json` (plus the shared latest log) so concurrent tasks never overwrite each other's evidence. WorkBuddy's sandbox keeps `editor_sdk.exe` alive after an agent turn, which is exactly what leaves the DOCX locked in WPS, so never skip this and never ask the user to run a cleanup command.
+   **Universal process cleanup (ALL eight modes)**: automatic, never a manual step or a user instruction. Every document entrypoint calls `install_auto_cleanup()` on startup, snapshots live `editor_sdk.exe` identities, and on exit terminates only PIDs recorded as spawned by this task — anything else is reported in `unowned_pids` / `unreleased_pids`, never killed on a guess, and each task writes its own per-task cleanup evidence. Step 6 defines the full contract and the agent-facing duties.
 6. **Zero Unintended Formatting Delta + Package & Visual QA (with honest coverage reporting)**:
    Deliver documents that preserve every unmapped style, run property, `<w:proofErr>` node, complex cell structure, shared image `rId`, and Excel formula, verified by `audit_docx_package_integrity()`, `audit_format_and_text_qa()`, `run_visual_layout_qa()`, and `audit_excel_formula_and_style_qa()`.
    This is a guarantee about **unintended** changes only. Never claim 100% byte-identical rendering versus Word/WPS: list every unsupported object in `coverage_gaps` and never treat "not detected" as "passed".
-   Font size is verified per run against the **matched** template paragraph/table: always call `audit_format_and_text_qa(..., reference_docx_path=template_path, comparison_profile="STYLE_GUIDE")` for GENERATE (or `scripts/run_qa.py output.docx --reference template.docx --profile style-guide`). The effective size cascade is run `w:sz` -> character style -> paragraph style -> `w:docDefaults`. `STYLE_GUIDE` skips size comparison for unmatched/new paragraphs and new tables; `REPLICA` keeps the strict template baseline for REPAIR/REVIEW.
-   Font family and table structure are verified the same way, and they are NOT covered by size checks:
-   - Fonts resolve through run `w:rFonts` -> character style -> paragraph style -> `w:docDefaults`, then compare against the matched paragraph's font set (`font_anomalies`). Chinese family names are normalized against Windows' English registry names (`黑体` ↔ `SimHei`, `仿宋` ↔ `FangSong`, `宋体` ↔ `SimSun`, `Courier` ↔ `Courier New`), so an installed font is not reported missing.
-   - Tables are aligned by caption, header row, column count and grid geometry, then compared with the matched template table: grid column widths and ratios, total width, `tblLayout`, `jc`, `tblCellMar`, `tblBorders` (including border size and color), `w:tblStyle`, header-row `w:shd` fill, cell `w:vAlign` distribution, and per-row `trHeight` (`table_style_anomalies`). A table with no template counterpart is reported as `NEW_TABLE` and is not compared to an unrelated neighbour.
-   - Row-level pagination is verified only where the template proves it: if the template sets `w:cantSplit` on all rows or `w:tblHeader` on row 0, the output must match (`pagination_anomalies`).
-   - Table font and size are compared against the **matched** table's dominant value (`table_dominant_size` / `table_dominant_font`). Row-level cell checks run only when both tables have the same row count; otherwise the row-count change is reported separately and the shifted rows are not compared. Never accept a document-wide size allowlist here: a table regenerated at a larger size still uses a size the template used somewhere else, which is exactly how drifting tables slipped through before.
+   Size, font and table checks always compare an output item against its **matched** template counterpart — never a document-wide allowlist — so pass `reference_docx_path=template_path` to `audit_format_and_text_qa(...)` with `comparison_profile="STYLE_GUIDE"` for GENERATE (or `scripts/run_qa.py output.docx --reference template.docx --profile style-guide`) and `REPLICA` for REPAIR/REVIEW. The resolution cascades, Chinese font-name normalization, table geometry fields, pagination rules and row-count gating are specified in [`references/python-docx-engine.md`](references/python-docx-engine.md) §3.9 — read it before changing QA comparison code.
 
 ---
 
@@ -75,75 +70,38 @@ Routing notes that prevent the common misroutes:
 
 ```
 officecli-template-filler/
-├── AGENTS.md                             # Project rules (authoritative repository copy)
-├── SKILL.md                              # Primary skill workflow & architecture rules
-├── contracts/                            # v4.0 contract set 4.2.0 + change proposals
-├── config/                               # QA policy, error codes, capability matrix, package limits
+├── AGENTS.md / SKILL.md                  # Project rules (authoritative) / this skill workflow
+├── contracts/  config/  schemas/         # Frozen contract set 4.2.0 / QA policy, error codes, capability matrix / JSON Schemas
 ├── template_intelligence/                # DocumentSpec 4.0 producer, slot ids, fingerprint, validator
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
-├── reports/                              # W0–W3 acceptance, gate and issue records
 ├── engine/                               # v3.5.9 standalone, importable Python engine package
-│   ├── __init__.py                       # Public API exports
-│   ├── ooxml_utils.py                    # P0-1: LogicalParagraphView cross-run mapper & full-story iterator
-│   ├── ssot_engine.py                    # P0-2: decimal.Decimal SSOT solver, unit converter & explicit ratio bounds
-│   ├── image_engine.py                   # P0-3: MIME-aware image replacement, SVG/VML handling, role-based finder
-│   ├── ocr_engine.py                     # v3.5.9: optional OCR adapter (RapidOCR/PaddleOCR/Tesseract) + placeholder scan
-│   ├── chart_render.py                   # v3.5.9: table/bar/pie figure rendering to PNG (matplotlib, optional)
-│   ├── consistency_qa.py                 # v3.5.8: numeric conflicts, subtotal closure, name drift, fact sources
-│   ├── alignment.py                      # v3.5.6: semantic paragraph/table alignment for QA comparison
-│   ├── process_guard.py                  # P0-4: PID-scoped TaskResourceGuard (zero global taskkill)
-│   ├── table_engine.py                   # P1-5: 8-class cell structure classifier & donor-aware table filler
-│   ├── excel_engine.py                   # P1-6: Full structural Excel row cloner, formula shifter & Decimal evaluator
-│   ├── excel_spec.py                     # v3.5 M3: Excel template spec (sheets, formulas, placeholders, macros)
-│   ├── excel_objects.py                  # v3.5 M5: XLSM object preflight (ActiveX/pivot/slicer loss risk)
-│   ├── layout_qa.py                      # v3.5 M6: content-independent layout fingerprint comparison
-│   ├── style_engine.py                   # Style hierarchy resolver & non-destructive paragraph filler
-│   ├── docx_parser.py                    # Task Router, L1-L4 compatibility classifier & DocumentSpec builder
-│   ├── capabilities.py                   # v3.5 M3: task capability registry (handler + enabled per mode)
-│   ├── repair_engine.py                  # Dual-document REPAIR diff planner & non-destructive executor
-│   ├── review_engine.py                  # v3.1: tracked changes, native comments & review integrity QA
-│   ├── qa_engine.py                      # P1-7: Full DOCX Package XML/Rels/Media QA + Visual Layout QA
-│   ├── pdf_backend.py                    # v3.5.7: WPS word2pdf / LibreOffice conversion + page counts
-│   ├── reformat_engine.py                # v3.5.7: REFORMAT semantic diff plan & tracked apply
-│   ├── qa_policy.py                      # v3.5.6: comparison profiles & severity splitting
-│   ├── transaction.py                    # v3.5 M1: Preflight → Execute(temp) → QA → atomic Commit
-│   ├── logic_qa.py                       # v3.5.9: duplicate paragraph/section, list gap, date-range checks
-│   ├── research.py                       # v3.5.9: research policy, query plan, fact provenance validation
-│   └── workflow.py                       # v3.5.9: P2 gate, profiles, checkpoints, TOC assessment, visual QA rounds
-├── scripts/                              # CLI entrypoints for Agent orchestration
-│   ├── inspect_document.py               # Route task mode & inspect input files
-│   ├── analyze_template.py               # Emit DocumentSpec JSON (schemas/document_spec.schema.json)
-│   ├── analyze_excel_template.py         # v3.5 M3: Emit Excel template spec (.xlsx/.xlsm)
-│   ├── generate_document.py              # Execute SSOT + non-destructive DOCX rendering
-│   ├── generate_excel.py                 # v3.2: EXCEL_GENERATE entrypoint (fills .xlsx, keeps formulas)
-│   ├── repair_document.py                # Dual-document REPAIR mode (emit & execute repair_plan.json)
-│   ├── review_document.py                # v3.1: REVIEW mode (tracked changes + comments + review_report.json)
-│   ├── proofread_document.py             # v3.5 M8: PROOFREAD mode (single-document tracked fixes)
-│   ├── cleanup_editor_sdk.py             # Manual diagnostic: list SDK PIDs (auto cleanup runs in every entrypoint)
-│   ├── reformat_document.py              # v3.5.7: REFORMAT mode (semantic format diff plan + tracked w:*PrChange apply)
-│   ├── render_document.py                # DOCX visual QA; PDF via WPS word2pdf or LibreOffice, otherwise RENDER_PDF_NOT_PRODUCED
-│   ├── run_qa.py                         # Run Package QA, Format QA, Content QA, Image-text QA, Excel Formula QA & Visual QA
-│   ├── ensure-officecli.ps1              # Windows OfficeCLI installer
-│   └── ensure-officecli.sh               # macOS/Linux OfficeCLI installer
-├── schemas/                              # Formal JSON Schemas for intermediate artifacts
-│   ├── document_spec.schema.json         # DocumentSpec output schema
-│   ├── repair_plan.schema.json           # RepairPlan output schema
-│   ├── review_report.schema.json         # v3.1: REVIEW mode execution + integrity report
-│   └── qa_report.schema.json             # Unified QA Report schema
+├── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ├── tests/                                # Automated suite (473 tests)
-│   ├── contracts/                        # W0 contract tests (70)
-│   ├── test_e2e_v4.py                    # v4 DocumentSpec → plans → executor → QA → commit
-│   ├── test_skill_workflow_v4.py         # Runs the documented SKILL.md GENERATE chain
-│   ├── test_fixture_matrix.py            # Six structured regression fixture classes
-│   ├── test_w2_defects.py                # W2 fixture-discovered defect regressions
-│   ├── test_sdt_discovery.py             # CP-W2-002 SDT locations and PROTECTED rejection
-│   └── test_v3_engine.py                 # v3.5.9 baseline, REPAIR, REVIEW, Excel regression
-└── references/
-    ├── engine-internals.md               # v3.5.9: implementation detail per engine guarantee (read when editing engine/)
-    └── python-docx-engine.md             # API reference & usage examples for engine/ modules
+├── reports/                              # W0–W3 acceptance, gate and issue records
+└── references/                           # engine-internals.md / python-docx-engine.md
 ```
+
+CLI surface an agent orchestrates through (`scripts/`):
+
+| script | purpose |
+|---|---|
+| `inspect_document.py` | Route task mode & inspect input files |
+| `analyze_template.py` | Emit DocumentSpec JSON (`--spec-version 4` for the GENERATE plan chain) |
+| `analyze_excel_template.py` | Emit Excel template spec (`.xlsx`/`.xlsm`) |
+| `generate_document.py` | v4 plan chain executor + legacy `--data` token path |
+| `generate_excel.py` | EXCEL_GENERATE (fills `.xlsx`, keeps formulas) |
+| `repair_document.py` | Dual-document REPAIR (emit & execute repair_plan.json) |
+| `review_document.py` | REVIEW (tracked changes + comments + review_report.json) |
+| `proofread_document.py` | PROOFREAD (single-document tracked fixes) |
+| `reformat_document.py` | REFORMAT (semantic format diff + tracked `w:*PrChange` apply) |
+| `render_document.py` | DOCX visual QA; PDF via WPS word2pdf / LibreOffice, else `RENDER_PDF_NOT_PRODUCED` |
+| `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
+| `cleanup_editor_sdk.py` | Manual diagnostic only — auto cleanup runs inside every entrypoint |
+| `ensure-officecli.ps1` / `.sh` | Windows / macOS-Linux OfficeCLI installer |
+
+Per-module internals of `engine/` (LogicalParagraphView, SSOT solver, image/process/table/excel engines, transaction, workflow & research helpers) live in [`references/engine-internals.md`](references/engine-internals.md) — read it before editing `engine/`. Python API usage and QA verification mechanics live in [`references/python-docx-engine.md`](references/python-docx-engine.md).
 
 ---
 
