@@ -22,6 +22,7 @@ def generate_document_v4(
     *,
     qa_runner=None,
     allow_unverified: bool = False,
+    gate_record=None,
 ) -> Dict[str, Any]:
     """Execute ``fill_plan`` over ``template_path`` and return a ToolEnvelope 4.0 dict."""
     return execute_fill_plan(
@@ -32,6 +33,7 @@ def generate_document_v4(
         content_plan=content_plan,
         qa_runner=qa_runner,
         allow_unverified=allow_unverified,
+        gate_record=gate_record,
     )
 
 

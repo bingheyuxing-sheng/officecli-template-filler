@@ -1127,6 +1127,8 @@ def execute_review_plan(
     review_plan: Dict[str, Any],
     output_docx_path: str,
     snapshot_path: Optional[str] = None,
+    *,
+    gate_record=None,
 ) -> Dict[str, Any]:
     """
     Apply the review plan: restore formatting, write tracked text revisions, anchor comments,
@@ -1135,6 +1137,10 @@ def execute_review_plan(
     A revision snapshot is written next to the output (pass `snapshot_path=""` to skip it,
     e.g. when a caller publishes the document through a transaction first).
     """
+    if str(review_plan.get("task_mode") or "").upper() == "REVIEW":
+        from template_gate.validator import require_confirmed_gate
+
+        require_confirmed_gate(review_plan["reference_docx"], "REVIEW", gate_record=gate_record)
     ref_doc = docx.Document(review_plan["reference_docx"])
     tgt_doc = docx.Document(review_plan["target_docx"])
     author = review_plan.get("author") or REVIEW_AUTHOR_DEFAULT

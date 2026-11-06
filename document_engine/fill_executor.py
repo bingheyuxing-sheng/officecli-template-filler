@@ -800,6 +800,7 @@ def execute_fill_plan(
     content_plan: Optional[Dict[str, Any]] = None,
     qa_runner=None,
     allow_unverified: bool = False,
+    gate_record=None,
 ) -> Dict[str, Any]:
     """Execute a FillPlan 4.0 deterministically and return a ToolEnvelope 4.0 dict."""
     task_id = _task_id(fill_plan)
@@ -951,6 +952,26 @@ def execute_fill_plan(
                         "actual": actual_sha,
                         "spec_template_sha256": spec_sha,
                     },
+                    rollback_required=False,
+                )
+            )
+            return envelope("BLOCKED", "STOP")
+
+        # -- 2b. Template Understanding Gate ---------------------------------
+        # A valid DocumentSpec + FillPlan is not authorization to touch a
+        # template. The gate binds the template SHA, spec, evidence and an
+        # explicit user confirmation before any mutation is attempted.
+        try:
+            from template_gate.errors import TemplateGateError
+            from template_gate.validator import require_confirmed_gate
+
+            require_confirmed_gate(template_path, TASK_MODE, spec=spec, gate_record=gate_record)
+        except TemplateGateError as exc:
+            errors.append(
+                _error_record(
+                    exc.code,
+                    exc.message,
+                    details=exc.details,
                     rollback_required=False,
                 )
             )

@@ -34,6 +34,7 @@ from engine import (
     execute_reformat_plan,
     install_auto_cleanup,
 )
+from template_gate.errors import TemplateGateError
 
 
 def _write_json(path: str, payload: dict) -> None:
@@ -54,6 +55,7 @@ def main() -> int:
     parser.add_argument("--plan-only", action="store_true", help="Only emit the diff plan")
     parser.add_argument("--strip-red", action="store_true", help="Strip red template residue in AUTO_FIX paragraphs")
     parser.add_argument("--author", default="OfficeCLI REFORMAT", help="Revision author")
+    parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     args = parser.parse_args()
 
     plan = build_reformat_plan(
@@ -89,6 +91,7 @@ def main() -> int:
                 plan,
                 tx.stage(),
                 author=args.author,
+                gate_record=args.gate_record or None,
             )
             package_qa = audit_docx_package_integrity(tx.temp_path)
             format_qa = audit_format_and_text_qa(
@@ -112,6 +115,17 @@ def main() -> int:
             else:
                 tx.record_qa(package_qa, format_qa)
             tx.commit()
+    except TemplateGateError as exc:
+        print(json.dumps({
+            "reference_docx": plan.get("reference_docx"),
+            "target_docx": plan.get("target_docx"),
+            "output_docx": args.out,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+            "next_action": "ASK_USER / RUN_TEMPLATE_GATE",
+        }, ensure_ascii=False, indent=2))
+        return 2
     except TransactionPreflightError as exc:
         print(json.dumps({
             "status": "PREFLIGHT_FAILED",

@@ -384,7 +384,11 @@ def execute_reformat_plan(
     *,
     author: Optional[str] = None,
     date: Optional[str] = None,
+    gate_record=None,
 ) -> Dict[str, Any]:
+    from template_gate.validator import require_confirmed_gate
+
+    require_confirmed_gate(plan["reference_docx"], "REFORMAT", gate_record=gate_record)
     ref_doc = docx.Document(plan["reference_docx"])
     tgt_doc = docx.Document(plan["target_docx"])
     author = author or plan.get("author") or "OfficeCLI REFORMAT"

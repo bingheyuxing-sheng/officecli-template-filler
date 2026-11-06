@@ -38,6 +38,7 @@ from engine import (
     install_auto_cleanup,
     write_review_snapshot,
 )
+from template_gate.errors import TemplateGateError
 
 
 def main() -> int:
@@ -50,6 +51,7 @@ def main() -> int:
     parser.add_argument("--revisions", default="", help="Optional JSON list of text revisions")
     parser.add_argument("--report", default="", help="Optional review_report.json output path")
     parser.add_argument("--snapshot", default="", help="Optional review_snapshot.json output path (default: next to the deliverable)")
+    parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     parser.add_argument("--plan-out", default="", help="Optional review_plan.json output path")
     parser.add_argument("--plan-only", action="store_true", help="Only emit the review plan")
     parser.add_argument(
@@ -94,7 +96,9 @@ def main() -> int:
     try:
         with tx:
             # The snapshot must describe the published file, so it is written after commit.
-            execution = execute_review_plan(plan, tx.stage(), snapshot_path="")
+            execution = execute_review_plan(
+                plan, tx.stage(), snapshot_path="", gate_record=args.gate_record or None
+            )
             review_qa = audit_review_integrity(tx.temp_path)
             package_qa = audit_docx_package_integrity(tx.temp_path)
             # Placeholders kept on purpose wait for a human decision in REVIEW mode.
@@ -106,6 +110,20 @@ def main() -> int:
             )
             tx.commit()
         snapshot_report = write_review_snapshot(tx.output_path, snapshot_path=args.snapshot or None)
+    except TemplateGateError as exc:
+        print(json.dumps({
+            "schema_version": "3.1",
+            "task_mode": "REVIEW",
+            "reference_docx": args.reference,
+            "target_docx": args.target,
+            "output_docx": args.out,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+            "passed": False,
+            "next_action": "ASK_USER / RUN_TEMPLATE_GATE",
+        }, ensure_ascii=False, indent=2))
+        return 2
     except TransactionPreflightError as exc:
         report = {
             "schema_version": "3.1",

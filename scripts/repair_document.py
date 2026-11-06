@@ -33,6 +33,7 @@ from engine import (
     execute_repair_plan,
     install_auto_cleanup,
 )
+from template_gate.errors import TemplateGateError
 
 
 def main() -> int:
@@ -43,6 +44,7 @@ def main() -> int:
     parser.add_argument("--out", "--output", dest="out", default="", help="Output repaired .docx path (omit if --plan-only)")
     parser.add_argument("--plan-out", default="", help="Optional path to save repair_plan.json")
     parser.add_argument("--plan-only", action="store_true", help="Only generate repair_plan.json without executing")
+    parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     args = parser.parse_args()
 
     plan = build_repair_plan(args.reference, args.broken)
@@ -61,7 +63,7 @@ def main() -> int:
     fmt_qa = {}
     try:
         with tx:
-            exec_result = execute_repair_plan(plan, tx.stage())
+            exec_result = execute_repair_plan(plan, tx.stage(), gate_record=args.gate_record or None)
             # Package QA alone would publish a doc whose format still drifts from the template:
             # REPAIR's deliverable contract is the reference formatting, so verify it too.
             pkg_qa = audit_docx_package_integrity(tx.temp_path)
@@ -74,6 +76,16 @@ def main() -> int:
             )
             tx.record_qa(pkg_qa, fmt_qa)
             tx.commit()
+    except TemplateGateError as exc:
+        print(json.dumps({
+            "plan_total_actions": plan["total_actions"],
+            "output": args.out,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+            "next_action": "ASK_USER / RUN_TEMPLATE_GATE",
+        }, ensure_ascii=False, indent=2))
+        return 2
     except TransactionPreflightError as exc:
         print(json.dumps({
             "plan_total_actions": plan["total_actions"],

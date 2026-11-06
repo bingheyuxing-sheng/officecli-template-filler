@@ -37,7 +37,22 @@ from engine import (
 
 
 def _run_legacy_data_path(args) -> int:
-    """v3.5.9 token replacement path; behavior is unchanged."""
+    """v3.5.9 token replacement path; behavior is unchanged except the gate."""
+    from template_gate.errors import TemplateGateError
+    from template_gate.validator import require_confirmed_gate
+
+    try:
+        require_confirmed_gate(args.template, "GENERATE", gate_record=args.gate_record or None)
+    except TemplateGateError as exc:
+        print(json.dumps({
+            "output": args.out,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+            "next_action": "ASK_USER / RUN_TEMPLATE_GATE",
+        }, ensure_ascii=False, indent=2))
+        return 2
+
     with open(args.data, "r", encoding="utf-8") as f:
         data_map = json.load(f)
 
@@ -129,6 +144,7 @@ def _run_plan_path(args) -> int:
         fill_plan,
         args.out,
         allow_unverified=args.allow_unverified,
+        gate_record=args.gate_record or None,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("status") in ("SUCCESS", "UNVERIFIED"):
@@ -148,6 +164,7 @@ def main() -> int:
     parser.add_argument("--content-plan", dest="content_plan",
                         help="Optional ContentPlan 4.0 JSON file used with --plan")
     parser.add_argument("--mode", choices=("STRICT", "STANDARD"), help="Override the FillPlan gate mode")
+    parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     parser.add_argument("--allow-unverified", dest="allow_unverified", action="store_true",
                         help="STANDARD only: commit a QA UNVERIFIED report that discloses missing checks")
     args = parser.parse_args()
