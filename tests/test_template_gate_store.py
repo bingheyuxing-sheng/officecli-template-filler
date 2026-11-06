@@ -108,6 +108,20 @@ class GateStoreTests(unittest.TestCase):
         self.assertFalse(record["user_confirmed"])
         self.assertFalse(store.verify(record))
 
+    def test_secret_bytes_round_trip_verbatim(self) -> None:
+        """A random key may begin or end with whitespace; it must not be trimmed.
+
+        ``_secret()`` used to ``.strip()`` the key file. Roughly 5% of 32-byte
+        keys start or end with a whitespace byte, so signing and verification
+        silently disagreed and gate records failed HMAC at random.
+        """
+        raw = b" " + b"A" * 30 + b"\t"
+        os.makedirs(self.gate_home, exist_ok=True)
+        store = GateStore(self.gate_home)
+        with open(store.secret_path, "wb") as handle:
+            handle.write(raw)
+        self.assertEqual(store._secret(), raw)
+
 
 if __name__ == "__main__":
     unittest.main()

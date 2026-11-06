@@ -6,6 +6,32 @@
 
 ---
 
+## Unreleased（未发布）
+
+> 软件版本与契约集保持不变（4.1.2 / 4.3.0，产物 `schema_version` 4.0）。新增可选写入后端，默认执行链和默认行为不变。
+
+### Added（新增）
+
+- `engine/officecli_writer.py`：officecli 写入后端。定位二进制（`OFFICECLI_BINARY` 或安装路径）、把 `body.*` 文档位置翻译为 1-based DOM 路径、以单个原子 `batch` 写入暂存副本、逐操作回读文本、OpenXML `validate`，并在 QA 前还原 officecli 写入的 `w14:paraId` / `w14:textId`。
+- `document_engine/fill_executor.py`：`execute_fill_plan(..., writer="python-docx")`。`writer="officecli"` 时整篇使用 officecli 后端；遇到不支持的操作类型、位置（页眉页脚、文本框、SDT、脚注、批注）或非唯一占位符时整篇回退 python-docx，并在 `data.writer_fallback` 记录原因。事务、QA 与提交门禁不变。
+- `scripts/generate_document.py --writer {python-docx,officecli}`：默认仍为 `python-docx`，未翻转默认行为。
+- `tests/test_officecli_writer.py`：位置映射、回退判定、class_01 / class_02 双后端文本与 `validate` 一致性；缺少二进制时跳过。
+
+### Fixed（修复）
+
+- `template_gate/store.py`：密钥文件改为按原始字节读取。原先的 `.strip()` 会裁掉约 5% 的 32 字节随机密钥首尾空白字节，导致签名与校验使用不同密钥，Gate Record 的 HMAC 校验随机失败。新增 `test_secret_bytes_round_trip_verbatim` 回归测试。
+
+### Tests
+
+- 全量 **544 项通过**（含新增 9 项：officecli writer 8 项 + gate 密钥回归 1 项；其中 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过）。实测命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`；契约 **72 项通过**（`py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"`）。
+
+### Known limits（已知限制）
+
+- 仅覆盖 `.docx` 的 `replace_text` / `fill_paragraph` / `fill_cell`；`replace_image`、Excel、页眉页脚、文本框、SDT、脚注与批注均回退 python-docx。
+- officecli 是外部闭源二进制（验证版本 1.0.160）。后端不会自动安装；升级需重新跑一致性测试。
+
+---
+
 ## v4.1.2（2026-11-06，稳定版候选补丁）
 
 > 软件版本 **4.1.2**；契约集保持 **4.3.0**，产物 `schema_version` 保持 `4.0`。本补丁新增 REVIEW 外部证据批注路径，不修改冻结契约、Schema 或错误码语义。

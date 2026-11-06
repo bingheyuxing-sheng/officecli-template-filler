@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -567,6 +568,358 @@ def _apply_operation(
     raise ValueError("unsupported operation type {!r}".format(op_type))
 
 
+# ---------------------------------------------------------------------------
+# writer backends
+# ---------------------------------------------------------------------------
+
+_OFFICECLI_OPERATION_TYPES = ("replace_text", "fill_paragraph", "fill_cell")
+
+
+def _officecli_operation_plan(
+    pending: Sequence[Dict[str, Any]],
+    slots: Dict[str, Any],
+    paragraphs: Dict[str, Any],
+    cells: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[str]]:
+    """Translate operations into one atomic officecli batch.
+
+    Returns ``(commands, plan_by_op, fallback_reason)``. A non-None
+    ``fallback_reason`` means officecli cannot express this document faithfully
+    and the caller must keep the python-docx writer for the whole document.
+
+    officecli replaces text by rebuilding the target node. A paragraph-scoped
+    ``set`` merges the paragraph's runs, which changes the structural tree; a
+    run-scoped ``set`` (verified on 1.0.160) keeps every run, its order and its
+    formatting. The plan therefore resolves the token to exactly one direct
+    ``w:r`` and refuses the backend whenever the token spans runs, sits in a
+    nested run, or appears more than once.
+    """
+    from docx.oxml.ns import qn
+
+    from engine.officecli_writer import (  # noqa: PLC0415 - optional backend
+        UnsupportedLocation,
+        build_set_command,
+        location_to_path,
+    )
+
+    commands: List[Dict[str, Any]] = []
+    plan_by_op: Dict[str, Dict[str, Any]] = {}
+
+    for operation in pending:
+        op_id = operation.get("op_id")
+        op_type = operation.get("type")
+        if op_type not in _OFFICECLI_OPERATION_TYPES:
+            return [], {}, (
+                "operation type {!r} is not supported by the officecli writer".format(op_type)
+            )
+
+        target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+        location_id = target.get("location_id")
+        try:
+            path = location_to_path(location_id)
+        except UnsupportedLocation as exc:
+            return [], {}, str(exc)
+
+        slot = slots.get(operation.get("slot_id")) or {}
+        token = slot.get("matched_text")
+        if not isinstance(token, str) or not token:
+            return [], {}, "slot {} has no literal matched_text".format(
+                operation.get("slot_id")
+            )
+
+        paragraph = paragraphs.get(location_id)
+        if paragraph is None:
+            return [], {}, "location {} did not resolve".format(location_id)
+        if op_type == "fill_cell":
+            cell = cells.get(op_id)
+            if cell is None:
+                return [], {}, "cell target for {} did not resolve".format(op_id)
+            # The python-docx writer fills the whole cell; a multi-paragraph
+            # cell would make the two backends disagree.
+            if len(cell.paragraphs) != 1:
+                return [], {}, (
+                    "cell at {} has {} paragraphs; officecli targets one paragraph".format(
+                        location_id, len(cell.paragraphs)
+                    )
+                )
+
+        view = LogicalParagraphView(paragraph._p)
+        before_text = view.logical_text
+        try:
+            occurrence = max(1, int(slot.get("occurrence") or 1))
+        except (TypeError, ValueError):
+            occurrence = 1
+        if occurrence != 1 or before_text.count(token) != 1:
+            return [], {}, (
+                "token {!r} is not unique in {}; officecli replaces every match".format(
+                    token, location_id
+                )
+            )
+
+        offset = _find_occurrence(before_text, token, occurrence)
+        if offset is None:
+            return [], {}, "token {!r} is not found in {}".format(token, location_id)
+        last = offset + len(token) - 1
+        if last >= len(view.char_map):
+            return [], {}, "token {!r} exceeds the addressable run map".format(token)
+        start_run = view.char_map[offset].r_el
+        end_run = view.char_map[last].r_el
+        if start_run is not end_run:
+            return [], {}, (
+                "token {!r} spans multiple runs in {}; officecli would merge them".format(
+                    token, location_id
+                )
+            )
+        if start_run.getparent() is not paragraph._p:
+            return [], {}, (
+                "token {!r} sits in a nested run in {}; officecli cannot target it".format(
+                    token, location_id
+                )
+            )
+        direct_runs = paragraph._p.findall(qn("w:r"))
+        if start_run not in direct_runs:
+            return [], {}, "token {!r} is not in a direct run of {}".format(token, location_id)
+        run_index = direct_runs.index(start_run) + 1
+        run_text = "".join(elm.text or "" for elm in start_run.findall(qn("w:t")))
+        if run_text.count(token) != 1:
+            return [], {}, (
+                "token {!r} is not unique inside the target run of {}".format(token, location_id)
+            )
+
+        commands.append(
+            build_set_command("{0}/r[{1}]".format(path, run_index), token,
+                              str(operation.get("value")))
+        )
+        plan_by_op[op_id] = {
+            "path": "{0}/r[{1}]".format(path, run_index),
+            "read_path": path,
+            "before": before_text,
+            "token": token,
+            "run_index": run_index,
+        }
+
+    return commands, plan_by_op, None
+
+
+def _apply_operations_in_memory(
+    document,
+    pending: Sequence[Dict[str, Any]],
+    slots: Dict[str, Any],
+    paragraphs: Dict[str, Any],
+    tables: Dict[str, Any],
+    cells: Dict[str, Any],
+    results_by_id: Dict[str, Dict[str, Any]],
+    ledger: FillLedger,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Apply operations through python-docx; returns ``(errors, abort_reason)``."""
+    errors: List[Dict[str, Any]] = []
+    # Slots that also get a dedicated text operation do not need the image
+    # operation to strip their placeholder token.
+    text_consumers = {
+        (operation.get("slot_id"), (operation.get("target") or {}).get("location_id"))
+        for operation in pending
+        if operation.get("type") in ("replace_text", "fill_paragraph")
+    }
+    for index, operation in enumerate(pending):
+        target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+        entry = results_by_id[operation.get("op_id")]
+        try:
+            before_text, after_text = _apply_operation(
+                document,
+                operation,
+                slots[operation.get("slot_id")],
+                paragraphs,
+                tables,
+                cells.get(operation.get("op_id")),
+                remove_image_token=(
+                    (operation.get("slot_id"), target.get("location_id"))
+                    not in text_consumers
+                ),
+            )
+        except Exception as exc:
+            code, message, details = _operation_error(exc)
+            details.update({"op_id": operation.get("op_id"),
+                            "location_id": target.get("location_id")})
+            errors.append(_error_record(code, message, details=details, rollback_required=True))
+            ledger.record(
+                operation.get("op_id"),
+                operation.get("slot_id"),
+                target.get("location_id"),
+                operation.get("source_ref"),
+                operation.get("value"),
+                {"status": "FAILED", "error_code": code, "detail": message},
+            )
+            entry.update({"status": "FAILED", "error_code": code, "detail": message})
+            for remaining in pending[index + 1:]:
+                remaining_target = (
+                    remaining.get("target")
+                    if isinstance(remaining.get("target"), dict) else {}
+                )
+                remaining_entry = results_by_id[remaining.get("op_id")]
+                remaining_message = "not executed: an earlier operation failed"
+                ledger.record(
+                    remaining.get("op_id"),
+                    remaining.get("slot_id"),
+                    remaining_target.get("location_id"),
+                    remaining.get("source_ref"),
+                    remaining.get("value"),
+                    {"status": "FAILED", "error_code": code, "detail": remaining_message},
+                )
+                remaining_entry.update(
+                    {"status": "FAILED", "error_code": code, "detail": remaining_message}
+                )
+            return errors, "EXECUTION_FAILED"
+
+        ledger.record(
+            operation.get("op_id"),
+            operation.get("slot_id"),
+            target.get("location_id"),
+            operation.get("source_ref"),
+            operation.get("value"),
+            {"status": "SUCCESS"},
+            before_text=before_text,
+            after_text=after_text,
+        )
+        entry.update({"status": "SUCCESS"})
+    return errors, None
+
+
+def _apply_operations_via_officecli(
+    template_path: str,
+    stage_path: str,
+    commands: Sequence[Dict[str, Any]],
+    pending: Sequence[Dict[str, Any]],
+    plan_by_op: Dict[str, Dict[str, Any]],
+    results_by_id: Dict[str, Dict[str, Any]],
+    ledger: FillLedger,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """Apply the batch atomically, read back the targets, then normalise.
+
+    officecli writes the staged copy only; the caller keeps the transaction and
+    QA boundary. A batch failure proves the file is unchanged (officecli rolls
+    the whole batch back). Two post-steps are mandatory before QA:
+
+    * the resident must be closed after the reads, or the file stays locked;
+    * officecli's ``w14:paraId``/``w14:textId`` stamping must be undone, or the
+      template fingerprint reports an unauthorised structural change.
+    """
+    from engine import officecli_writer  # noqa: PLC0415 - optional backend
+
+    errors: List[Dict[str, Any]] = []
+
+    def fail_remaining(code: str, message: str, remaining: Sequence[Dict[str, Any]]) -> None:
+        for operation in remaining:
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            ledger.record(
+                operation.get("op_id"),
+                operation.get("slot_id"),
+                target.get("location_id"),
+                operation.get("source_ref"),
+                operation.get("value"),
+                {"status": "FAILED", "error_code": code, "detail": message},
+            )
+            results_by_id[operation.get("op_id")].update(
+                {"status": "FAILED", "error_code": code, "detail": message}
+            )
+
+    try:
+        shutil.copyfile(template_path, stage_path)
+        officecli_writer.run_batch(stage_path, list(commands))
+    except Exception as exc:
+        code = "EXECUTION_FAILED"
+        message = "officecli could not apply the batch: {}: {}".format(
+            type(exc).__name__, exc
+        )
+        errors.append(_error_record(
+            code, message,
+            details={"writer": "officecli", "phase": "BATCH"},
+            rollback_required=True,
+        ))
+        fail_remaining(code, message, pending)
+        return errors, "OFFICECLI_WRITE_FAILED"
+    finally:
+        officecli_writer.close(stage_path)
+
+    try:
+        for index, operation in enumerate(pending):
+            op_id = operation.get("op_id")
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            entry = results_by_id[op_id]
+            descriptor = plan_by_op[op_id]
+            try:
+                after_text = officecli_writer.get_text(stage_path, descriptor["read_path"])
+                if descriptor["token"] in after_text:
+                    raise ValueError(
+                        "placeholder token survived the batch at {}".format(
+                            descriptor["read_path"]
+                        )
+                    )
+            except Exception as exc:
+                code = "EXECUTION_FAILED"
+                message = "officecli read-back failed for {}: {}: {}".format(
+                    op_id, type(exc).__name__, exc
+                )
+                errors.append(_error_record(
+                    code, message,
+                    details={"op_id": op_id, "path": descriptor["read_path"],
+                             "phase": "READBACK"},
+                    rollback_required=True,
+                ))
+                ledger.record(
+                    op_id,
+                    operation.get("slot_id"),
+                    target.get("location_id"),
+                    operation.get("source_ref"),
+                    operation.get("value"),
+                    {"status": "FAILED", "error_code": code, "detail": message},
+                )
+                entry.update({"status": "FAILED", "error_code": code, "detail": message})
+                fail_remaining(code, message, pending[index + 1:])
+                return errors, "OFFICECLI_READBACK_FAILED"
+
+            ledger.record(
+                op_id,
+                operation.get("slot_id"),
+                target.get("location_id"),
+                operation.get("source_ref"),
+                operation.get("value"),
+                {"status": "SUCCESS"},
+                before_text=descriptor["before"],
+                after_text=after_text,
+            )
+            entry.update({"status": "SUCCESS"})
+    finally:
+        # The reads above start a fresh resident, so the file is locked again.
+        officecli_writer.close(stage_path)
+
+    try:
+        red_targets: List[Tuple[str, int]] = []
+        for operation in pending:
+            descriptor = plan_by_op.get(operation.get("op_id")) or {}
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            run_index = descriptor.get("run_index")
+            location_id = target.get("location_id")
+            if isinstance(run_index, int) and isinstance(location_id, str):
+                red_targets.append((location_id, run_index))
+        officecli_writer.restore_paragraph_identity(
+            template_path, stage_path, strip_red_runs=red_targets
+        )
+    except Exception as exc:
+        code = "EXECUTION_FAILED"
+        message = "officecli output could not be normalised: {}: {}".format(
+            type(exc).__name__, exc
+        )
+        errors.append(_error_record(
+            code, message,
+            details={"writer": "officecli", "phase": "NORMALIZE"},
+            rollback_required=True,
+        ))
+        fail_remaining(code, message, pending)
+        return errors, "OFFICECLI_NORMALIZE_FAILED"
+
+    return errors, None
+
+
 def _operation_error(exc: Exception) -> Tuple[str, str, Dict[str, Any]]:
     return (
         _EXECUTION_ERROR_CODE,
@@ -801,8 +1154,18 @@ def execute_fill_plan(
     qa_runner=None,
     allow_unverified: bool = False,
     gate_record=None,
+    writer: str = "python-docx",
 ) -> Dict[str, Any]:
-    """Execute a FillPlan 4.0 deterministically and return a ToolEnvelope 4.0 dict."""
+    """Execute a FillPlan 4.0 deterministically and return a ToolEnvelope 4.0 dict.
+
+    ``writer`` selects the mutation backend. ``python-docx`` (default) keeps the
+    v4 behaviour unchanged. ``officecli`` delegates the writes to the officecli
+    binary and silently falls back to python-docx for any operation, location or
+    token pattern it cannot express faithfully; ``data.writer_fallback`` records
+    why. The default is deliberately not flipped until conformance is proven.
+    """
+    if writer not in ("python-docx", "officecli"):
+        raise ValueError("unknown writer backend {!r}".format(writer))
     task_id = _task_id(fill_plan)
     mode = _mode(fill_plan)
     ledger = FillLedger(task_id=task_id)
@@ -821,6 +1184,8 @@ def execute_fill_plan(
         "qa_eligible": False,
         "missing_checks": [],
         "region_warnings": region_warnings,
+        "writer_backend": None,
+        "writer_fallback": None,
     }
 
     tx: Optional[DocumentTransaction] = None
@@ -1155,79 +1520,55 @@ def execute_fill_plan(
             tx.abort("LOCATE_BLOCKED")
             return envelope("BLOCKED", "STOP")
 
-        # -- 5. mutate in memory, save only to the staged path ---------------
-        # Slots that also get a dedicated text operation do not need the image
-        # operation to strip their placeholder token.
-        text_consumers = {
-            (operation.get("slot_id"), (operation.get("target") or {}).get("location_id"))
-            for operation in pending
-            if operation.get("type") in ("replace_text", "fill_paragraph")
-        }
-        for index, operation in enumerate(pending):
-            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
-            entry = results_by_id[operation.get("op_id")]
-            try:
-                before_text, after_text = _apply_operation(
-                    document,
-                    operation,
-                    slots[operation.get("slot_id")],
-                    paragraphs,
-                    tables,
-                    cells.get(operation.get("op_id")),
-                    remove_image_token=(
-                        (operation.get("slot_id"), target.get("location_id"))
-                        not in text_consumers
-                    ),
-                )
-            except Exception as exc:
-                code, message, details = _operation_error(exc)
-                details.update({"op_id": operation.get("op_id"),
-                                "location_id": target.get("location_id")})
-                errors.append(_error_record(code, message, details=details, rollback_required=True))
-                ledger.record(
-                    operation.get("op_id"),
-                    operation.get("slot_id"),
-                    target.get("location_id"),
-                    operation.get("source_ref"),
-                    operation.get("value"),
-                    {"status": "FAILED", "error_code": code, "detail": message},
-                )
-                entry.update({"status": "FAILED", "error_code": code, "detail": message})
-                for remaining in pending[index + 1:]:
-                    remaining_target = (
-                        remaining.get("target")
-                        if isinstance(remaining.get("target"), dict) else {}
-                    )
-                    remaining_entry = results_by_id[remaining.get("op_id")]
-                    remaining_message = "not executed: an earlier operation failed"
-                    ledger.record(
-                        remaining.get("op_id"),
-                        remaining.get("slot_id"),
-                        remaining_target.get("location_id"),
-                        remaining.get("source_ref"),
-                        remaining.get("value"),
-                        {"status": "FAILED", "error_code": code, "detail": remaining_message},
-                    )
-                    remaining_entry.update(
-                        {"status": "FAILED", "error_code": code, "detail": remaining_message}
-                    )
-                tx.abort("EXECUTION_FAILED")
-                return envelope("FAILED", "STOP")
+        # -- 4b. writer backend selection -------------------------------------
+        backend = "python-docx"
+        backend_fallback: Optional[str] = None
+        officecli_commands: List[Dict[str, Any]] = []
+        officecli_plan: Dict[str, Dict[str, Any]] = {}
 
-            ledger.record(
-                operation.get("op_id"),
-                operation.get("slot_id"),
-                target.get("location_id"),
-                operation.get("source_ref"),
-                operation.get("value"),
-                {"status": "SUCCESS"},
-                before_text=before_text,
-                after_text=after_text,
+        if writer == "officecli" and pending:
+            commands, plan_by_op, fallback = _officecli_operation_plan(
+                pending, slots, paragraphs, cells
             )
-            entry.update({"status": "SUCCESS"})
+            if fallback is None:
+                backend = "officecli"
+                officecli_commands = commands
+                officecli_plan = plan_by_op
+            else:
+                backend_fallback = fallback
+        data["writer_backend"] = backend
+        data["writer_fallback"] = backend_fallback
+
+        # -- 5. mutate the staged copy through the selected writer ------------
+        if backend == "officecli":
+            operation_errors, abort_reason = _apply_operations_via_officecli(
+                template_path,
+                tx.stage(),
+                officecli_commands,
+                pending,
+                officecli_plan,
+                results_by_id,
+                ledger,
+            )
+        else:
+            operation_errors, abort_reason = _apply_operations_in_memory(
+                document,
+                pending,
+                slots,
+                paragraphs,
+                tables,
+                cells,
+                results_by_id,
+                ledger,
+            )
+        errors.extend(operation_errors)
+        if abort_reason:
+            tx.abort(abort_reason)
+            return envelope("FAILED", "STOP")
 
         try:
-            document.save(tx.stage())
+            if backend == "python-docx":
+                document.save(tx.stage())
         except Exception as exc:
             errors.append(
                 _error_record(

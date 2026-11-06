@@ -1,4 +1,4 @@
-# Office Document Intelligence Engine Reference (v4.1.2 stable; v3.5.9 compatibility baseline; contract set 4.3.0)
+# Office Document Intelligence Engine Reference (v4.2.0 stable; v3.5.9 compatibility baseline; contract set 4.3.0)
 
 All core OOXML, Decimal SSOT, Table, Image, Excel, Dual-Document Repair, Process Guard, Transaction, REVIEW/PROOFREAD, and Package/Visual QA logic lives in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/` and formal JSON Schemas in `schemas/`.
 

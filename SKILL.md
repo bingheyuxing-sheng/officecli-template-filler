@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.1.2 — contract set 4.3.0; v3.5.9 compatibility baseline)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.2.0 — contract set 4.3.0; v3.5.9 compatibility baseline)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -71,7 +71,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.1.2)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.2.0)
 
 ```
 officecli-template-filler/
@@ -287,6 +287,7 @@ Every entrypoint ends with a `transaction` object:
       --output "$OUTPUT_FILE" --mode STANDARD --allow-unverified
   ```
   - `STRICT` commits only a `PASSED` QAReport; `STANDARD` may commit `UNVERIFIED` only with `--allow-unverified` and the missing checks disclosed.
+  - Optional backend switch: `--writer officecli` applies the whole FillPlan as one atomic `officecli` batch on the staging copy, then restores the template fingerprint before QA. It falls back to `python-docx` for the whole document when an operation, story or token is not faithfully expressible, and records the reason in `data.writer_fallback`. The default remains `python-docx`.
   - The executor writes only to a staging path, emits a per-operation fill ledger, and rejects protected/unauthorized/overflow targets before mutation.
   - Legacy token mode `--data payload.json` (no `--plan`) remains available as a **compatibility path** for simple token maps; it is not the v4 chain and must be labeled as legacy if used.
 - **For `POLISH` / `MERGE`**: these modes have no handler. Report `CAPABILITY_NOT_AVAILABLE` and stop — never substitute `generate_document.py` or any other script.

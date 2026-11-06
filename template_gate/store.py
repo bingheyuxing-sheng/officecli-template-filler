@@ -66,7 +66,7 @@ class GateStore:
     def _secret(self) -> bytes:
         if os.path.isfile(self.secret_path):
             with open(self.secret_path, "rb") as handle:
-                secret = handle.read().strip()
+                secret = handle.read()
             if secret:
                 return secret
         secret = secrets.token_bytes(32)

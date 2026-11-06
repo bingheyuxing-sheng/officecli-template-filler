@@ -145,6 +145,7 @@ def _run_plan_path(args) -> int:
         args.out,
         allow_unverified=args.allow_unverified,
         gate_record=args.gate_record or None,
+        writer=args.writer,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("status") in ("SUCCESS", "UNVERIFIED"):
@@ -167,6 +168,9 @@ def main() -> int:
     parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     parser.add_argument("--allow-unverified", dest="allow_unverified", action="store_true",
                         help="STANDARD only: commit a QA UNVERIFIED report that discloses missing checks")
+    parser.add_argument("--writer", choices=("python-docx", "officecli"), default="python-docx",
+                        help="Mutation backend for --plan; officecli falls back to python-docx "
+                             "when the document cannot be expressed faithfully")
     args = parser.parse_args()
 
     # W3-7: the user template passes the pre-parse quota on BOTH paths

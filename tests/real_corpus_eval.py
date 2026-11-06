@@ -47,6 +47,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
+from gate_helpers import ensure_gate  # noqa: E402
 from template_intelligence.spec_validator import validate_document_spec  # noqa: E402
 
 FILL_VALUE = "评测值"  # short on purpose: minimizes capacity-conflict rejections
@@ -162,9 +163,10 @@ def _smoke_slot_ids(fillable: list[dict]) -> list[str]:
     return picked
 
 
-def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> dict:
+def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str,
+               writer: str = "python-docx") -> dict:
     """Documented v4 fill chain on one staged copy; outcome metadata only."""
-    record: dict = {"id": file_id}
+    record: dict = {"id": file_id, "writer": writer}
     staged = workdir / "template.docx"
     shutil.copyfile(docx_path, staged)
     record["sha256_before"] = sha256_of(staged)
@@ -219,6 +221,16 @@ def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> di
         content_path.write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
         plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
 
+        # The W4 gate is mandatory: a corpus file is executed only with a
+        # record produced through the real analyzer/report/store chain.
+        try:
+            gate_record = ensure_gate(str(staged), "GENERATE")
+        except Exception as exc:  # noqa: BLE001 - one unresolvable file must not stop the run
+            return {**record, "classification": "GATE_UNAVAILABLE",
+                    "error_tail": "%s: %s" % (type(exc).__name__, exc)}
+        gate_path = workdir / "gate_record.json"
+        gate_path.write_text(json.dumps(gate_record, ensure_ascii=False), encoding="utf-8")
+
         output = workdir / "out.docx"
         generated = run_script(
             [str(ROOT / "scripts" / "generate_document.py"),
@@ -228,7 +240,9 @@ def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> di
              "--plan", str(plan_path),
              "--out", str(output),
              "--mode", "STANDARD",
-             "--allow-unverified"],
+             "--allow-unverified",
+             "--gate-record", str(gate_path),
+             "--writer", writer],
             timeout=timeout,
         )
         record["sha256_after"] = sha256_of(staged)
@@ -255,6 +269,8 @@ def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> di
         record["qa_status"] = data.get("qa_status")
         record["missing_checks"] = data.get("missing_checks") or []
         record["coverage_gaps"] = data.get("coverage_gaps") or []
+        record["writer_backend"] = data.get("writer_backend")
+        record["writer_fallback"] = data.get("writer_fallback")
         record["committed"] = (payload.get("transaction", {}) or {}).get("committed")
         record["filled_slots"] = len((data.get("ledger", {}) or {}).get("records", []) or [])
         return record
@@ -265,6 +281,22 @@ def fill_smoke(docx_path: Path, workdir: Path, timeout: int, file_id: str) -> di
         record["classification"] = "SMOKE_ERROR"
         record["error_tail"] = "%s: %s" % (type(exc).__name__, exc)[:800]
         return record
+
+
+def _fallback_bucket(reason: str) -> str:
+    """Classify a writer fallback without echoing document text into reports."""
+    text = str(reason or "").lower()
+    if "is not installed" in text:
+        return "binary_missing"
+    if "not supported by the officecli writer" in text:
+        return "unsupported_operation"
+    if "segment" in text or "story" in text or "section" in text or "txbx" in text or "sdt" in text:
+        return "unsupported_location"
+    if "spans multiple runs" in text:
+        return "token_spans_runs"
+    if "not unique" in text:
+        return "ambiguous_token"
+    return "other"
 
 
 def aggregate(records: list[dict], smoke_records: list[dict], elapsed_s: float) -> dict:
@@ -299,6 +331,13 @@ def aggregate(records: list[dict], smoke_records: list[dict], elapsed_s: float) 
             "qa_status": dict(Counter(
                 str(r.get("qa_status")) for r in smoke_records
                 if r["classification"] == "OK")),
+            "writer_backend": dict(Counter(
+                str(r.get("writer_backend")) for r in smoke_records
+                if r["classification"] == "OK")),
+            "writer_fallback": dict(Counter(
+                _fallback_bucket(r.get("writer_fallback"))
+                for r in smoke_records
+                if r["classification"] == "OK" and r.get("writer_fallback"))),
         },
         "elapsed_s": round(elapsed_s, 1),
     }
@@ -333,6 +372,10 @@ def write_markdown(path: Path, corpus_arg: str, totals: dict,
             json.dumps(totals["fill_smoke"]["classification"], ensure_ascii=False)),
         "| 冒烟后模板字节被改动（目标 0） | %d |" % totals["fill_smoke"]["template_bytes_changed"],
         "| 冒烟 QA 状态 | %s |" % json.dumps(totals["fill_smoke"]["qa_status"], ensure_ascii=False),
+        "| 冒烟写入后端 | %s |" % json.dumps(
+            totals["fill_smoke"].get("writer_backend", {}), ensure_ascii=False),
+        "| officecli 回退原因类别 | %s |" % json.dumps(
+            totals["fill_smoke"].get("writer_fallback", {}), ensure_ascii=False),
         "| 总耗时 | %.1fs |" % totals["elapsed_s"],
         "",
         "## 警告码直方图",
@@ -434,6 +477,8 @@ def main() -> int:
     parser.add_argument("--fill-sample", type=int, default=6,
                         help="run the fill smoke chain on the first N parseable token templates")
     parser.add_argument("--limit", type=int, default=0, help="0 = all files")
+    parser.add_argument("--writer", choices=("python-docx", "officecli"), default="python-docx",
+                        help="mutation backend passed through to the fill smoke")
     args = parser.parse_args()
 
     corpus = Path(args.corpus)
@@ -461,7 +506,7 @@ def main() -> int:
                     and summary.get("token_slots")
                     and len(smoke_records) < args.fill_sample):
                 smoke_records.append(
-                    fill_smoke(docx_path, workdir, args.timeout, file_id)
+                    fill_smoke(docx_path, workdir, args.timeout, file_id, writer=args.writer)
                 )
             print("[%s] %s" % (record["analyze"]["classification"], file_id),
                   flush=True)
@@ -471,8 +516,8 @@ def main() -> int:
     run_info = {
         "command": (
             "python tests/real_corpus_eval.py --corpus <external-dir> "
-            "--fill-sample %d --timeout %d --limit %d"
-            % (args.fill_sample, args.timeout, args.limit)
+            "--fill-sample %d --timeout %d --limit %d --writer %s"
+            % (args.fill_sample, args.timeout, args.limit, args.writer)
         ),
         "environment": "Python %s; %s; python-docx %s" % (
             platform.python_version(),
