@@ -1,32 +1,36 @@
 ---
 name: officecli-template-filler
-description: Template-driven Office document engine for Word (.docx) and Excel (.xlsx/.xlsm). Routes tasks into eight modes (GENERATE, REPAIR, REFORMAT, REVIEW, PROOFREAD, EXCEL_GENERATE, POLISH, MERGE), classifies template compatibility L1-L4, fills through a strict FillPlan executor with Zero Unintended Formatting Delta and native tracked changes, and gates delivery with four-state QA plus honest coverage_gaps. Use whenever the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA — e.g. 模板填充, 按模板生成文档, 按模板修复/对齐格式, 审阅留痕修订, 课程计划生成, Excel 模板填数 — even if no mode name is given; unimplemented modes (POLISH/MERGE) are reported as CAPABILITY_NOT_AVAILABLE. Do not use for PDF, PPTX, or writing without a template.
+description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v4.1.0 — contract set 4.3.0; v3.5.9 compatibility baseline)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.1.0 — contract set 4.3.0; v3.5.9 compatibility baseline)
 
-Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
+Use this skill only when a **template** drives the work. Start with four checks:
 
-1. **Task Router First (8 Specialized Modes & Context-Aware Web Search Policy)**:
-   Always classify the user's input files and prompt into one of eight execution modes (`GENERATE`, `POLISH`, `REPAIR`, `REVIEW`, `MERGE`, `REFORMAT`, `EXCEL_GENERATE`, `PROOFREAD`) via `engine.docx_parser.route_document_task()` before taking action. Web search is **enabled by default ONLY for `GENERATE` / `EXCEL_GENERATE`** when domain standards or public institution facts are needed, and **disabled by default for `REPAIR`, `REVIEW`, `POLISH`, `MERGE`, `REFORMAT`, and `PROOFREAD`** (unless the user explicitly requests external fact verification).
-2. **4-Tier User Confirmation Gate (`SKIP`, `LIGHT_CONFIRM`, `FULL_CONFIRM`, `HOLD_AND_ASK`)**:
-   Tailor user interaction to task certainty:
-   - **`SKIP`**: User explicitly says "直接生成/按默认生成", or task is pure `REPAIR`/`REFORMAT` with 100% deterministic content and compatible structures.
-   - **`LIGHT_CONFIRM`**: Minor optional slots or low-impact formatting choices exist; present a compact 1–2 item summary with smart defaults.
-   - **`FULL_CONFIRM`**: Unsearchable internal facts exist in `GENERATE`/`EXCEL_GENERATE` (e.g., project leader name, unannounced partner companies, internal approval IDs); present a consolidated Pre-Write Confirmation Card once with one-click normative defaults.
-   - **`HOLD_AND_ASK`**: High-risk `L4` structural unsupported elements (e.g., SmartArt/OLE/Chart binary data mutation, password-protected VBA macros) or conflicting dual-document structures are detected; pause and ask the user how to handle those specific regions before writing.
-3. **Execution Profile Gate (`FAST`, `STANDARD`, `FULL`)**:
-   For `GENERATE` and `EXCEL_GENERATE`, choose the workload before writing. Ask once with the compact choices **快速填专业内容 / 标准完整成稿 / 含图表精修** unless the user already selected a profile. `FAST` replaces confirmed placeholders only and does not rebuild tables or images; `STANDARD` fills all supported paragraphs and native tables and runs semantic plus mathematical QA; `FULL` additionally redraws placeholder/sample images, rebuilds schedule visuals when required, performs staged rendering, and runs multi-pass visual QA. The profile changes scope, never safety: Package QA, SSOT validation, transaction commit, and honest `coverage_gaps` reporting remain mandatory in all profiles.
-4. **Template Compatibility Level Classification (`L1`–`L4`)**:
-   Every template is automatically profiled into `L1` (Standard), `L2` (Moderately Complex), `L3` (Complex Styled), or `L4` (Manual Confirmation Required) via `engine.docx_parser.assess_template_compatibility_level()` and output as a formal `DocumentSpec` (`schemas/document_spec.schema.json`).
-5. **Modular, Unit-Tested Python Engine (`engine/` + `scripts/`) — Never Reinvent Ad-Hoc Helpers**:
-   All core OOXML, Decimal SSOT, Table, Image, Excel, Repair, Process Guard, and QA algorithms reside in standalone, unit-tested Python modules under `engine/` with CLI entrypoints in `scripts/`. Never write ad-hoc destructive `set_par_text` or `taskkill /F /IM` commands.
-   **Validation never uses `assert`**: `python -O` strips assertions, so every quality gate raises a real exception instead — `SSOTValidationError` from `engine.ssot_engine` and `QAValidationError` from `engine.qa_engine`. Pass `raise_on_failure=False` to `audit_format_and_text_qa()` when a structured `{"passed": false, "issues": [...]}` report is preferred over an exception.
-   **Universal process cleanup (ALL eight modes)**: automatic, never a manual step or a user instruction. Every document entrypoint calls `install_auto_cleanup()` on startup, snapshots live `editor_sdk.exe` identities, and on exit terminates only PIDs recorded as spawned by this task — anything else is reported in `unowned_pids` / `unreleased_pids`, never killed on a guess, and each task writes its own per-task cleanup evidence. Step 6 defines the full contract and the agent-facing duties.
-6. **Zero Unintended Formatting Delta + Package & Visual QA (with honest coverage reporting)**:
-   Deliver documents that preserve every unmapped style, run property, `<w:proofErr>` node, complex cell structure, shared image `rId`, and Excel formula, verified by `audit_docx_package_integrity()`, `audit_format_and_text_qa()`, `run_visual_layout_qa()`, and `audit_excel_formula_and_style_qa()`.
-   This is a guarantee about **unintended** changes only. Never claim 100% byte-identical rendering versus Word/WPS: list every unsupported object in `coverage_gaps` and never treat "not detected" as "passed".
-   Size, font and table checks always compare an output item against its **matched** template counterpart — never a document-wide allowlist — so pass `reference_docx_path=template_path` to `audit_format_and_text_qa(...)` with `comparison_profile="STYLE_GUIDE"` for GENERATE (or `scripts/run_qa.py output.docx --reference template.docx --profile style-guide`) and `REPLICA` for REPAIR/REVIEW. The resolution cascades, Chinese font-name normalization, table geometry fields, pagination rules and row-count gating are specified in [`references/python-docx-engine.md`](references/python-docx-engine.md) §3.9 — read it before changing QA comparison code.
+1. **Route** every request with `scripts/inspect_document.py`; never guess a mode.
+2. **Confirm the template** through the Template Understanding Gate before any `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` mutation.
+3. **Separate content from layout**; ContentPlan/FillPlan decide what to write, the executor alone edits OOXML.
+4. **Report honestly**; `PASSED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED` / `FAILED`, with `coverage_gaps` for anything not verified.
+
+## Operating contract
+
+- **Router first**: eight modes; web search enabled by default only for `GENERATE` / `EXCEL_GENERATE`.
+- **Template gate**: `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` require a `CONFIRMED` Gate Record. No record, no execution.
+- **Strict content truth**: never invent people, IDs, dates, budgets or sources; every SSOT fact needs a `source`.
+- **Zero unintended formatting delta**: preserve unmapped styles, `w:proofErr`, complex cells, shared image `rId`, and Excel formulas. Never shrink fonts or change margins to fit content.
+- **Profiles**: `FAST` / `STANDARD` / `FULL` change scope, never safety.
+- **Validation never uses `assert`**: quality gates raise `SSOTValidationError` / `QAValidationError`; `python -O` must not disable them.
+- **Honest QA**: unrun checks become `UNVERIFIED` / `coverage_gaps`; never report "not detected" as "passed".
+
+## Resource map
+
+| Need | Read / run |
+|---|---|
+| Task routing, template gate, mode commands | this file |
+| Transaction, checkpoints, rendering, TOC, QA report details | [`references/workflow-details.md`](references/workflow-details.md) |
+| Engine internals (OOXML, SSOT, images, tables, Excel, process guard) | [`references/engine-internals.md`](references/engine-internals.md) |
+| Python API and QA comparison mechanics | [`references/python-docx-engine.md`](references/python-docx-engine.md) |
+| Frozen contracts and Schemas | `contracts/`, `schemas/` |
 
 ---
 
@@ -50,6 +54,7 @@ Routing notes that prevent the common misroutes:
 - A `.docx` + `.xlsx` pair is **not automatically `MERGE`**. With a create intent ("生成/编制/起草") the `.docx` is the template and the `.xlsx` is a data source, so the primary mode is `GENERATE`; with a modify intent ("按模板修改格式/对齐") it is `REFORMAT`; only an explicit merge intent or a no-intent multi-source request stays `MERGE`.
 - Two `.docx` + "按模板修复格式" stays `REPAIR`; the word 修复 wins over the template phrase.
 - `EXCEL_GENERATE` must run `generate_excel.py`; never send an `.xlsx` input to `generate_document.py`.
+- `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` must also pass Step 1.5 before their pipeline; the execution entrypoints enforce this even if the agent skips the step.
 
 ---
 
@@ -66,12 +71,13 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.0)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.1.0)
 
 ```
 officecli-template-filler/
 ├── AGENTS.md / SKILL.md                  # Project rules (authoritative) / this skill workflow
-├── contracts/  config/  schemas/         # Frozen contract set 4.3.0 / QA policy, error codes, capability matrix / JSON Schemas
+├── contracts/  config/  schemas/         # Frozen contract set 4.3.0 / Gate + QA policy / JSON Schemas
+├── template_gate/                        # W4 evidence, state machine, report, store, validator
 ├── template_intelligence/                # DocumentSpec 4.0 producer, slot ids, fingerprint, validator
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
@@ -79,8 +85,8 @@ officecli-template-filler/
 ├── engine/                               # v3.5.9 standalone, importable Python engine package
 ├── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ├── tests/                                # Automated suite (532 tests)
-├── reports/                              # W0–W3 acceptance, gate and issue records
-└── references/                           # engine-internals.md / python-docx-engine.md
+├── reports/                              # W0–W4 acceptance, gate and issue records
+└── references/                           # workflow-details.md / engine-internals.md / python-docx-engine.md
 ```
 
 CLI surface an agent orchestrates through (`scripts/`):
@@ -89,6 +95,7 @@ CLI surface an agent orchestrates through (`scripts/`):
 |---|---|
 | `inspect_document.py` | Route task mode & inspect input files |
 | `analyze_template.py` | Emit DocumentSpec JSON (`--spec-version 4` for the GENERATE plan chain) |
+| `template_gate.py` | W4 gate: analyze evidence, report, resolve, confirm, reject, status |
 | `analyze_excel_template.py` | Emit Excel template spec (`.xlsx`/`.xlsm`) |
 | `generate_document.py` | v4 plan chain executor + legacy `--data` token path |
 | `generate_excel.py` | EXCEL_GENERATE (fills `.xlsx`, keeps formulas) |
@@ -100,7 +107,7 @@ CLI surface an agent orchestrates through (`scripts/`):
 | `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
 | `cleanup_editor_sdk.py` | Manual diagnostic only — auto cleanup runs inside every entrypoint |
 
-Per-module internals of `engine/` (LogicalParagraphView, SSOT solver, image/process/table/excel engines, transaction, workflow & research helpers) live in [`references/engine-internals.md`](references/engine-internals.md) — read it before editing `engine/`. Python API usage and QA verification mechanics live in [`references/python-docx-engine.md`](references/python-docx-engine.md).
+Per-module internals of `engine/` live in [`references/engine-internals.md`](references/engine-internals.md) — read it before editing `engine/`. Transaction/checkpoint/rendering/QA details live in [`references/workflow-details.md`](references/workflow-details.md). Python API usage and QA comparison mechanics live in [`references/python-docx-engine.md`](references/python-docx-engine.md).
 
 ---
 
@@ -119,6 +126,7 @@ The behaviours below are enforced in `engine/`, not advisory. Rationale and code
 | Delivery | `DocumentTransaction` stages, validates and atomically publishes; a failure never leaves a half-written deliverable |
 | QA | Four-state status (`PASSED` / `FAILED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED`); unverifiable checks become `coverage_gaps` |
 | Routing | Role-aware: template + data + generate intent stays `GENERATE`; unimplemented modes return `CAPABILITY_NOT_AVAILABLE` |
+| Template gate | No valid `CONFIRMED` Gate Record means `TEMPLATE_GATE_REQUIRED` / `TEMPLATE_GATE_STALE`; the check runs inside `execute_fill_plan` / `execute_repair_plan` / `execute_review_plan` / `execute_reformat_plan` |
 | Content | Numeric conflicts, subtotal closure and name drift are checked; every SSOT fact needs a `source` |
 | Images by role | `find_images(role=...)` / `replace_image_by_role()` target logo / stamp / qr / illustration with stated evidence |
 | OCR | Optional backend; without one the run reports `OCR_UNAVAILABLE` instead of claiming image text was read |
@@ -316,26 +324,9 @@ Every entrypoint ends with a `transaction` object:
   ```
   Same deliverable contract as REVIEW: a `.docx` in revision mode plus its snapshot. Only explicit text fixes are written as `w:ins`/`w:del`; judgement calls and data questions stay as comments. Never invent numeric corrections — leave them for the human unless the same value is consistent across all occurrences.
 
-#### Step 4A: Staged Checkpoints and Minimal Retry Scope
+#### Step 4A: Checkpoints, Rendering and TOC
 
-For `STANDARD` and `FULL`, persist and validate four transaction-scoped checkpoints in order:
-
-1. `content` — body text, headings, placeholders, and semantic preflight repairs;
-2. `tables` — all SSOT-derived native tables and cross-table totals;
-3. `images` — replacements/redraws and image integrity (`FULL`; otherwise explicitly skipped with coverage);
-4. `toc` — field state and page-number handling.
-
-Each checkpoint records `input_sha256`, `output_sha256`, `qa_status`, `issues`, and `coverage_gaps`. A failed stage restarts from the most recent valid checkpoint, not from the original template, and never redoes a successful earlier stage. Checkpoints are internal transaction artifacts; only the final committed Office file is delivered.
-
-#### Step 4B: Rendering and TOC Degradation Chain
-
-Use one bounded rendering attempt per stage; do not manually retry the same file in place.
-
-1. Render an independent working copy under `TaskResourceGuard` with a single configured timeout.
-2. On timeout or renderer failure, close only task-owned handles/processes, record the exact failure, and fall back to OOXML/package/layout-fingerprint QA.
-3. If Word or LibreOffice field refresh is available, refresh TOC fields on the working copy, then verify heading entries and rendered page count before commit.
-4. If no compatible field-refresh engine exists, never preserve known-stale template page numbers as if current. Keep/update the TOC field with `w:updateFields=true` and set `toc_status: PENDING_FIELD_UPDATE`; if an internal pagination estimate is supplied, label it `ESTIMATED` and state that Word/WPS pagination may differ.
-5. Rendering or TOC checks that did not run must create `coverage_gaps` and produce `UNVERIFIED`; repeated ad-hoc retries are forbidden.
+For `STANDARD` / `FULL`, persist `content → tables → images → toc` checkpoints with `WorkflowCheckpointStore`; a failed stage resumes from the last valid checkpoint and never redoes a successful earlier stage. One bounded render attempt per stage; missing rendering or TOC verification becomes `coverage_gaps` / `UNVERIFIED`, never a pass. The full checkpoint, renderer fallback and `PENDING_FIELD_UPDATE` rules are in [`references/workflow-details.md`](references/workflow-details.md) §2–3.
 
 ### Step 5: Mandatory Package, Format, Formula & Visual QA
 ```powershell
@@ -358,19 +349,9 @@ Read `status` in `qa_report.json` — it is one of four values, never a bare boo
 | `UNVERIFIED` | No high-severity issues, but at least one check could not run (`coverage_gaps` / `unverified_count` > 0); never report this as a pass | 0 |
 | `FAILED` | At least one high-severity issue | 1 |
 
-The report also carries `issues` (flattened objects with `code`, `location`, `detail`, `severity`), `warnings`, `warning_count`, `comparison_profile`, `alignment` (matched/new/removed paragraphs and tables), `coverage_gaps`, `unverified_count`, `hard_failure_count` and `pending_human_review_count`. Branch on `code`, never on prose. Never describe a `FAILED` report as delivered, and never call `PENDING_HUMAN_REVIEW` broken. Medium findings are advisory: report them to the user, but do not rewrite the document solely to silence them.
+The report also carries `issues` (flattened objects with `code`, `location`, `detail`, `severity`), `warnings`, `comparison_profile`, `alignment`, `coverage_gaps`, `unverified_count`. Branch on `code`, never prose. Never describe a `FAILED` report as delivered, and never call `PENDING_HUMAN_REVIEW` broken. Medium findings are advisory.
 
-**Content-truth section (`content_qa`, on by default; disable with `--no-content-qa`)** checks whether the numbers and names agree with each other, which format QA cannot see:
-
-| code | Severity | Meaning |
-|---|---|---|
-| `CONTENT_VALUE_CONFLICT` | high | an explicit total (总/合计/小计/共) carries different values in prose and a table |
-| `CONTENT_SUBTOTAL_MISMATCH` | high | a trailing 合计 row does not equal the sum of the rows above it |
-| `CONTENT_LABEL_VALUE_VARIANCE` | medium | the same non-total label appears with a few different values across prose and tables |
-| `CONTENT_TERM_DRIFT` | medium | a name in a name column is spelled two ways (张伟 / 张玮) |
-| `CONTENT_DATE_FORMAT_MIXED`, `CONTENT_UNIT_STYLE_MIXED` | low | `2026年11月4日` mixed with `2026-11-04`, or 万 mixed with 万元 |
-
-The report also returns `label_values` (extracted `label → value` pairs with locations) so the user can audit what was compared. `audit_fact_sources()` rejects SSOT `facts` entries without a `source` (`FACT_SOURCE_MISSING`, high) — every fact must cite a URL, an internal reference name, or the explicit marker `UNVERIFIED` / `MODEL_GENERATED`. For PROOFREAD, `find_numeric_occurrences()` returns every occurrence of a suspect number with surrounding context instead of a bare comment.
+**Content truth** (`content_qa`, on by default; disable with `--no-content-qa`) checks numeric conflicts, subtotal closure, label-value variance, name drift and mixed date/unit styles. Codes, severities, `label_values` and `audit_fact_sources()` rules are in [`references/workflow-details.md`](references/workflow-details.md) §4.
 
 For REVIEW outputs, run `python scripts/run_qa.py "$OUTPUT_FILE" --review --reference "$REF_DOCX" --profile replica --task-mode REVIEW`:
 
@@ -379,36 +360,21 @@ For REVIEW outputs, run `python scripts/run_qa.py "$OUTPUT_FILE" --review --refe
 - Without `--review`, placeholder residue counts as a failure, since nothing is expected to stay unresolved.
 
 ### Step 6: Automatic Agent Shutdown & File-Lock Release
-This step is automatic and applies to every document task, including success, QA failure, cancellation, and exceptions. Do not ask the user to run a cleanup command, and do not make cleanup a separate workflow step.
 
-**How it works**
+This step is automatic for every document task, including success, QA failure, cancellation and exceptions. Never ask the user to run cleanup as a workflow step.
 
-1. Every document-processing entrypoint calls `install_auto_cleanup()` before doing work. That records the live `editor_sdk.exe` PID snapshot and registers an `atexit` hook.
-2. When the process exits — normally, on error, or on `sys.exit` — the hook terminates only PIDs explicitly recorded as spawned by the task. A PID that merely appeared after the snapshot is reported in `unowned_pids` and left running; an SDK the user opened before the task is never touched.
-3. The hook writes the outcome to `%TEMP%\officecli_editor_sdk_cleanup.json` with `verified`, `spawned_during_task`, `unowned_pids`, `unreleased_pids`, `terminated_pids`, `still_running`, and `source_process`.
+1. Every document entrypoint calls `install_auto_cleanup()`; on exit it terminates only PIDs recorded as spawned by this task. A PID that merely appeared after the snapshot is reported in `unowned_pids` and left running.
+2. The hook writes `%TEMP%\officecli_editor_sdk_cleanup.json` with `verified`, `spawned_during_task`, `unowned_pids`, `unreleased_pids`, `terminated_pids`, `still_running` and `source_process`.
+3. Before the final response, read `read_auto_cleanup_log()` and report the result. Do not claim the lock was released without this evidence.
+4. `OUTPUT_FILE_LOCKED` returns `lock_info.editor_sdk_pids`; use `python scripts/cleanup_editor_sdk.py --list` to identify the exact PID. Only terminate one verified preview PID with `--kill-pid <pid> --confirm`; never use global `taskkill /IM`.
+5. Set `OFFICECLI_DISABLE_AUTO_CLEANUP=1` only when hosting the engine inside a longer-lived process.
 
-**What the agent must do**
+Start every `officecli.exe`, `soffice`, Excel or Word helper inside `TaskResourceGuard`; record the exact PID immediately and call `guard.release_all()` at the end.
 
-- Run document work through `scripts/*.py` so the hook is installed; if a task needs a custom Python snippet, call `install_auto_cleanup()` at its top.
-- Before the final response, read `read_auto_cleanup_log()` (or the JSON file) and report the cleanup result. Do not state that the file lock was released without this evidence.
-- If the log shows `"verified": false` or the output file still cannot be opened for read/write, run `python scripts/cleanup_editor_sdk.py --list` to name the exact owning PID. If the lock belongs to a preview process the user is willing to close, run `python scripts/cleanup_editor_sdk.py --kill-pid <pid> --confirm` — the command verifies the PID's image name and creation time before terminating that single process. Never use a global `taskkill /IM editor_sdk.exe`.
-- A transaction that hits a locked output returns `abort_reason: OUTPUT_FILE_LOCKED` with `lock_info.editor_sdk_pids` and a `hint`; report those facts and do not retry blindly.
-- Set `OFFICECLI_DISABLE_AUTO_CLEANUP=1` only when hosting the engine inside a longer-lived process that must not terminate SDKs on exit.
-
-**Manual tooling remains available for diagnosis only** (`python scripts/cleanup_editor_sdk.py --list`), never as the primary cleanup path.
-
-Subprocess and handle ownership for everything the engine itself spawns:
-
-- Start every `officecli.exe`, `soffice`, Excel, or Word helper inside the current task's `TaskResourceGuard`; record the exact PID immediately after launch.
-- Close registered document handles and call `guard.release_all()`. Never use `taskkill /IM`, process-name matching, or a global kill.
-
-Canonical pattern:
 ```python
 from engine import TaskResourceGuard, install_auto_cleanup, read_auto_cleanup_log
 
-# Automatic SDK cleanup: snapshot now, terminate task-spawned SDKs on exit.
 install_auto_cleanup()
-
 with TaskResourceGuard(task_id=task_id) as guard:
     try:
         result = guard.run_owned_command(command, cwd=work_dir, check=True)
