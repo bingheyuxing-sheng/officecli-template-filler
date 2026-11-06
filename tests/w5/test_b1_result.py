@@ -31,6 +31,7 @@ from document_backends.result import (  # noqa: E402
     OpOutcome,
     ReasonCode,
     REASON_CODE_CATALOG,
+    VALIDATION_UNVERIFIED_REASONS,
     ValidationStatus,
     ValidationResult,
     envelope_code_for,
@@ -250,6 +251,53 @@ class BackendResultTests(unittest.TestCase):
         payload = json.dumps(OpOutcome(status="SKIPPED").to_dict())
         self.assertIsNone(json.loads(payload)["reason_code"])
 
+    def test_per_op_rejects_non_opoutcome_values(self) -> None:
+        # R3: no arbitrary (mutable) object may enter per_op.
+        for bogus in ({"status": "SUCCESS"}, "SUCCESS", None, 42, ["SUCCESS"]):
+            with self.subTest(bogus=repr(bogus)):
+                with self.assertRaises(ValueError):
+                    BackendResult.success("officecli", per_op={"OP_001": bogus})
+
+    def test_per_op_rejects_non_mapping(self) -> None:
+        for bogus in (None, [("OP_001", OpOutcome(status="SUCCESS"))], "OP_001"):
+            with self.subTest(bogus=repr(bogus)):
+                with self.assertRaises(ValueError):
+                    BackendResult(backend="officecli", ok=True, per_op=bogus)  # type: ignore[arg-type]
+
+    def test_source_mapping_mutation_does_not_affect_result(self) -> None:
+        source = {"OP_001": OpOutcome(status="SUCCESS")}
+        result = BackendResult.success("officecli", per_op=source)
+        source["OP_002"] = OpOutcome(status="SKIPPED")
+        source["OP_001"] = OpOutcome(status="FAILED", reason_code=ReasonCode.BATCH_ROLLED_BACK)
+        source.clear()
+        self.assertEqual(tuple(result.per_op), ("OP_001",))
+        self.assertEqual(result.per_op["OP_001"].status, "SUCCESS")
+
+    def test_per_op_values_are_immutable(self) -> None:
+        result = BackendResult.success(
+            "officecli", per_op={"OP_001": OpOutcome(status="SUCCESS")}
+        )
+        with self.assertRaises(FrozenInstanceError):
+            result.per_op["OP_001"].status = "FAILED"  # type: ignore[misc]
+        with self.assertRaises(FrozenInstanceError):
+            result.per_op["OP_001"].reason_code = ReasonCode.BATCH_ROLLED_BACK  # type: ignore[misc]
+        self.assertEqual(result.per_op["OP_001"].status, "SUCCESS")
+
+    def test_to_dict_is_json_serializable_for_every_status(self) -> None:
+        result = BackendResult.failure(
+            "officecli", ReasonCode.BATCH_ROLLED_BACK, detail="rolled back",
+            per_op={
+                "OP_001": OpOutcome(status="FAILED",
+                                    reason_code=ReasonCode.BATCH_ROLLED_BACK,
+                                    before_sha256="a" * 64, after_sha256="b" * 64),
+                "OP_002": OpOutcome(status="SKIPPED"),
+                "OP_003": OpOutcome(status="SUCCESS"),
+            },
+        )
+        restored = json.loads(json.dumps(result.to_dict()))
+        self.assertEqual([restored["per_op"][key]["status"] for key in ("OP_001", "OP_002", "OP_003")],
+                         ["FAILED", "SKIPPED", "SUCCESS"])
+
 
 class OpOutcomeTests(unittest.TestCase):
     def test_valid_outcomes(self) -> None:
@@ -370,6 +418,83 @@ class ValidationResultTests(unittest.TestCase):
         restored = json.loads(payload)
         self.assertEqual(restored["status"], "UNAVAILABLE")
         self.assertEqual(restored["reason_code"], "BACKEND_VALIDATE_UNAVAILABLE")
+
+
+class ValidationStatusTypeTests(unittest.TestCase):
+    """R2 (G1.5-R2): a bare string or arbitrary object must not bypass the
+    four-state logic. ValidationStatus is a str-Enum, so equality-based
+    checks alone would accept ``"PASSED"``."""
+
+    def test_string_status_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", "PASSED")  # type: ignore[arg-type]
+
+    def test_arbitrary_status_objects_are_rejected(self) -> None:
+        for bogus in (None, 1, object(), ["PASSED"], {"status": "PASSED"}):
+            with self.subTest(bogus=repr(bogus)):
+                with self.assertRaises(ValueError):
+                    ValidationResult("officecli", bogus)  # type: ignore[arg-type]
+
+    def test_string_reason_code_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", ValidationStatus.FAILED,
+                             "BACKEND_VALIDATE_FAILED", "schema error")  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", ValidationStatus.PASSED, "anything")  # type: ignore[arg-type]
+
+    def test_arbitrary_reason_code_objects_are_rejected(self) -> None:
+        for bogus in (1, object(), ["BACKEND_VALIDATE_FAILED"]):
+            with self.subTest(bogus=repr(bogus)):
+                with self.assertRaises(ValueError):
+                    ValidationResult("officecli", ValidationStatus.FAILED, bogus, "x")  # type: ignore[arg-type]
+
+    def test_unverified_accepts_only_tooling_reasons(self) -> None:
+        self.assertEqual(
+            VALIDATION_UNVERIFIED_REASONS,
+            frozenset({ReasonCode.OFFICECLI_BINARY_MISSING,
+                       ReasonCode.OFFICECLI_VERSION_UNSUPPORTED}),
+        )
+        for reason in VALIDATION_UNVERIFIED_REASONS:
+            result = ValidationResult.unverified("officecli", reason, "tooling missing")
+            self.assertEqual(result.status, ValidationStatus.UNVERIFIED)
+
+    def test_unverified_rejects_off_semantics_reasons(self) -> None:
+        # Document fallbacks, routing decisions and failure reasons are not
+        # "validation could not run"; UNAVAILABLE's own code belongs to the
+        # UNAVAILABLE state (R2.5).
+        for reason in (ReasonCode.TOKEN_SPANS_RUNS,
+                       ReasonCode.TOKEN_NOT_UNIQUE,
+                       ReasonCode.LOCATION_UNSUPPORTED,
+                       ReasonCode.OPERATION_TYPE_UNSUPPORTED,
+                       ReasonCode.CAPABILITY_NOT_ROUTABLE,
+                       ReasonCode.BACKEND_VALIDATE_UNAVAILABLE,
+                       ReasonCode.BATCH_ROLLED_BACK):
+            with self.subTest(reason=reason.value):
+                with self.assertRaises(ValueError):
+                    ValidationResult.unverified("officecli", reason, "wrong semantics")
+
+    def test_unavailable_and_unverified_stay_distinct(self) -> None:
+        with self.assertRaises(ValueError):
+            ValidationResult("python-docx", ValidationStatus.UNAVAILABLE,
+                             ReasonCode.OFFICECLI_BINARY_MISSING, "wrong state")
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", ValidationStatus.UNVERIFIED,
+                             ReasonCode.BACKEND_VALIDATE_UNAVAILABLE, "wrong state")
+
+    def test_to_dict_serializes_all_four_states(self) -> None:
+        results = [
+            ValidationResult.passed("officecli"),
+            ValidationResult.failed("officecli", "schema violation"),
+            ValidationResult.unavailable("python-docx", "no validator"),
+            ValidationResult.unverified("officecli", ReasonCode.OFFICECLI_BINARY_MISSING,
+                                        "binary missing"),
+        ]
+        payloads = json.loads(json.dumps([item.to_dict() for item in results]))
+        self.assertEqual([item["status"] for item in payloads],
+                         ["PASSED", "FAILED", "UNAVAILABLE", "UNVERIFIED"])
+        self.assertEqual([item["reason_code"] for item in payloads],
+                         [None, "BACKEND_VALIDATE_FAILED", "BACKEND_VALIDATE_UNAVAILABLE",
+                          "OFFICECLI_BINARY_MISSING"])
 
 
 if __name__ == "__main__":

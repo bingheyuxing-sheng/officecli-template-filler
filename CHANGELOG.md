@@ -16,7 +16,7 @@
 - `document_engine/fill_executor.py`：`execute_fill_plan(..., writer="python-docx")`。`writer="officecli"` 时整篇使用 officecli 后端；遇到不支持的操作类型、位置（页眉页脚、文本框、SDT、脚注、批注）或非唯一占位符时整篇回退 python-docx，并在 `data.writer_fallback` 记录原因。事务、QA 与提交门禁不变。
 - `scripts/generate_document.py --writer {python-docx,officecli}`：默认仍为 `python-docx`，未翻转默认行为。
 - `tests/test_officecli_writer.py`：位置映射、回退判定、class_01 / class_02 双后端文本与 `validate` 一致性；缺少二进制时跳过。
-- `document_backends/`（W5-B1 骨架 + G1.5 审查修正 R1–R4）：`base.py` 最抽象后端接口（FillPlan 4.0 操作模型——`batch` 是唯一 mutation 入口、无结构动词、`CapabilityRecord` 构造期强制"未验证不得标记为支持"+证据非空/去重/时间戳格式/报告一致性校验）；`result.py` 统一 `BackendResult`/`OpOutcome`/`ValidationResult` 与 15 个注册 reason code（四类分类学）。R1：失败 reason 映射**通用** `BACKEND_*` envelope 码（BACKEND_BATCH/READBACK/NORMALIZE_FAILED），officecli 路径经 `OFFICECLI_ENVELOPE_ALIASES` 解析 B0 既有拼写（E2），python-docx 失败永不报告为 OFFICECLI 错误；R2：`validate` 返回四态 `ValidationResult`（PASSED/FAILED/UNAVAILABLE/UNVERIFIED，未验证/无验证器不可伪装通过且必留追溯）；R3：`per_op` 经 `MappingProxyType` 只读 + `to_dict()` 序列化通道。`config/error-codes.json` +22 条目（只增）：补注册 B0 执行器已用但未注册的四码 + 15 reason 码 + 3 通用 BACKEND 码。`tests/w5/` 85 项单元测试。
+- `document_backends/`（W5-B1 骨架 + G1.5 审查修正 R1–R4 及其边界强化）：`base.py` 最抽象后端接口（FillPlan 4.0 操作模型——`batch` 是唯一 mutation 入口、无结构动词、`CapabilityRecord` 构造期强制"未验证不得标记为支持"+证据非空/非空白/去重/真实 ISO-8601 解析（拒绝非法日期、时间与时区偏移）/报告一致性校验）；`result.py` 统一 `BackendResult`/`OpOutcome`/`ValidationResult` 与 15 个注册 reason code（四类分类学）。R1：失败 reason 映射**通用** `BACKEND_*` envelope 码（BACKEND_BATCH/READBACK/NORMALIZE_FAILED），officecli 路径经 `OFFICECLI_ENVELOPE_ALIASES` 解析 B0 既有拼写（E2），python-docx 失败永不报告为 OFFICECLI 错误；R2：`validate` 返回四态 `ValidationResult`（PASSED/FAILED/UNAVAILABLE/UNVERIFIED，强制 `ValidationStatus`/`ReasonCode` 成员类型、UNVERIFIED 仅接受工具不可用原因，未验证/无验证器不可伪装通过且必留追溯）；R3：`per_op` 经 `MappingProxyType` 只读、每值必须为不可变 `OpOutcome`、`to_dict()` 序列化通道。`config/error-codes.json` +22 条目（只增）：补注册 B0 执行器已用但未注册的四码 + 15 reason 码 + 3 通用 BACKEND 码。`tests/w5/` 104 项单元测试。
 
 ### Fixed（修复）
 
@@ -24,7 +24,7 @@
 
 ### Tests
 
-- 全量 **629 项通过**（B0 后基线 544 + W5-B1 及 R 修正新增 85；其中 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过）。实测命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`；契约 **72 项通过**（`py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"`）。
+- 全量 **648 项通过**（B0 后基线 544 + W5-B1 及 R 修正 104；其中 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过）。实测命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`；契约 **72 项通过**（`py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"`）。
 
 ### Known limits（已知限制）
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional, Sequence, Tuple
 
 from .result import BackendResult, ValidationResult
@@ -46,8 +47,37 @@ BACKEND_FORMATS: Tuple[str, ...] = ("docx", "xlsx")
 
 _CAPABILITY_ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
 _RISK_LEVELS: Tuple[str, ...] = ("low", "medium", "high")
-#: ISO-8601 with an explicit timezone (or Z): 2026-11-06T23:00:00+08:00
-_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$")
+
+
+def _validate_verified_at(value: object) -> str:
+    """Parse ``verified_at`` as a real ISO-8601 datetime with a timezone (R4).
+
+    A regex only proves the shape; :func:`datetime.fromisoformat` also
+    rejects impossible dates (month 13, day 32), impossible times
+    (hour 24) and out-of-range UTC offsets. A timestamp without a
+    timezone is rejected because evidence must be comparable across
+    machines.
+    """
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            "verified_at must be a non-empty ISO-8601 timestamp string, got %r"
+            % (value,)
+        )
+    # ``fromisoformat`` accepts 'Z' from Python 3.11 on; normalise so the
+    # check behaves identically on the project's older interpreters.
+    candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ValueError(
+            "verified_at is not a valid ISO-8601 date-time: %r" % (value,)
+        ) from exc
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise ValueError(
+            "verified_at must carry an explicit timezone offset or 'Z', got %r"
+            % (value,)
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -148,19 +178,16 @@ class CapabilityRecord:
         if not isinstance(self.verified_by, tuple):
             raise ValueError("verified_by must be a tuple of evidence strings")
         for item in self.verified_by:
-            if not isinstance(item, str) or not item:
-                raise ValueError("verified_by entries must be non-empty strings")
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(
+                    "verified_by entries must be non-empty, non-whitespace strings"
+                )
         if len(self.verified_by) != len(set(self.verified_by)):
             raise ValueError(
                 "verified_by entries must be unique: duplicate evidence is not proof"
             )
-        if self.verified_at is not None and not (
-            isinstance(self.verified_at, str) and _TIMESTAMP_RE.match(self.verified_at)
-        ):
-            raise ValueError(
-                "verified_at must be an ISO-8601 timestamp with a timezone, "
-                "e.g. '2026-11-06T23:00:00+08:00', got %r" % (self.verified_at,)
-            )
+        if self.verified_at is not None:
+            object.__setattr__(self, "verified_at", _validate_verified_at(self.verified_at))
         if self.verified and not self.verified_by:
             raise ValueError("a verified capability requires verified_by evidence")
         if self.available and not (self.verified and self.verified_by):

@@ -51,6 +51,7 @@ __all__ = [
     "REASON_CODE_CATALOG",
     "OFFICECLI_BACKEND_NAME",
     "OFFICECLI_ENVELOPE_ALIASES",
+    "VALIDATION_UNVERIFIED_REASONS",
     "OpOutcome",
     "BackendResult",
     "BackendError",
@@ -315,9 +316,18 @@ class BackendResult:
         if not isinstance(self.detail, str):
             raise ValueError("detail must be a string")
         object.__setattr__(self, "detail", self.detail[:DETAIL_MAX_CHARS])
-        frozen_ops = {str(key): value for key, value in dict(self.per_op).items()}
-        # MappingProxyType: per_op is read-only for every caller, so a
-        # result can never be edited after the fact (E5 traceability).
+        # R3: every per-op value must be an immutable OpOutcome. Copying
+        # into a fresh dict keeps construction decoupled from the caller's
+        # mapping; the proxy then makes the result read-only for everyone.
+        if not isinstance(self.per_op, Mapping):
+            raise ValueError("per_op must be a mapping of op_id -> OpOutcome")
+        frozen_ops: Dict[str, OpOutcome] = {}
+        for key, value in dict(self.per_op).items():
+            if not isinstance(value, OpOutcome):
+                raise ValueError(
+                    "per_op[%r] must be an OpOutcome, got %r" % (key, type(value).__name__)
+                )
+            frozen_ops[str(key)] = value
         object.__setattr__(self, "per_op", MappingProxyType(frozen_ops))
 
     @classmethod
@@ -378,6 +388,17 @@ class ValidationStatus(str, Enum):
     UNVERIFIED = "UNVERIFIED"
 
 
+#: The only reasons that may explain a validation that did not execute
+#: (R2.4). It must be tooling unavailability — not a document-structure
+#: fallback (``TOKEN_SPANS_RUNS``), not a routing decision
+#: (``CAPABILITY_NOT_ROUTABLE``) and not "no validator at all"
+#: (``BACKEND_VALIDATE_UNAVAILABLE``, which is its own UNAVAILABLE state).
+VALIDATION_UNVERIFIED_REASONS = frozenset({
+    ReasonCode.OFFICECLI_BINARY_MISSING,
+    ReasonCode.OFFICECLI_VERSION_UNSUPPORTED,
+})
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     """Outcome of :meth:`DocumentBackend.validate` — deliberately NOT a
@@ -394,9 +415,9 @@ class ValidationResult:
     * ``UNAVAILABLE`` — the backend has no validator. Requires
       ``BACKEND_VALIDATE_UNAVAILABLE`` plus a non-empty ``detail`` so the
       disclosure stays traceable (R2 req. 2/4).
-    * ``UNVERIFIED`` — a validator exists but could not run. Requires a
-      *non-failure* reason code (e.g. ``OFFICECLI_BINARY_MISSING``) plus a
-      non-empty ``detail`` for traceability (R2 req. 1/4).
+    * ``UNVERIFIED`` — a validator exists but could not run. Requires one
+      of :data:`VALIDATION_UNVERIFIED_REASONS` (tooling unavailability)
+      plus a non-empty ``detail`` for traceability (R2 req. 1/4).
     """
 
     backend: str
@@ -407,6 +428,19 @@ class ValidationResult:
     def __post_init__(self) -> None:
         if not isinstance(self.backend, str) or not self.backend:
             raise ValueError("backend must be a non-empty string")
+        # R2.1/R2.2: a bare string must not bypass the four-state logic.
+        # ValidationStatus is a str-Enum, so an isinstance check (not a
+        # value comparison) is required here.
+        if not isinstance(self.status, ValidationStatus):
+            raise ValueError(
+                "status must be a ValidationStatus member, got %r" % (self.status,)
+            )
+        # R2.3: same for the reason code — a string is not a valid reason.
+        if self.reason_code is not None and not isinstance(self.reason_code, ReasonCode):
+            raise ValueError(
+                "reason_code must be a ReasonCode member or None, got %r"
+                % (self.reason_code,)
+            )
         if not isinstance(self.detail, str):
             raise ValueError("detail must be a string")
         object.__setattr__(self, "detail", self.detail[:DETAIL_MAX_CHARS])
@@ -424,11 +458,14 @@ class ValidationResult:
             if not self.detail:
                 raise ValueError("UNAVAILABLE requires a non-empty detail for traceability")
         else:  # UNVERIFIED
-            spec = REASON_CODE_CATALOG.get(self.reason_code) if self.reason_code else None
-            if spec is None or spec.is_failure:
+            # R2.4/R2.5: only tooling-unavailability reasons; a failure
+            # reason belongs to FAILED, and BACKEND_VALIDATE_UNAVAILABLE
+            # belongs to UNAVAILABLE — the two states stay distinct.
+            if self.reason_code not in VALIDATION_UNVERIFIED_REASONS:
                 raise ValueError(
-                    "UNVERIFIED requires a non-failure reason code such as "
-                    "OFFICECLI_BINARY_MISSING (a failure reason belongs to FAILED)"
+                    "UNVERIFIED requires a tooling-unavailability reason from %s, "
+                    "got %r" % (sorted(r.value for r in VALIDATION_UNVERIFIED_REASONS),
+                                self.reason_code,)
                 )
             if not self.detail:
                 raise ValueError("UNVERIFIED requires a non-empty detail for traceability")

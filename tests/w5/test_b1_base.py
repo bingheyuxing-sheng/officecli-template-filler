@@ -172,6 +172,48 @@ class CapabilityEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _verified_record(verified_at=bad)
 
+    def test_verified_at_rejects_impossible_dates(self) -> None:
+        # R4: a real parser, not a shape regex, rejects month 13 / Feb 30.
+        for bad in ("2026-13-01T00:00:00+08:00", "2026-02-30T00:00:00+08:00",
+                    "2026-00-10T00:00:00+08:00"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    _verified_record(verified_at=bad)
+
+    def test_verified_at_rejects_impossible_times(self) -> None:
+        # 24:00:00 is legal ISO-8601 (end-of-day) and the real parser
+        # accepts it; 24:00:01 and out-of-range minutes/seconds are not.
+        for bad in ("2026-11-06T24:00:01+08:00", "2026-11-06T23:60:00+08:00",
+                    "2026-11-06T23:00:61+08:00"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    _verified_record(verified_at=bad)
+        _verified_record(verified_at="2026-11-06T24:00:00+08:00")
+
+    def test_verified_at_rejects_out_of_range_offsets(self) -> None:
+        for bad in ("2026-11-06T23:00:00+99:00", "2026-11-06T23:00:00-25:00"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    _verified_record(verified_at=bad)
+
+    def test_verified_at_rejects_missing_timezone(self) -> None:
+        for bad in ("2026-11-06T23:00:00", "2026-11-06", "2026-11-06T23:00"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    _verified_record(verified_at=bad)
+
+    def test_verified_at_accepts_utc_and_offset_forms(self) -> None:
+        for good in ("2026-11-06T15:00:00Z", "2026-11-06T23:00:00+08:00",
+                     "2026-11-06T10:00:00-05:00", "2026-11-06T23:00:00.123456+08:00"):
+            with self.subTest(value=good):
+                self.assertEqual(_verified_record(verified_at=good).verified_at, good)
+
+    def test_verified_by_rejects_whitespace_only_evidence(self) -> None:
+        for bad in ("   ", "\t", "\n", " \t\n "):
+            with self.subTest(value=repr(bad)):
+                with self.assertRaises(ValueError):
+                    _verified_record(verified_by=(bad,))
+
     def test_report_rejects_foreign_backend_records(self) -> None:
         foreign = _verified_record(backend="python-docx")
         with self.assertRaises(ValueError):
