@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
 from document_engine.fill_executor import _apply_operation  # noqa: E402
@@ -96,6 +98,7 @@ class _PlanCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def _plan_for_first_paragraph(self, template_path: Path):
+        ensure_gate(str(template_path), "GENERATE")
         spec = build_document_spec_from_path(str(template_path))
         slot = next(s for s in spec["slots"] if s["location_id"] == "body.p[0]")
         content = build_content_plan(
@@ -407,6 +410,7 @@ def gap_only_qa(_staged_path):
 
 class UnverifiedGateTests(_PlanCase):
     def _standard_plan(self, template_path: Path):
+        ensure_gate(str(template_path), "GENERATE")
         spec = build_document_spec_from_path(str(template_path))
         slot = next(s for s in spec["slots"] if s["location_id"] == "body.p[0]")
         content = build_content_plan(

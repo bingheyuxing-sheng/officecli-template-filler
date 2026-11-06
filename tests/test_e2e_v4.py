@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 from template_intelligence import build_document_spec_from_path  # noqa: E402
 from template_intelligence.spec_validator import validate_document_spec  # noqa: E402
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
@@ -220,6 +222,7 @@ class EndToEndTests(unittest.TestCase):
         self.directory = Path(self._tmp.name)
         self.template = _make_template(self.directory)
         self.original_sha = _sha256(self.template)
+        self.gate = ensure_gate(str(self.template), "GENERATE")
         self.spec, self.content, self.fill = _bundle(self.template)
 
     def tearDown(self) -> None:
@@ -336,6 +339,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_11_first_page_header_slot_fills(self) -> None:
         template = _make_header_template(self.directory)
+        ensure_gate(str(template), "GENERATE")
         original_sha = _sha256(template)
         spec = build_document_spec_from_path(str(template))
         self.assertTrue(validate_document_spec(spec)["passed"])

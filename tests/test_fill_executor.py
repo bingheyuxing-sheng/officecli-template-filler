@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate, gate_home  # noqa: E402
+
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
 from document_engine import FillLedger, execute_fill_plan  # noqa: E402
 from template_intelligence import build_document_spec_from_path  # noqa: E402
@@ -182,6 +184,7 @@ class _ExecutorCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="w1d_fill_")
         self.directory = Path(self._tmp.name)
         self.template = make_template(self.directory)
+        self.gate = ensure_gate(str(self.template), "GENERATE")
         self.spec = build_document_spec_from_path(str(self.template))
         self.content, self.plan, self.name_slot, self.table_slot = two_slot_plan(self.spec)
         self.output = self.directory / "out.docx"
@@ -194,6 +197,7 @@ class _ExecutorCase(unittest.TestCase):
         return execute_fill_plan(
             str(self.template), self.spec, fill_plan, str(self.output),
             content_plan=kwargs.pop("content_plan", self.content),
+            gate_record=self.gate,
             **kwargs,
         )
 
@@ -511,6 +515,7 @@ class LedgerAndCliTests(unittest.TestCase):
         document = docx.Document()
         document.add_paragraph("{{项目名称}}")
         document.save(str(template))
+        ensure_gate(str(template), "GENERATE")
         payload = self.directory / "payload.json"
         payload.write_text(json.dumps({"tokens": {"{{项目名称}}": "老接口"}}, ensure_ascii=False),
                            encoding="utf-8")
@@ -521,6 +526,7 @@ class LedgerAndCliTests(unittest.TestCase):
              "--data", str(payload), "--out", str(output)],
             cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
             errors="replace", check=False,
+            env={**os.environ, "OFFICECLI_GATE_HOME": gate_home()},
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
         result = json.loads(completed.stdout)
@@ -534,6 +540,7 @@ class LedgerAndCliTests(unittest.TestCase):
 
     def test_plan_cli_standard_commits_unverified_with_disclosure(self) -> None:
         template = make_template(self.directory)
+        ensure_gate(str(template), "GENERATE")
         spec = build_document_spec_from_path(str(template))
         _content, plan, _name, _table = two_slot_plan(spec, mode="STANDARD")
         plan_path = self.directory / "fill_plan.json"
@@ -548,6 +555,7 @@ class LedgerAndCliTests(unittest.TestCase):
              "--out", str(output), "--mode", "STANDARD", "--allow-unverified"],
             cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
             errors="replace", check=False,
+            env={**os.environ, "OFFICECLI_GATE_HOME": gate_home()},
         )
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
         result = json.loads(completed.stdout)

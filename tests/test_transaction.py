@@ -20,6 +20,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from gate_helpers import ensure_gate, gate_home  # noqa: E402
+
 import docx
 from docx.shared import Pt, RGBColor
 
@@ -182,6 +184,7 @@ class TestTransactionSuite(unittest.TestCase):
         document = docx.Document()
         document.add_paragraph("项目名称：{{project}}")
         document.save(template)
+        ensure_gate(template, "GENERATE")
         payload = os.path.join(self.work_dir, "payload.json")
         with open(payload, "w", encoding="utf-8") as handle:
             json.dump({"tokens": {}}, handle)
@@ -202,6 +205,7 @@ class TestTransactionSuite(unittest.TestCase):
             encoding="utf-8",
             errors="replace",
             check=False,
+            env={**os.environ, "OFFICECLI_GATE_HOME": gate_home()},
         )
         self.assertNotEqual(result.returncode, 0, result.stdout)
         report = json.loads(result.stdout)
@@ -219,6 +223,7 @@ class TestTransactionSuite(unittest.TestCase):
         ref_run = ref_para.add_run("正文内容")
         ref_run.font.size = Pt(12)
         ref_doc.save(reference)
+        ensure_gate(reference, "REPAIR")
 
         broken = os.path.join(self.work_dir, "broken.docx")
         broken_doc = docx.Document()
@@ -244,6 +249,7 @@ class TestTransactionSuite(unittest.TestCase):
             encoding="utf-8",
             errors="replace",
             check=False,
+            env={**os.environ, "OFFICECLI_GATE_HOME": gate_home()},
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         report = json.loads(result.stdout)

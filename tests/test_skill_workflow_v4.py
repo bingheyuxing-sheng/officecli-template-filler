@@ -10,6 +10,7 @@ default falls back to the legacy token path or emits a 3.0 spec.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,8 @@ import docx
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from gate_helpers import ensure_gate, gate_home  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
 from template_intelligence.spec_validator import validate_document_spec  # noqa: E402
@@ -50,6 +53,7 @@ class SkillWorkflowV4Tests(unittest.TestCase):
         self.dir = Path(self._tmp.name)
         self.template = self.dir / "template.docx"
         _make_template(str(self.template))
+        ensure_gate(str(self.template), "GENERATE")
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -63,6 +67,7 @@ class SkillWorkflowV4Tests(unittest.TestCase):
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env={**os.environ, "OFFICECLI_GATE_HOME": gate_home()},
         )
 
     def test_documented_generate_workflow_is_v4(self) -> None:

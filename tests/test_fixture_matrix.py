@@ -31,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
 from engine.ooxml_utils import LogicalParagraphView, iter_all_document_paragraphs_with_Wait_context  # noqa: E402
@@ -179,6 +181,7 @@ class FixtureMatrixTests(unittest.TestCase):
     def _execute(self, name: str, class_dir: Path, expected: dict, spec: dict,
                  plan: dict, content: dict, directory: Path, qa_runner=None) -> tuple:
         template = class_dir / "template.docx"
+        ensure_gate(str(template), "GENERATE")
         output = directory / "out.docx"
         before = _sha256(template)
         self.assertEqual(before, expected["template_sha256"], "%s: template changed before run" % name)

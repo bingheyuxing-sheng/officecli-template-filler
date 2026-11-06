@@ -35,6 +35,16 @@ from engine import (
 )
 from engine.docx_parser import match_internal_fact_slots
 
+from gate_helpers import ensure_gate  # noqa: E402
+
+_real_execute_review_plan = execute_review_plan
+
+
+def execute_review_plan(plan, output_docx_path, *args, **kwargs):
+    if str(plan.get("task_mode") or "").upper() == "REVIEW":
+        ensure_gate(plan["reference_docx"], "REVIEW")
+    return _real_execute_review_plan(plan, output_docx_path, *args, **kwargs)
+
 
 def _write_docx(path: str, paragraphs) -> str:
     document = docx.Document()

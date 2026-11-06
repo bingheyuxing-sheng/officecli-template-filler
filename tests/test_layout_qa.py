@@ -21,6 +21,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 import docx
 from docx.oxml.ns import qn
 from docx.shared import Pt
@@ -76,6 +78,7 @@ class TestLayoutQaSuite(unittest.TestCase):
         reference = self._docx("review_ref.docx", "正文内容", size=12)
         target = self._docx("review_target.docx", "正文内容", size=18)
         output = os.path.join(self.work_dir, "review_out.docx")
+        ensure_gate(reference, "REVIEW")
         execute_review_plan(
             build_review_plan(
                 reference,

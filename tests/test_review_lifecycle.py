@@ -20,6 +20,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -101,6 +103,7 @@ class TestRevisionLifecycleSuite(unittest.TestCase):
         tgt.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0].add_run("表格")
         tgt.save(tgt_path)
 
+        ensure_gate(ref_path, "REVIEW")
         plan = build_review_plan(ref_path, tgt_path, text_revisions=text_revisions)
         execute_review_plan(plan, out_path)
         return out_path
@@ -207,6 +210,7 @@ class TestRevisionLifecycleSuite(unittest.TestCase):
         tgt_run.font.size = Pt(16)
         tgt.save(tgt_path)
 
+        ensure_gate(ref_path, "REVIEW")
         execute_review_plan(build_review_plan(ref_path, tgt_path), out_path)
         return out_path
 
@@ -337,6 +341,7 @@ class TestRevisionLifecycleSuite(unittest.TestCase):
         # `snapshot_path=""` opts out for callers that publish through a transaction.
         tiny = os.path.join(self.work_dir, "t4_tiny.docx")
         docx.Document().save(tiny)
+        ensure_gate(tiny, "REVIEW")
         skipped = os.path.join(self.work_dir, "t4_no_snapshot.docx")
         execute_review_plan(build_review_plan(tiny, tiny), skipped, snapshot_path="")
         self.assertFalse(os.path.exists(review_snapshot_path(skipped)))

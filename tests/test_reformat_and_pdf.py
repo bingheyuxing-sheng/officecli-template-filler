@@ -14,6 +14,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 import docx
 from docx.oxml.ns import qn
 from docx.shared import Pt
@@ -151,6 +153,7 @@ class TestReformatSuite(unittest.TestCase):
     def test_apply_writes_tracked_format_revisions(self) -> None:
         ref_path, tgt_path = self._documents()
         output = self._path("formatted.docx")
+        ensure_gate(ref_path, "REFORMAT")
         plan = build_reformat_plan(ref_path, tgt_path)
         result = execute_reformat_plan(plan, output)
         self.assertGreaterEqual(result["applied_actions"], 1)

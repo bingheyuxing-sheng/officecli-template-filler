@@ -31,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
 from engine.ooxml_utils import LogicalParagraphView  # noqa: E402
@@ -162,6 +164,7 @@ class MergedCellColumnTests(unittest.TestCase):
             self.assertEqual(target["col"], 2)
 
             output = directory / "merged_out.docx"
+            ensure_gate(str(template), "GENERATE")
             result = execute_fill_plan(
                 str(template), spec, plan, str(output),
                 content_plan=content, allow_unverified=True,
@@ -212,6 +215,7 @@ class NestedTableTargetTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "nested_out.docx"
+            ensure_gate(str(template), "GENERATE")
             result = execute_fill_plan(
                 str(template), spec, plan, str(output),
                 content_plan=content, allow_unverified=True,
@@ -253,6 +257,7 @@ class ReplaceImageResidualTests(unittest.TestCase):
                              ["replace_image"])
 
             output = directory / "image_out.docx"
+            ensure_gate(str(template), "GENERATE")
             result = execute_fill_plan(
                 str(template), spec, plan, str(output),
                 content_plan=content, allow_unverified=True,

@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from gate_helpers import ensure_gate  # noqa: E402
+
 import docx  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan  # noqa: E402
@@ -98,6 +100,7 @@ def _make_executor_bundle(directory: str) -> tuple:
     document = docx.Document()
     document.add_paragraph("{{项目名称}}")
     document.save(template)
+    ensure_gate(template, "GENERATE")
 
     spec = build_document_spec_from_path(template)
     assert validate_document_spec(spec)["passed"], validate_document_spec(spec)["errors"][:3]

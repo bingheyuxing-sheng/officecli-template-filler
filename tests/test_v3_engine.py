@@ -94,6 +94,22 @@ from engine import (
     process_start_ticks,
 )
 
+from gate_helpers import ensure_gate  # noqa: E402
+
+_real_execute_repair_plan = execute_repair_plan
+_real_execute_review_plan = execute_review_plan
+
+
+def execute_repair_plan(plan, output_docx_path, *args, **kwargs):
+    ensure_gate(plan["reference_docx"], "REPAIR")
+    return _real_execute_repair_plan(plan, output_docx_path, *args, **kwargs)
+
+
+def execute_review_plan(plan, output_docx_path, *args, **kwargs):
+    if str(plan.get("task_mode") or "").upper() == "REVIEW":
+        ensure_gate(plan["reference_docx"], "REVIEW")
+    return _real_execute_review_plan(plan, output_docx_path, *args, **kwargs)
+
 
 class TestV3EngineSuite(unittest.TestCase):
     def setUp(self) -> None:
