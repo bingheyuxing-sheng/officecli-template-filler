@@ -932,6 +932,119 @@ _PROOFREAD_TYPO_RE = re.compile(
 )
 
 
+def build_findings_review_plan(
+    target_docx_path: str,
+    findings: Any,
+    author: str = REVIEW_AUTHOR_DEFAULT,
+    text_revisions: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Turn external findings (Excel/JSON/consistency QA) into inline Word comments.
+
+    This is the REVIEW path for evidence that is not a sibling DOCX. The deliverable is
+    still the target document with native comments and track changes; the findings file
+    and the report JSON are sidecars, never the deliverable. Every finding must resolve
+    to a real paragraph or table cell, otherwise the plan is rejected instead of
+    silently dropping the comment.
+    """
+    if isinstance(findings, dict):
+        items = findings.get("findings")
+        if items is None:
+            items = findings.get("issues")
+        if items is None:
+            items = [findings]
+    else:
+        items = findings
+    if not isinstance(items, list):
+        raise ValueError("findings must be a JSON list or an object with a findings/issues list")
+
+    doc = docx.Document(target_docx_path)
+    actions: List[Dict[str, Any]] = []
+    unresolved: List[Dict[str, Any]] = []
+
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            unresolved.append({"index": index, "reason": "NOT_AN_OBJECT"})
+            continue
+        location = str(
+            item.get("location") or item.get("location_id") or item.get("target") or ""
+        ).strip()
+        comment = str(
+            item.get("comment") or item.get("detail") or item.get("message") or ""
+        ).strip()
+        if not location or not comment:
+            unresolved.append({
+                "index": index,
+                "location": location,
+                "reason": "LOCATION_OR_COMMENT_MISSING",
+            })
+            continue
+        if _resolve_comment_paragraph(doc, location) is None:
+            unresolved.append({
+                "index": index,
+                "location": location,
+                "reason": "LOCATION_NOT_FOUND",
+            })
+            continue
+        code = str(item.get("code") or "").strip()
+        severity = str(item.get("severity") or "medium").lower()
+        comment_text = comment if not code or comment.startswith("[") else f"[{code}] {comment}"
+        actions.append({
+            "action_id": f"finding_comment_{index}",
+            "action_type": "ADD_REVIEW_COMMENT",
+            "target": location,
+            "location_id": location,
+            "comment": comment_text,
+            "change_mode": "COMMENT",
+            "requires_human_review": True,
+            "risk_level": severity if severity in ("high", "medium", "low") else "medium",
+            "finding_code": code,
+        })
+
+    if unresolved:
+        raise ValueError(
+            "COMMENT_LOCATION_UNRESOLVED: "
+            + json.dumps(unresolved, ensure_ascii=False)
+        )
+
+    for revision_index, revision in enumerate(text_revisions or []):
+        old_text = str(revision.get("old_text", ""))
+        new_text = str(revision.get("new_text", ""))
+        if not old_text:
+            continue
+        actions.append({
+            "action_id": f"text_revision_{revision_index}",
+            "action_type": "TRACK_TEXT_REVISION",
+            "target": revision.get("location_id") or revision.get("target", "auto_locate"),
+            "location_id": revision.get("location_id"),
+            "occurrence": revision.get("occurrence"),
+            "old_text": old_text,
+            "new_text": new_text,
+            "reason": revision.get("reason", "按模板规范修正文本"),
+            "change_mode": "TRACKED",
+            "requires_human_review": True,
+            "risk_level": revision.get("risk_level", "MEDIUM"),
+        })
+
+    return {
+        "schema_version": "3.1",
+        "task_mode": "REVIEW",
+        "reference_docx": target_docx_path,
+        "target_docx": target_docx_path,
+        "author": author,
+        "track_changes": True,
+        "review_source": "EXTERNAL_FINDINGS",
+        "summary": {
+            "format_restore_actions": 0,
+            "table_style_restores": 0,
+            "tracked_text_revisions": len(text_revisions or []),
+            "auto_text_diffs": 0,
+            "comments": len([a for a in actions if a["action_type"] == "ADD_REVIEW_COMMENT"]),
+            "total_actions": len(actions),
+        },
+        "actions": actions,
+    }
+
+
 def audit_proofread_candidates(docx_path: Optional[str] = None, doc=None) -> Dict[str, Any]:
     """Deterministic proofreading evidence: content contradictions plus typo candidates.
 

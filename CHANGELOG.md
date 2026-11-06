@@ -6,6 +6,26 @@
 
 ---
 
+## v4.1.2（2026-11-06，稳定版候选补丁）
+
+> 软件版本 **4.1.2**；契约集保持 **4.3.0**，产物 `schema_version` 保持 `4.0`。本补丁新增 REVIEW 外部证据批注路径，不修改冻结契约、Schema 或错误码语义。
+
+### Added（新增）
+
+- `scripts/review_document.py --findings findings.json`：将 Excel/JSON/一致性检查等外部证据转换为目标 Word 的内联批注，输出仍是带 `w:trackChanges` 的方案正文；无法定位的 finding 返回 `COMMENT_LOCATION_UNRESOLVED`，不静默丢弃。
+- `engine/review_engine.py::build_findings_review_plan()`：校验每个 finding 的 `body.p[n]` / `body.tbl[t].r[r].c[c]` 位置，支持同时附带 `--revisions` 文本修订。
+- `tests/test_review_findings.py`：覆盖正文/表格批注、无法定位拒绝、批注与文本修订并行。
+
+### Changed（变更）
+
+- `SKILL.md` 与 `references/engine-internals.md`：明确 REVIEW 交付物必须是目标方案正文的 `.docx`，禁止输出独立的 `核查报告*.docx`；`review_report.json` 仅为旁路审计文件。
+
+### Tests
+
+- 全量 **535 项通过**；契约测试 **72 项通过**；`ruff check .` 通过。
+
+---
+
 ## v4.1.1（2026-11-06，稳定版候选补丁）
 
 > 软件版本 **4.1.1**；契约集保持 **4.3.0**，产物 `schema_version` 保持 `4.0`。本补丁仅优化 Skill 文档与参考组织，不改变运行时行为、契约、Schema 或错误码。

@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.1.1 — contract set 4.3.0; v3.5.9 compatibility baseline)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.1.2 — contract set 4.3.0; v3.5.9 compatibility baseline)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -71,7 +71,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.1.1)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.1.2)
 
 ```
 officecli-template-filler/
@@ -315,8 +315,15 @@ Every entrypoint ends with a `transaction` object:
       --out "$OUTPUT_DOCX" --plan-out "$TEMP/review_plan.json" --report "$TEMP/review_report.json" `
       [--snapshot "$TEMP/review_snapshot.json"]
   ```
-  Hand the user the generated `.docx` — not a Markdown checklist and not the JSON report. Tell them WPS/Word opens it in revision mode, format repairs are already applied, and each `<w:ins>`/`<w:del>` and comment still needs their accept/reject decision.
+  Hand the user the generated `.docx` — not a Markdown checklist, not the JSON report, and **never a separate `核查报告*.docx`**. Tell them WPS/Word opens it in revision mode, format repairs are already applied, and each `<w:ins>`/`<w:del>` and comment still needs their accept/reject decision.
   The run also writes `<deliverable>.review_snapshot.json` (override with `--snapshot`). Keep it next to the document until the user has finished deciding: `restore_revision()` reads it to rebuild a revision that was already accepted or rejected, and without it the restore returns `SNAPSHOT_MISSING` instead of guessing.
+- **For `REVIEW` against Excel/JSON evidence** (the reference is not a sibling DOCX):
+  ```powershell
+  python scripts/review_document.py --target "$DRAFT_DOCX" --findings "$TEMP/findings.json" `
+      --author "OfficeCLI Reviewer" --out "$OUTPUT_DOCX" `
+      --report "$TEMP/review_report.json" --plan-out "$TEMP/review_plan.json"
+  ```
+  `findings.json` is a list or `{"findings": [...]}`; each item carries `location` (`body.p[3]`, `body.tbl[1].r[2].c[3]`), `comment`/`detail`, and optional `code`/`severity`. The output is the target proposal with inline comments and track changes; findings that cannot be anchored make the command exit 2 with `COMMENT_LOCATION_UNRESOLVED` instead of being silently dropped.
 - **For `PROOFREAD` (single document, no template)**:
   ```powershell
   python scripts/proofread_document.py --target "$INPUT_DOCX" --out "$OUTPUT_DOCX" `

@@ -4,15 +4,15 @@
 
 给它一个模板和资料，它交出一份格式不走样、内容可审计的文档；给它一份草稿，它交回一份**能用 Word/WPS 修订模式打开、逐条接受或拒绝**的审阅稿。
 
-## v4.1.1 发布状态（稳定版候选）
+## v4.1.2 发布状态（稳定版候选）
 
 | 项目 | 状态 |
 |---|---|
-| 版本 | **v4.1.1**（契约集 **4.3.0**：W0 五份契约 + CP-W2-001/002 + Contract 06；均 MINOR 加法；独立出口审查待完成） |
+| 版本 | **v4.1.2**（契约集 **4.3.0**：W0 五份契约 + CP-W2-001/002 + Contract 06；均 MINOR 加法；独立出口审查待完成） |
 | 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
 | Template Gate | `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` 执行前必须通过模板理解与用户确认闸门；无有效 Gate Record 时执行入口拒绝继续 |
 | Skill 工作流 | GENERATE 文档主链使用 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
-| 测试基线 | **532 项通过**；覆盖 W4 Evidence/State/Report/Store/Validator/Enforcement/E2E |
+| 测试基线 | **535 项通过**；覆盖 W4 Evidence/State/Report/Store/Validator/Enforcement/E2E 与 REVIEW findings 批注路径 |
 | 真实验证 | 46 份外部真实 `.docx`：解析 46/46、0 字节改动、0 Spec 校验失败；21 份可填模板全部完成填充并提交（12 PASSED / 9 UNVERIFIED 如实披露） |
 | 状态 | W0–W3 + W4 完成；W4 独立出口审查待 W4-9 证据包复核 |
 
@@ -105,6 +105,9 @@ python scripts/reformat_document.py --reference template.docx --target draft.doc
 # 审阅：输出可在 Word/WPS 中以修订模式打开的 .docx
 python scripts/review_document.py --reference template.docx --target draft.docx \
     --revisions revisions.json --out reviewed.docx
+
+# 审阅外部证据（Excel/JSON findings）：输出仍是目标方案正文，批注内联在原文
+python scripts/review_document.py --target draft.docx --findings findings.json --out reviewed.docx
 
 # Excel 模板填充（.xlsm 会保留 VBA 工程）
 python scripts/generate_excel.py --template book.xlsx --data payload.json --out book_filled.xlsx
@@ -204,6 +207,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v4.1.2 | 本地构建包（`dist/officecli-template-filler-v4.1.2.zip`） | REVIEW 外部证据路径：`--findings` 将 Excel/JSON findings 转为目标 Word 的内联批注；不再交付独立核查报告 |
 | v4.1.1 | 本地构建包（`dist/officecli-template-filler-v4.1.1.zip`） | Skill 文档补丁：精简 SKILL.md、新增 `references/workflow-details.md`；运行时行为、契约与 Schema 不变 |
 | v4.1.0 | 本地构建包（`dist/officecli-template-filler-v4.1.0.zip`） | W4 Template Understanding Gate：证据四态、状态机、Analysis Report、Confirmation Store、执行入口强制校验；契约集 4.3.0 |
 | v4.0.2 | 本地构建包（尚未发布 Release） | 供应链风险修复：删除第三方镜像安装脚本与 `dist/` 归档副本；静态检查清理；SKILL.md 精简 |

@@ -10,9 +10,12 @@ The reviewed document is staged and only published after review + package QA.
 Usage:
     python scripts/review_document.py --reference <template.docx> --target <draft.docx> \
         --out <reviewed.docx> [--author "..."] [--revisions revisions.json] \
-        [--report review_report.json] [--plan-out review_plan.json] [--plan-only]
+        [--findings findings.json] [--report review_report.json] \
+        [--plan-out review_plan.json] [--plan-only]
 
 `revisions.json` is an optional list of {"old_text": "...", "new_text": "...", "reason": "..."}.
+`findings.json` is an optional list/object of external findings; each finding becomes an
+inline Word comment on the target document. `--reference` is optional in this mode.
 """
 from __future__ import annotations
 
@@ -38,16 +41,18 @@ from engine import (
     install_auto_cleanup,
     write_review_snapshot,
 )
+from engine.review_engine import build_findings_review_plan
 from template_gate.errors import TemplateGateError
 
 
 def main() -> int:
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Build and execute a tracked-changes review plan.")
-    parser.add_argument("--reference", required=True, help="Reference/template .docx path")
+    parser.add_argument("--reference", default="", help="Reference/template .docx path (required unless --findings)")
     parser.add_argument("--target", required=True, help="Draft/target .docx to review")
     parser.add_argument("--out", "--output", dest="out", default="", help="Output reviewed .docx path")
     parser.add_argument("--author", default=REVIEW_AUTHOR_DEFAULT, help="Revision and comment author")
+    parser.add_argument("--findings", default="", help="JSON list/object of external findings to attach as comments")
     parser.add_argument("--revisions", default="", help="Optional JSON list of text revisions")
     parser.add_argument("--report", default="", help="Optional review_report.json output path")
     parser.add_argument("--snapshot", default="", help="Optional review_snapshot.json output path (default: next to the deliverable)")
@@ -66,13 +71,39 @@ def main() -> int:
         with open(args.revisions, "r", encoding="utf-8") as handle:
             revisions = json.load(handle)
 
-    plan = build_review_plan(
-        args.reference,
-        args.target,
-        author=args.author,
-        text_revisions=revisions,
-        auto_text_diff=not args.no_auto_text_diff,
-    )
+    if not args.reference and not args.findings:
+        parser.error("--reference is required unless --findings is provided")
+
+    if args.findings:
+        with open(args.findings, "r", encoding="utf-8") as handle:
+            findings = json.load(handle)
+        try:
+            plan = build_findings_review_plan(
+                args.target,
+                findings,
+                author=args.author,
+                text_revisions=revisions,
+            )
+        except ValueError as exc:
+            print(json.dumps({
+                "schema_version": "3.1",
+                "task_mode": "REVIEW",
+                "target_docx": args.target,
+                "output_docx": args.out,
+                "error": "COMMENT_LOCATION_UNRESOLVED",
+                "message": str(exc),
+                "passed": False,
+                "next_action": "FIX_FINDINGS_LOCATIONS",
+            }, ensure_ascii=False, indent=2))
+            return 2
+    else:
+        plan = build_review_plan(
+            args.reference,
+            args.target,
+            author=args.author,
+            text_revisions=revisions,
+            auto_text_diff=not args.no_auto_text_diff,
+        )
     if args.plan_out:
         os.makedirs(os.path.dirname(os.path.abspath(args.plan_out)), exist_ok=True)
         with open(args.plan_out, "w", encoding="utf-8") as handle:
