@@ -340,6 +340,196 @@
       "owner": "CORE",
       "message_template": "Illegal template gate transition {current} -> {target}",
       "introduced_in": "4.3.0"
+    },
+    {
+      "code": "EXECUTION_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Operation {op_id} could not be applied: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OFFICECLI_WRITE_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "officecli batch failed and was rolled back: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OFFICECLI_READBACK_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "officecli read-back failed at {path}: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OFFICECLI_NORMALIZE_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "officecli output could not be normalised: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OFFICECLI_BINARY_MISSING",
+      "severity": "medium",
+      "retryable": true,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT03",
+      "message_template": "officecli binary is not installed; capability group reroutes to python-docx ({hint})",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OFFICECLI_VERSION_UNSUPPORTED",
+      "severity": "medium",
+      "retryable": true,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT03",
+      "message_template": "officecli {version} failed the capability probe: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "CAPABILITY_NOT_ROUTABLE",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Capability {capability_id} is not verified for backend {backend}; group reroutes to python-docx",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "OPERATION_TYPE_UNSUPPORTED",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Operation type {op_type} is not routable to backend {backend}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "LOCATION_UNSUPPORTED",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Location {location_id} is not addressable by backend {backend}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "TOKEN_SPANS_RUNS",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Token {token} spans multiple runs in {location_id}; rerouted to preserve run structure",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "TOKEN_NOT_UNIQUE",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Token {token} is not unique in {location_id}; a whole-scope replace would be unauthorized",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "CELL_MULTIPLE_PARAGRAPHS",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Cell at {location_id} has {count} paragraphs; backend {backend} targets one paragraph",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BATCH_ROLLED_BACK",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "officecli rolled the whole batch back: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "READBACK_MISMATCH",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Read-back mismatch at {path}: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "NORMALIZE_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Post-batch normalisation failed: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "STAGE_CHECK_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Stage check failed after capability group {capability_id}: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_VALIDATE_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "OpenXML schema validation failed: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_VALIDATE_UNAVAILABLE",
+      "severity": "low",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Backend {backend} has no OpenXML schema validator; check stays UNVERIFIED",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_SINGLE_WRITER_VIOLATION",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Backend {backend} attempted to write {path} while another backend holds the document",
+      "introduced_in": "4.2.0"
     }
   ]
 }

@@ -1,0 +1,61 @@
+# -*- coding: utf-8 -*-
+"""W5 document backend adapter layer (B1 skeleton).
+
+The package separates *what may change* (the executor + FillPlan) from
+*how it is written* (officecli subprocess vs python-docx). B1 delivers the
+interface, the result model and the reason-code vocabulary only — no
+router, no probe infrastructure, no backend implementations.
+
+Layout:
+
+* :mod:`document_backends.base` — abstract ``DocumentBackend`` plus the
+  ``BackendTarget``/``BackendOp``/``CapabilityRecord`` models;
+* :mod:`document_backends.result` — ``BackendResult``/``OpOutcome`` and the
+  registry-backed ``ReasonCode`` vocabulary (E6/E7 semantics);
+* ``officecli_backend`` / ``python_backend`` / ``capability_registry`` /
+  ``operation_router`` land in B2–B5 and are not importable yet.
+"""
+
+from .base import (
+    BACKEND_FORMATS,
+    OPERATION_KINDS,
+    BackendOp,
+    BackendTarget,
+    CapabilityRecord,
+    CapabilityReport,
+    DocumentBackend,
+)
+from .result import (
+    DETAIL_MAX_CHARS,
+    OP_STATUSES,
+    BackendError,
+    BackendResult,
+    ErrorCategory,
+    OpOutcome,
+    ReasonCode,
+    ReasonSpec,
+    REASON_CODE_CATALOG,
+    envelope_code_for,
+    reason_category,
+)
+
+__all__ = [
+    "BACKEND_FORMATS",
+    "OPERATION_KINDS",
+    "BackendError",
+    "BackendOp",
+    "BackendResult",
+    "BackendTarget",
+    "CapabilityRecord",
+    "CapabilityReport",
+    "DETAIL_MAX_CHARS",
+    "DocumentBackend",
+    "ErrorCategory",
+    "OP_STATUSES",
+    "OpOutcome",
+    "ReasonCode",
+    "ReasonSpec",
+    "REASON_CODE_CATALOG",
+    "envelope_code_for",
+    "reason_category",
+]

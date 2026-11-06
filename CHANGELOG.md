@@ -16,6 +16,7 @@
 - `document_engine/fill_executor.py`：`execute_fill_plan(..., writer="python-docx")`。`writer="officecli"` 时整篇使用 officecli 后端；遇到不支持的操作类型、位置（页眉页脚、文本框、SDT、脚注、批注）或非唯一占位符时整篇回退 python-docx，并在 `data.writer_fallback` 记录原因。事务、QA 与提交门禁不变。
 - `scripts/generate_document.py --writer {python-docx,officecli}`：默认仍为 `python-docx`，未翻转默认行为。
 - `tests/test_officecli_writer.py`：位置映射、回退判定、class_01 / class_02 双后端文本与 `validate` 一致性；缺少二进制时跳过。
+- `document_backends/`（W5-B1 骨架）：`base.py` 最抽象后端接口（FillPlan 4.0 操作模型——`batch` 是唯一 mutation 入口、无结构动词、`CapabilityRecord` 构造期强制"未验证不得标记为支持"）；`result.py` 统一 `BackendResult`/`OpOutcome` 与 15 个注册 reason code（业务/文档/后端/基础设施四类分类学，失败类映射既有 envelope 码，回退类仅披露不报错）。`config/error-codes.json` +19 条目（只增）：补注册 B0 执行器已用但未注册的 `EXECUTION_FAILED`/`OFFICECLI_*_FAILED` 四码 + 15 个 reason 码。`tests/w5/` 新增 61 项单元测试。
 
 ### Fixed（修复）
 
@@ -23,7 +24,7 @@
 
 ### Tests
 
-- 全量 **544 项通过**（含新增 9 项：officecli writer 8 项 + gate 密钥回归 1 项；其中 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过）。实测命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`；契约 **72 项通过**（`py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"`）。
+- 全量 **605 项通过**（B0 后基线 544 + W5-B1 新增 61；其中 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过）。实测命令：`py -3.15 -m unittest discover -s tests -p "test_*.py"`；契约 **72 项通过**（`py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"`）。
 
 ### Known limits（已知限制）
 
