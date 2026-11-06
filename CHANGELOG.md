@@ -6,6 +6,38 @@
 
 ---
 
+## v4.1.0（2026-11-06，稳定版候选；独立出口审查待完成）
+
+> 软件版本 **4.1.0**；契约集 **4.3.0**（新增 Contract 06，纯加法）；产物 `schema_version` 仍为 `4.0`。本版交付 W4 Template Understanding Gate。
+
+### Added（新增）
+
+- **Contract 06 — Template Understanding Gate**：证据四态（VERIFIED / UNVERIFIED / AMBIGUOUS / CONFLICT）、任务相关性、阻断规则、Gate 状态机、Gate Record 绑定与失效、执行入口强制校验。
+- **`template_gate/`**：`models`、`evidence`、`analyzer`、`validation`（analyzer 内策略）、`report`、`state`、`store`、`validator`、`supplements`、`errors`。
+- **Schema**：`template_evidence-1.0`、`template_gate_record-1.0`、`template_analysis_report-1.0`。
+- **CLI**：`scripts/template_gate.py` 的 `analyze / report / resolve / confirm / reject / status` 子命令；执行 CLI 新增可选 `--gate-record`。
+- **错误码**：`TEMPLATE_GATE_REQUIRED`、`TEMPLATE_GATE_BLOCKED`、`TEMPLATE_GATE_STALE`、`TEMPLATE_GATE_CONFIRMATION_REQUIRED`、`TEMPLATE_EVIDENCE_CONFLICT`、`TEMPLATE_EVIDENCE_INCOMPLETE`、`TEMPLATE_GATE_ILLEGAL_TRANSITION`。
+- **测试**：W4-1～W4-9 的证据、状态机、报告、补充材料、存储、校验器、执行绕过与端到端测试；全量 **532 项通过**。
+
+### Changed（变更）
+
+- `engine.__version__`：`4.0.2` → `4.1.0`；契约集由 `4.2.0` → `4.3.0`（MINOR，加法）。
+- `execute_fill_plan` / `execute_repair_plan` / `execute_review_plan` / `execute_reformat_plan` 增加可选 `gate_record`，并在函数入口强制校验；`generate_document.py` legacy `--data` 路径同样校验。
+- `GENERATE / REPAIR / REFORMAT / REVIEW` 在无有效 `CONFIRMED` Gate Record 时返回 `TEMPLATE_GATE_REQUIRED` / `TEMPLATE_GATE_STALE` 等错误并停止；`PROOFREAD / EXCEL_GENERATE / POLISH / MERGE / RENDER` 保持原有行为。
+- `SKILL.md` 新增 Step 1.5 模板理解闸门工作流；`analyze_template.py --spec-version` 默认值仍为 3。
+
+### Known limitations（已知限制）
+
+- W4 独立出口审查尚未完成；当前证据包由主智能体生成，不冒充 Agent 07 PASS。
+- 带补充材料确认的记录以 `evidence_digest` 绑定，validator 对补充分析采用记录内证据回放；补充文件本身不复制进仓库。
+- 闸门只覆盖 DOCX 模板相关模式；Excel、校对、渲染保持现有行为。
+
+### Tests
+
+- 全量 **532 项通过**（Python 3.15，Windows）；契约测试 70+ 项通过。
+
+---
+
 ## v4.0.2（2026-11-05，稳定版补丁）
 
 > 软件版本 **4.0.2**；契约集保持 **4.2.0**，产物 `schema_version` 保持 `4.0`。本补丁移除两个供应链风险的安装脚本与 `dist/` 归档副本，并清理静态检查发现；不改变契约、Schema 或文档处理行为。

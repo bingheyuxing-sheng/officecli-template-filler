@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Office document engine for Word (.docx) and Excel (.xlsx/.xlsm). Routes tasks into eight modes (GENERATE, REPAIR, REFORMAT, REVIEW, PROOFREAD, EXCEL_GENERATE, POLISH, MERGE), classifies template compatibility L1-L4, fills through a strict FillPlan executor with Zero Unintended Formatting Delta and native tracked changes, and gates delivery with four-state QA plus honest coverage_gaps. Use whenever the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA — e.g. 模板填充, 按模板生成文档, 按模板修复/对齐格式, 审阅留痕修订, 课程计划生成, Excel 模板填数 — even if no mode name is given; unimplemented modes (POLISH/MERGE) are reported as CAPABILITY_NOT_AVAILABLE. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# OfficeCLI + Python Office Document Intelligence Skill (v4.0.2 stable — contract set 4.2.0; v3.5.9 compatibility baseline)
+# OfficeCLI + Python Office Document Intelligence Skill (v4.1.0 — contract set 4.3.0; v3.5.9 compatibility baseline)
 
 Follow six architectural pillars across **every** `.docx` and `.xlsx` document task:
 
@@ -71,14 +71,14 @@ Routing notes that prevent the common misroutes:
 ```
 officecli-template-filler/
 ├── AGENTS.md / SKILL.md                  # Project rules (authoritative) / this skill workflow
-├── contracts/  config/  schemas/         # Frozen contract set 4.2.0 / QA policy, error codes, capability matrix / JSON Schemas
+├── contracts/  config/  schemas/         # Frozen contract set 4.3.0 / QA policy, error codes, capability matrix / JSON Schemas
 ├── template_intelligence/                # DocumentSpec 4.0 producer, slot ids, fingerprint, validator
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
 ├── engine/                               # v3.5.9 standalone, importable Python engine package
 ├── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
-├── tests/                                # Automated suite (479 tests)
+├── tests/                                # Automated suite (532 tests)
 ├── reports/                              # W0–W3 acceptance, gate and issue records
 └── references/                           # engine-internals.md / python-docx-engine.md
 ```
@@ -106,8 +106,7 @@ Per-module internals of `engine/` (LogicalParagraphView, SSOT solver, image/proc
 
 ## Engine Guarantees (implemented and test-covered)
 
-The behaviours below are enforced in `engine/`, not advisory. Rationale, code paths and
-per-version history live in [`references/engine-internals.md`](references/engine-internals.md).
+The behaviours below are enforced in `engine/`, not advisory. Rationale and code paths live in [`references/engine-internals.md`](references/engine-internals.md).
 
 | Area | Guarantee |
 |---|---|
@@ -131,6 +130,31 @@ per-version history live in [`references/engine-internals.md`](references/engine
 ```powershell
 python scripts/inspect_document.py --inputs "$INPUT_1" --intent "$USER_PROMPT" --output "$TEMP/routing.json"
 ```
+
+### Step 1.5: Template Understanding Gate (mandatory for template-dependent work)
+
+`GENERATE`, `REPAIR`, `REFORMAT` and `REVIEW` MUST pass the Template Understanding Gate before any ContentPlan, FillPlan or document mutation. The gate is enforced by the execution entrypoints, not only by this document; an unconfirmed template returns `TEMPLATE_GATE_REQUIRED`, `TEMPLATE_GATE_BLOCKED`, `TEMPLATE_GATE_STALE` or `TEMPLATE_GATE_CONFIRMATION_REQUIRED`.
+
+```powershell
+# 1. Collect evidence (reuses DocumentSpec 4.0 + engine probes)
+python scripts/template_gate.py analyze --template "$INPUT_1" --task-type GENERATE --out "$TEMP/template_analysis.json"
+
+# 2. Show the user the blocking questions and the analysis report
+python scripts/template_gate.py report --analysis "$TEMP/template_analysis.json" --out "$TEMP/template_report.md"
+
+# 3. After the user explicitly confirms, persist the record (review token comes from step 2)
+python scripts/template_gate.py confirm --analysis "$TEMP/template_analysis.json" `
+  --review-token "<token>" --user-statement "<the user's exact confirmation>" --out-record "$TEMP/template_gate.json"
+```
+
+Rules:
+
+- If the analysis has `blocking > 0`, STOP. Present each blocking item with its id, location, current value, reason, possible error, required material and acceptable resolutions; ask for a reference document, a filling instruction, a direct answer, or an explicit preserve request. Use `template_gate.py resolve` or `analyze --supplement <file>` and regenerate the report; never treat one uploaded reference as a blanket resolution.
+- Only `CONFIRMED` may execute. `BLOCKED`, `WAITING_USER_INPUT`, `READY_FOR_REVIEW` and `REJECTED` must not be bypassed, and there is no automatic fallback to the legacy `--data` chain.
+- The Gate Record binds the template SHA-256, DocumentSpec digest, four fingerprints, evidence digest, analysis/parser/policy versions and task type. Any change invalidates it (`TEMPLATE_GATE_STALE`); re-analyze and re-confirm.
+- `PROOFREAD` (no template), `EXCEL_GENERATE`, `POLISH`, `MERGE` and `RENDER` keep their existing behavior and do not trigger this gate.
+- Execution CLIs accept an optional `--gate-record`; without it the validator looks up the newest `CONFIRMED` record for the template SHA + task type. Passing a record does not bypass validation.
+- Contract: [`contracts/06-template-understanding-gate.md`](contracts/06-template-understanding-gate.md). Evidence/Schema: `schemas/template_evidence-1.0.schema.json`, `template_gate_record-1.0.schema.json`, `template_analysis_report-1.0.schema.json`.
 
 ### Step 2: Analyze Template & Emit `DocumentSpec`
 Pick the analyzer by container type — never run the Word analyzer on a workbook:
