@@ -1,0 +1,89 @@
+{
+  "version": "1.0",
+  "analysis_version": "1.0",
+  "description": "System-owned Template Understanding Gate policy. Callers must not override it.",
+  "task_types": {
+    "GENERATE": {
+      "gate": true,
+      "required_properties": [
+        "page.setup",
+        "slot.fillability",
+        "slot.location",
+        "slot.style",
+        "table.structure",
+        "table.capacity",
+        "table.purpose",
+        "protected.region",
+        "font_family",
+        "font_size",
+        "red_text.semantic"
+      ]
+    },
+    "REPAIR": {
+      "gate": true,
+      "required_properties": [
+        "page.setup",
+        "paragraph.style",
+        "paragraph.spacing",
+        "table.structure",
+        "table.border",
+        "table.shading",
+        "table.merge",
+        "table.column_width",
+        "table.purpose",
+        "textbox.position"
+      ]
+    },
+    "REFORMAT": {
+      "gate": true,
+      "required_properties": [
+        "page.setup",
+        "paragraph.style",
+        "paragraph.spacing",
+        "table.structure",
+        "table.border",
+        "table.shading",
+        "table.merge",
+        "table.column_width",
+        "table.purpose",
+        "textbox.position"
+      ]
+    },
+    "REVIEW": {
+      "gate": true,
+      "required_properties": [
+        "page.setup",
+        "paragraph.style",
+        "slot.fillability",
+        "slot.location",
+        "protected.region",
+        "table.purpose"
+      ]
+    },
+    "PROOFREAD": {
+      "gate": false,
+      "required_properties": []
+    },
+    "EXCEL_GENERATE": {
+      "gate": false,
+      "required_properties": []
+    },
+    "POLISH": {
+      "gate": false,
+      "required_properties": []
+    },
+    "MERGE": {
+      "gate": false,
+      "required_properties": []
+    }
+  },
+  "blocking_statuses": [
+    "UNVERIFIED",
+    "AMBIGUOUS",
+    "CONFLICT"
+  ],
+  "safe_preserve_allowed": [
+    "protected.region",
+    "object.preservable"
+  ]
+}

@@ -270,6 +270,76 @@
       "owner": "AGENT05",
       "message_template": "Input package is not a readable ZIP container: {detail}",
       "introduced_in": "4.1.0"
+    },
+    {
+      "code": "TEMPLATE_GATE_REQUIRED",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "No valid template confirmation record exists for {template_sha256}",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_GATE_BLOCKED",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template gate is {status}; resolve blocking evidence first",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_GATE_STALE",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template gate binding is stale: {detail}",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_GATE_CONFIRMATION_REQUIRED",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template gate confirmation is missing or invalid: {detail}",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_EVIDENCE_CONFLICT",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Evidence conflict at {location} for {property}",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_EVIDENCE_INCOMPLETE",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template evidence has {count} unresolved blocking item(s)",
+      "introduced_in": "4.3.0"
+    },
+    {
+      "code": "TEMPLATE_GATE_ILLEGAL_TRANSITION",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": false,
+      "owner": "CORE",
+      "message_template": "Illegal template gate transition {current} -> {target}",
+      "introduced_in": "4.3.0"
     }
   ]
 }

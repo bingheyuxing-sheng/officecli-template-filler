@@ -1,7 +1,7 @@
 # Office Skill v4.0 — W0 Contract Index
 
-- Contract set version: **4.2.0** (W0 freeze 4.0.0 + CP-W2-001 + CP-W2-002, additive)
-- Freeze date: 2026-11-05; change date: 2026-11-05
+- Contract set version: **4.3.0** (W0 freeze 4.0.0 + CP-W2-001 + CP-W2-002 + Contract 06, additive; independent W4 review pending at W4-9)
+- Freeze date: 2026-11-05; change date: 2026-11-06
 - Freeze authority: Agent 05 (Architecture & Integration)
 - Independent gate: Agent 07 (Architecture Reviewer)
 - Normative language: **MUST / MUST NOT / SHOULD / MAY** (RFC 2119)
@@ -15,6 +15,7 @@
 | 03 | [ContentPlan / FillPlan](03-content-fill-plan.md) | Agent 02 (ContentPlan), Agent 03 (FillPlan) | `content_plan-4.0.schema.json`, `fill_plan-4.0.schema.json` | Separate content planning from DOCX execution |
 | 04 | [QAReport 4.0](04-qa-report.md) | Agent 04 | `qa_report-4.0.schema.json` | Independent verification and commit eligibility |
 | 05 | [ToolEnvelope / Error Codes](05-tool-envelope-error-codes.md) | Agent 05 | `tool_envelope-4.0.schema.json`, `error_code_registry-4.0.schema.json` | Uniform tool output and error semantics |
+| 06 | [Template Understanding Gate](06-template-understanding-gate.md) | Agent 05 | `template_evidence-1.0.schema.json`, `template_gate_record-1.0.schema.json`, `template_analysis_report-1.0.schema.json` | Mandatory evidence-backed template confirmation before execution |
 
 Supporting artifacts:
 
@@ -90,6 +91,7 @@ Out of scope (must not be implemented in W0):
 | 4.0.0 | 2026-11-05 | W0 initial freeze | W0 |
 | 4.1.0 | 2026-11-05 | `location_id` story grammar adds first/even page headers and footers; artifact `schema_version` stays `4.0` | `changes/CP-W2-001-location-story.md` |
 | 4.2.0 | 2026-11-05 | `location_id` element set adds `sdt`; body/cell/header-level SDT content discovered as PROTECTED positions; `sdt_edit` stays false. **FROZEN** after 07 post-implementation PASS (`reports/w3/07-cp-w2-002-post-review.md`) | `changes/CP-W2-002-sdt-location.md` |
+| 4.3.0 | 2026-11-06 | Contract 06 Template Understanding Gate: evidence four-state model, gate state machine, Gate Record binding, 7 additive error codes. **Pending independent W4 review**; no change to contracts 01–05 semantics | W4-0 audit + W4-1..W4-6 |
 
 ## 6. Compatibility statement
 

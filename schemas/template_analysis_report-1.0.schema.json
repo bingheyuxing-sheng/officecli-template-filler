@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/w4/schemas/template_analysis_report-1.0.schema.json",
+  "title": "TemplateAnalysisReport 1.0",
+  "description": "User-reviewable template analysis report produced by template_gate.report.build_report.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analysis_id",
+    "template_name",
+    "template_sha256",
+    "task_type",
+    "generated_at",
+    "basics",
+    "page_and_styles",
+    "structure",
+    "quality",
+    "blocking_items",
+    "non_blocking_risks",
+    "confirmation",
+    "report_digest"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "analysis_id": { "type": "string", "pattern": "^analysis_[0-9a-f]{12}$" },
+    "template_name": { "type": "string", "minLength": 1 },
+    "template_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "task_type": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "basics": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "template_name",
+        "template_sha256",
+        "page_count",
+        "page_count_verifiable",
+        "section_count",
+        "table_count",
+        "image_count",
+        "special_object_count"
+      ],
+      "properties": {
+        "template_name": { "type": "string" },
+        "template_sha256": { "type": "string" },
+        "page_count": { "type": ["integer", "null"] },
+        "page_count_verifiable": { "type": "boolean" },
+        "section_count": { "type": "integer", "minimum": 0 },
+        "table_count": { "type": "integer", "minimum": 0 },
+        "image_count": { "type": "integer", "minimum": 0 },
+        "special_object_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "page_and_styles": { "type": "object", "additionalProperties": true },
+    "structure": { "type": "object", "additionalProperties": true },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "verified",
+        "unverified",
+        "ambiguous",
+        "conflict",
+        "resolved",
+        "unresolved_blocking",
+        "coverage",
+        "coverage_note"
+      ],
+      "properties": {
+        "verified": { "type": "integer", "minimum": 0 },
+        "unverified": { "type": "integer", "minimum": 0 },
+        "ambiguous": { "type": "integer", "minimum": 0 },
+        "conflict": { "type": "integer", "minimum": 0 },
+        "resolved": { "type": "integer", "minimum": 0 },
+        "unresolved_blocking": { "type": "integer", "minimum": 0 },
+        "coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "coverage_note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "blocking_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id",
+          "evidence_id",
+          "location",
+          "property",
+          "current_result",
+          "verification_status",
+          "reason",
+          "possible_error",
+          "required_materials",
+          "acceptable_resolutions"
+        ],
+        "properties": {
+          "item_id": { "type": "string", "pattern": "^EVI-[0-9]{3}$" },
+          "evidence_id": { "type": "string", "minLength": 1 },
+          "location": { "type": "string", "minLength": 1 },
+          "property": { "type": "string", "minLength": 1 },
+          "current_result": {},
+          "verification_status": { "enum": ["VERIFIED", "UNVERIFIED", "AMBIGUOUS", "CONFLICT"] },
+          "reason": { "type": "string", "minLength": 1 },
+          "possible_error": { "type": "string", "minLength": 1 },
+          "required_materials": { "type": "array", "items": { "type": "string" } },
+          "acceptable_resolutions": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "non_blocking_risks": { "type": "array", "items": { "type": "object" } },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["prompt", "required", "confirmed"],
+      "properties": {
+        "prompt": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "confirmed": { "type": "boolean" },
+        "review_token": { "type": ["string", "null"] }
+      }
+    },
+    "validation": { "type": "object" },
+    "report_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
