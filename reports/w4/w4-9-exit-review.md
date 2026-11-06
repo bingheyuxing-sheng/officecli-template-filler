@@ -4,7 +4,7 @@
 - 软件版本：**4.1.0**
 - 契约集：**4.3.0**（新增 Contract 06，纯加法）
 - 产物 `schema_version`：仍为 **4.0**
-- 代码基线：当前工作树（未打 tag；本地实现完成）
+- 代码基线：`1f2685c`（tag `v4.1.0`）；tag 后仅追加分发状态文档提交
 - 评审性质：主智能体证据包，**未由独立 Agent 07 进程复跑**；独立性缺口见 §6
 
 ---
@@ -89,7 +89,7 @@ Gate Record 绑定：模板 SHA-256、DocumentSpec digest、四类指纹、evide
 2. **已安装 Skill 副本落后**：`.trae/skills/officecli-template-filler` 仍为 v4.0.0；在副本同步前，通过该副本运行不会经过新闸门。同步需要用户授权。
 3. **补充材料记录校验**：带补充材料的确认记录通过 `evidence_digest` 与记录内 `resolved_evidence` 回放校验；补充文件本身不复制入仓，因此无法在 validator 中重新读取原始补充文件内容。模板 SHA、Spec digest、指纹与任务类型仍强绑定。
 4. **真实语料未用于 W4 闸门复跑**：W4 测试使用合成 fixture；W3 的 46 份真实语料结果仍有效，但未在 W4 闸门链路重跑。
-5. **未打 tag、未 push、未创建 Release**：本地实现与证据完成，远端发布需用户明确授权。
+5. **分发状态**：`main` 已 push 到 `1f2685c`；annotated tag `v4.1.0` 已 push 并解引用到 `1f2685c`；GitHub Release 已创建为 **Draft**（`isDraft=true`，未 Publish），资产已上传并校验。由于本评审为 `CONDITIONAL_PASS` 且独立审查未完成，未执行 Publish。
 6. **既有未提交文档改动**：`references/engine-internals.md` 的 W3 后文档精简改动在 W4 开始前已存在，本次未触碰；提交时需与 W4 变更区分。
 
 ---
@@ -102,6 +102,6 @@ Gate Record 绑定：模板 SHA-256、DocumentSpec digest、四类指纹、evide
 
 1. 由独立 Agent 07（或独立进程）复跑全量测试、契约测试与 W4 绕过测试，并出具 PASS/CONDITIONAL_PASS/FAIL。
 2. 用户授权后同步 `.trae/skills/officecli-template-filler` 到 v4.1.0。
-3. 若需正式发布，完成 tag、push、Release 与资产校验；当前仅本地包，不得表述为已发布。
+3. 若需正式发布，在独立审查通过后执行 `gh release edit v4.1.0 --draft=false`（或先改为 Pre-release）；当前 Release 为 Draft，不得表述为已正式发布。
 
 实现层面的 W4-0～W4-9 交付物已完成，全量测试与静态检查通过；上述条件属于独立验收与分发门禁，不影响本次代码实现的完成度。
