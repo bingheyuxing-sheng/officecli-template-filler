@@ -4,11 +4,11 @@
 
 给它一个模板和资料，它交出一份格式不走样、内容可审计的文档；给它一份草稿，它交回一份**能用 Word/WPS 修订模式打开、逐条接受或拒绝**的审阅稿。
 
-## v4.1 发布状态（稳定版候选）
+## v4.1.1 发布状态（稳定版候选）
 
 | 项目 | 状态 |
 |---|---|
-| 版本 | **v4.1.0**（契约集 **4.3.0**：W0 五份契约 + CP-W2-001/002 + Contract 06；均 MINOR 加法；独立出口审查待完成） |
+| 版本 | **v4.1.1**（契约集 **4.3.0**：W0 五份契约 + CP-W2-001/002 + Contract 06；均 MINOR 加法；独立出口审查待完成） |
 | 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
 | Template Gate | `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` 执行前必须通过模板理解与用户确认闸门；无有效 Gate Record 时执行入口拒绝继续 |
 | Skill 工作流 | GENERATE 文档主链使用 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
@@ -204,6 +204,7 @@ python -m unittest discover -s tests -p "test_*.py"
 
 | 版本 | 下载 | 要点 |
 |---|---|---|
+| v4.1.1 | 本地构建包（`dist/officecli-template-filler-v4.1.1.zip`） | Skill 文档补丁：精简 SKILL.md、新增 `references/workflow-details.md`；运行时行为、契约与 Schema 不变 |
 | v4.1.0 | 本地构建包（`dist/officecli-template-filler-v4.1.0.zip`） | W4 Template Understanding Gate：证据四态、状态机、Analysis Report、Confirmation Store、执行入口强制校验；契约集 4.3.0 |
 | v4.0.2 | 本地构建包（尚未发布 Release） | 供应链风险修复：删除第三方镜像安装脚本与 `dist/` 归档副本；静态检查清理；SKILL.md 精简 |
 | v4.0.1 | [Release v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1) | v4.0.0 稳定版补丁：移除测试中残留的外部语料正文，统一测试计数，补齐真实语料报告可复现信息 |

@@ -6,6 +6,23 @@
 
 ---
 
+## v4.1.1（2026-11-06，稳定版候选补丁）
+
+> 软件版本 **4.1.1**；契约集保持 **4.3.0**，产物 `schema_version` 保持 `4.0`。本补丁仅优化 Skill 文档与参考组织，不改变运行时行为、契约、Schema 或错误码。
+
+### Changed（变更）
+
+- `SKILL.md`：frontmatter description 由 900+ 字符压缩至 376 字符；顶部改为“四步启动检查 + Operating contract + Resource map”；补充 W4 Template Understanding Gate 的可见性与 CLI 表；目录树更新为 `template_gate/`、W0–W4、v4.1.1。
+- 新增 `references/workflow-details.md`：承接交易提交、checkpoint、渲染/TOC 降级链、QAReport 语义与 content-truth 代码表；SKILL.md 保持一层引用。
+- `engine.__version__`：`4.1.0` → `4.1.1`；`tests/contracts/test_legacy_compat.py` 版本断言同步更新。
+- `README.md`、`SKILL.md`、`references/python-docx-engine.md` 版本行同步到 v4.1.1。
+
+### Tests
+
+- 全量 **532 项通过**；契约测试 **72 项通过**；`ruff check .` 通过。
+
+---
+
 ## v4.1.0（2026-11-06，稳定版候选；独立出口审查待完成）
 
 > 软件版本 **4.1.0**；契约集 **4.3.0**（新增 Contract 06，纯加法）；产物 `schema_version` 仍为 `4.0`。本版交付 W4 Template Understanding Gate。
