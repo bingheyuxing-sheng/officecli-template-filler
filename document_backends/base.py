@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, Tuple
 
-from .result import BackendResult
+from .result import BackendResult, ValidationResult
 
 __all__ = [
     "OPERATION_KINDS",
@@ -46,6 +46,8 @@ BACKEND_FORMATS: Tuple[str, ...] = ("docx", "xlsx")
 
 _CAPABILITY_ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
 _RISK_LEVELS: Tuple[str, ...] = ("low", "medium", "high")
+#: ISO-8601 with an explicit timezone (or Z): 2026-11-06T23:00:00+08:00
+_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$")
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,20 @@ class CapabilityRecord:
             raise ValueError("backend must be a non-empty string")
         if not isinstance(self.verified_by, tuple):
             raise ValueError("verified_by must be a tuple of evidence strings")
+        for item in self.verified_by:
+            if not isinstance(item, str) or not item:
+                raise ValueError("verified_by entries must be non-empty strings")
+        if len(self.verified_by) != len(set(self.verified_by)):
+            raise ValueError(
+                "verified_by entries must be unique: duplicate evidence is not proof"
+            )
+        if self.verified_at is not None and not (
+            isinstance(self.verified_at, str) and _TIMESTAMP_RE.match(self.verified_at)
+        ):
+            raise ValueError(
+                "verified_at must be an ISO-8601 timestamp with a timezone, "
+                "e.g. '2026-11-06T23:00:00+08:00', got %r" % (self.verified_at,)
+            )
         if self.verified and not self.verified_by:
             raise ValueError("a verified capability requires verified_by evidence")
         if self.available and not (self.verified and self.verified_by):
@@ -166,6 +182,18 @@ class CapabilityReport:
     def __post_init__(self) -> None:
         if not isinstance(self.backend, str) or not self.backend:
             raise ValueError("backend must be a non-empty string")
+        seen: dict = {}
+        for record in self.records:
+            if record.backend != self.backend:
+                raise ValueError(
+                    "record for %s declares backend %r but the report speaks for %r"
+                    % (record.capability_id, record.backend, self.backend)
+                )
+            if record.capability_id in seen:
+                raise ValueError(
+                    "duplicate capability_id %r in one report" % (record.capability_id,)
+                )
+            seen[record.capability_id] = record
         object.__setattr__(self, "records", tuple(self.records))
 
     def lookup(self, capability_id: str) -> CapabilityRecord:
@@ -201,9 +229,10 @@ class DocumentBackend(ABC):
        ``target.template_path`` (officecli: w14 identity restore + red
        placeholder stripping; python: no-op). A failure here must be
        reported, never skipped (E6).
-    5. :meth:`validate` — OpenXML schema validation where the backend has
-       a validator; otherwise an explicit
-       ``BACKEND_VALIDATE_UNAVAILABLE`` result (never a fake pass).
+    5. :meth:`validate` — OpenXML schema validation reported through a
+       separate four-state :class:`ValidationResult`
+       (PASSED / FAILED / UNAVAILABLE / UNVERIFIED), so "no validator" and
+       "not executed" never masquerade as a pass (E6).
     """
 
     @property
@@ -229,5 +258,11 @@ class DocumentBackend(ABC):
         """Normalise the staged file against the template baseline before QA."""
 
     @abstractmethod
-    def validate(self, target: BackendTarget) -> BackendResult:
-        """OpenXML schema validation, or an explicit UNAVAILABLE result."""
+    def validate(self, target: BackendTarget) -> ValidationResult:
+        """OpenXML schema validation as a four-state :class:`ValidationResult`.
+
+        ``PASSED`` only when validation actually ran and found no error;
+        no validator → ``UNAVAILABLE``; validator exists but could not run
+        → ``UNVERIFIED``; problems found → ``FAILED`` with a reason. A
+        backend without a validator must never fabricate a pass.
+        """

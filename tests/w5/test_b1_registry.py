@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from document_backends.result import ReasonCode  # noqa: E402
+from document_backends.result import OFFICECLI_ENVELOPE_ALIASES, ReasonCode  # noqa: E402
 
 REGISTRY_PATH = ROOT / "config" / "error-codes.json"
 CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
@@ -64,10 +64,12 @@ class RegistryClosureTests(unittest.TestCase):
 
     def test_b1_additions_are_all_present(self) -> None:
         added_codes = {entry["code"] for entry in self.added}
-        expected = set(PREVIOUSLY_UNREGISTERED) | {reason.value for reason in ReasonCode}
+        expected = (set(PREVIOUSLY_UNREGISTERED)
+                    | {reason.value for reason in ReasonCode}
+                    | set(OFFICECLI_ENVELOPE_ALIASES))
         self.assertEqual(added_codes, expected,
                          "the B1 addition set must be exactly the gap codes plus the "
-                         "reason vocabulary")
+                         "reason vocabulary plus the generic envelope codes")
 
     def test_b1_additions_declare_full_semantics(self) -> None:
         self.assertTrue(self.added)
@@ -91,7 +93,8 @@ class RegistryClosureTests(unittest.TestCase):
             "EXECUTION_FAILED", "OFFICECLI_WRITE_FAILED", "OFFICECLI_READBACK_FAILED",
             "OFFICECLI_NORMALIZE_FAILED", "BATCH_ROLLED_BACK", "READBACK_MISMATCH",
             "NORMALIZE_FAILED", "STAGE_CHECK_FAILED", "BACKEND_VALIDATE_FAILED",
-            "BACKEND_SINGLE_WRITER_VIOLATION",
+            "BACKEND_SINGLE_WRITER_VIOLATION", "BACKEND_BATCH_FAILED",
+            "BACKEND_READBACK_FAILED", "BACKEND_NORMALIZE_FAILED",
         }
         for entry in self.added:
             if entry["code"] in rollback_codes:

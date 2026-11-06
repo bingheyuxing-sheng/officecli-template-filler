@@ -25,7 +25,7 @@ from document_backends.base import (  # noqa: E402
     CapabilityReport,
     DocumentBackend,
 )
-from document_backends.result import BackendResult, OpOutcome  # noqa: E402
+from document_backends.result import BackendResult, OpOutcome, ValidationResult  # noqa: E402
 
 EVIDENCE = ("test:test_officecli_writer",)
 
@@ -152,6 +152,37 @@ class CapabilityRecordTests(unittest.TestCase):
             _verified_record(backend="")
 
 
+class CapabilityEvidenceTests(unittest.TestCase):
+    """R4: evidence quality rules for CapabilityRecord/CapabilityReport."""
+
+    def test_verified_by_entries_must_be_non_empty_strings(self) -> None:
+        with self.assertRaises(ValueError):
+            _verified_record(verified_by=("",))
+        with self.assertRaises(ValueError):
+            _verified_record(verified_by=("probe:P2", 42))  # type: ignore[arg-type]
+
+    def test_verified_by_rejects_duplicate_evidence(self) -> None:
+        with self.assertRaises(ValueError):
+            _verified_record(verified_by=("probe:P2", "probe:P2"))
+
+    def test_verified_at_requires_iso8601_with_timezone(self) -> None:
+        _verified_record(verified_at="2026-11-06T23:00:00+08:00")
+        _verified_record(verified_at="2026-11-06T15:00:00Z")
+        for bad in ("2026-11-06 23:00", "2026-11-06T23:00:00", 12345):
+            with self.assertRaises(ValueError):
+                _verified_record(verified_at=bad)
+
+    def test_report_rejects_foreign_backend_records(self) -> None:
+        foreign = _verified_record(backend="python-docx")
+        with self.assertRaises(ValueError):
+            CapabilityReport(backend="officecli", records=[foreign])
+
+    def test_report_rejects_duplicate_capability_ids(self) -> None:
+        with self.assertRaises(ValueError):
+            CapabilityReport(backend="officecli",
+                             records=[_verified_record(), _verified_record()])
+
+
 class CapabilityReportTests(unittest.TestCase):
     def test_lookup_finds_declared_capability(self) -> None:
         record = _verified_record()
@@ -186,7 +217,7 @@ class _FakeBackend(DocumentBackend):
         return "fake"
 
     def capabilities(self, fmt: str) -> CapabilityReport:
-        return CapabilityReport(backend=self.name, records=[_verified_record()])
+        return CapabilityReport(backend=self.name, records=[_verified_record(backend=self.name)])
 
     def batch(self, target, ops) -> BackendResult:  # noqa: ANN001
         return BackendResult.success(
@@ -200,8 +231,8 @@ class _FakeBackend(DocumentBackend):
     def normalize(self, target, red_targets=None) -> BackendResult:  # noqa: ANN001
         return BackendResult.success(self.name)
 
-    def validate(self, target) -> BackendResult:  # noqa: ANN001
-        return BackendResult.success(self.name)
+    def validate(self, target) -> ValidationResult:  # noqa: ANN001
+        return ValidationResult.passed(self.name)
 
 
 class DocumentBackendAbcTests(unittest.TestCase):

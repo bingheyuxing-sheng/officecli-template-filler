@@ -22,10 +22,12 @@ Error taxonomy (four families; W5-B1 requirement 5):
   routing record (E7); they are never envelope errors on their own.
 * ``BACKEND`` — the chosen backend failed at its own job (batch rolled
   back, read-back mismatch, normalize failure, stage check, schema
-  validation, single-writer violation). Each maps 1:1 onto the coarse
-  envelope error code the executor already emits, so the envelope surface
-  stays backward compatible while the fine-grained cause becomes
-  auditable.
+  validation, single-writer violation). Each maps onto a *generic*
+  ``BACKEND_*`` envelope code, so the common layer never depends on one
+  backend family's naming; the officecli executor path resolves the
+  B0-era ``OFFICECLI_*`` spellings through
+  :data:`OFFICECLI_ENVELOPE_ALIASES` (E2 backward compatibility), while
+  any other backend — python-docx included — keeps the generic code.
 * ``INFRASTRUCTURE`` — environment/tooling unavailable (binary missing,
   version probe failed, validator absent). Disclosed fallback or
   ``UNVERIFIED`` semantics; never silently skipped (E6).
@@ -39,16 +41,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping, Optional
+from types import MappingProxyType
+from typing import Any, Dict, Mapping, Optional
 
 __all__ = [
     "ErrorCategory",
     "ReasonCode",
     "ReasonSpec",
     "REASON_CODE_CATALOG",
+    "OFFICECLI_BACKEND_NAME",
+    "OFFICECLI_ENVELOPE_ALIASES",
     "OpOutcome",
     "BackendResult",
     "BackendError",
+    "ValidationStatus",
+    "ValidationResult",
     "envelope_code_for",
     "reason_category",
 ]
@@ -103,10 +110,13 @@ class ReasonCode(str, Enum):
 class ReasonSpec:
     """Registry-backed semantics for one :class:`ReasonCode` member.
 
-    ``envelope_code`` is the coarse error code the executor puts into the
-    ToolEnvelope ``errors[]``/``abort`` layer. ``None`` means the reason is
-    a disclosed fallback (or an UNVERIFIED disclosure) and must never be
-    reported as an envelope error on its own.
+    ``envelope_code`` is the *backend-generic* coarse error code the
+    executor puts into the ToolEnvelope ``errors[]``/``abort`` layer; the
+    officecli path may resolve it through
+    :data:`OFFICECLI_ENVELOPE_ALIASES` to keep the B0 spellings (E2).
+    ``None`` means the reason is a disclosed fallback (or an UNVERIFIED
+    disclosure) and must never be reported as an envelope error on its
+    own.
     """
 
     category: ErrorCategory
@@ -153,15 +163,15 @@ REASON_CODE_CATALOG: Mapping[ReasonCode, ReasonSpec] = {
         "the capability registry has no verified entry; the group reroutes to python-docx",
     ),
     ReasonCode.BATCH_ROLLED_BACK: ReasonSpec(
-        ErrorCategory.BACKEND, True, "OFFICECLI_WRITE_FAILED",
-        "the officecli batch failed and was atomically rolled back",
+        ErrorCategory.BACKEND, True, "BACKEND_BATCH_FAILED",
+        "the batch failed and was atomically rolled back",
     ),
     ReasonCode.READBACK_MISMATCH: ReasonSpec(
-        ErrorCategory.BACKEND, True, "OFFICECLI_READBACK_FAILED",
+        ErrorCategory.BACKEND, True, "BACKEND_READBACK_FAILED",
         "the read-back found the staged text did not match what was written",
     ),
     ReasonCode.NORMALIZE_FAILED: ReasonSpec(
-        ErrorCategory.BACKEND, True, "OFFICECLI_NORMALIZE_FAILED",
+        ErrorCategory.BACKEND, True, "BACKEND_NORMALIZE_FAILED",
         "post-batch normalisation (w14 identity restore, red stripping) failed",
     ),
     ReasonCode.STAGE_CHECK_FAILED: ReasonSpec(
@@ -179,9 +189,34 @@ REASON_CODE_CATALOG: Mapping[ReasonCode, ReasonSpec] = {
 }
 
 
-def envelope_code_for(reason: ReasonCode) -> Optional[str]:
-    """Return the envelope error code for ``reason`` (``None`` for fallbacks)."""
-    return REASON_CODE_CATALOG[reason].envelope_code
+#: Backend name that keeps the B0-era OfficeCLI envelope spellings.
+OFFICECLI_BACKEND_NAME = "officecli"
+
+#: Generic envelope code -> the OfficeCLI spelling the B0 executor already
+#: emits. Only the officecli path resolves these (E2 backward
+#: compatibility); every other backend keeps the generic code, so a
+#: python-docx failure is never reported as an OfficeCLI error.
+OFFICECLI_ENVELOPE_ALIASES: Mapping[str, str] = {
+    "BACKEND_BATCH_FAILED": "OFFICECLI_WRITE_FAILED",
+    "BACKEND_READBACK_FAILED": "OFFICECLI_READBACK_FAILED",
+    "BACKEND_NORMALIZE_FAILED": "OFFICECLI_NORMALIZE_FAILED",
+}
+
+
+def envelope_code_for(reason: ReasonCode, backend: Optional[str] = None) -> Optional[str]:
+    """Return the envelope error code for ``reason`` (``None`` for fallbacks).
+
+    The default mapping is backend-agnostic: every failure reason resolves
+    to its generic ``BACKEND_*`` code. Passing ``backend="officecli"``
+    resolves the B0-era ``OFFICECLI_*`` spellings for backward
+    compatibility (E2); any other backend name — including python-docx —
+    keeps the generic code, so failures are attributed to the backend
+    family that actually produced them.
+    """
+    code = REASON_CODE_CATALOG[reason].envelope_code
+    if code is not None and backend == OFFICECLI_BACKEND_NAME:
+        return OFFICECLI_ENVELOPE_ALIASES.get(code, code)
+    return code
 
 
 def reason_category(reason: ReasonCode) -> ErrorCategory:
@@ -237,6 +272,15 @@ class OpOutcome:
             self, "after_sha256", _validate_sha256(self.after_sha256, "after_sha256")
         )
 
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-ready view; the reason code serializes as its registry spelling."""
+        return {
+            "status": self.status,
+            "reason_code": self.reason_code.value if self.reason_code is not None else None,
+            "before_sha256": self.before_sha256,
+            "after_sha256": self.after_sha256,
+        }
+
 
 @dataclass(frozen=True)
 class BackendResult:
@@ -272,7 +316,9 @@ class BackendResult:
             raise ValueError("detail must be a string")
         object.__setattr__(self, "detail", self.detail[:DETAIL_MAX_CHARS])
         frozen_ops = {str(key): value for key, value in dict(self.per_op).items()}
-        object.__setattr__(self, "per_op", frozen_ops)
+        # MappingProxyType: per_op is read-only for every caller, so a
+        # result can never be edited after the fact (E5 traceability).
+        object.__setattr__(self, "per_op", MappingProxyType(frozen_ops))
 
     @classmethod
     def success(cls, backend: str, per_op: Optional[Mapping[str, OpOutcome]] = None,
@@ -287,6 +333,21 @@ class BackendResult:
         return cls(backend=backend, ok=False, reason_code=reason_code,
                    detail=detail, per_op=per_op or {})
 
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-ready view of the whole result, including per-op outcomes.
+
+        :meth:`per_op` is a read-only proxy, so serialization must go
+        through this method (or ``dict(result.per_op)``); the returned
+        mapping is a plain dict copy that cannot corrupt the result.
+        """
+        return {
+            "backend": self.backend,
+            "ok": self.ok,
+            "reason_code": self.reason_code.value if self.reason_code is not None else None,
+            "detail": self.detail,
+            "per_op": {key: value.to_dict() for key, value in self.per_op.items()},
+        }
+
 
 class BackendError(Exception):
     """Typed raise channel for backend implementations (B2/B3).
@@ -299,3 +360,107 @@ class BackendError(Exception):
         self.reason_code = reason_code
         self.detail = str(detail)[:DETAIL_MAX_CHARS]
         super().__init__("%s: %s" % (reason_code.value, self.detail))
+
+
+class ValidationStatus(str, Enum):
+    """The four legal states of a backend validation run (R2 model).
+
+    ``PASSED`` and ``FAILED`` mean validation *executed*; ``UNAVAILABLE``
+    means this backend has no validator at all; ``UNVERIFIED`` means a
+    validator exists but the run could not execute (tooling missing).
+    "Did not validate" therefore has two explicit non-pass states and can
+    never collapse into ``PASSED``.
+    """
+
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    UNAVAILABLE = "UNAVAILABLE"
+    UNVERIFIED = "UNVERIFIED"
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    """Outcome of :meth:`DocumentBackend.validate` — deliberately NOT a
+    :class:`BackendResult`.
+
+    Validation needs four states that do not fit the ok/reason binary;
+    keeping them here stops BackendResult from growing validation-only
+    fields (R2 requirement 5). Invariants (enforced at construction):
+
+    * ``PASSED`` — validation ran and found no schema error. No reason
+      code. A backend that never executed validation must not build this.
+    * ``FAILED`` — validation ran and found problems. Requires
+      ``BACKEND_VALIDATE_FAILED`` plus a non-empty ``detail`` (R2 req. 3).
+    * ``UNAVAILABLE`` — the backend has no validator. Requires
+      ``BACKEND_VALIDATE_UNAVAILABLE`` plus a non-empty ``detail`` so the
+      disclosure stays traceable (R2 req. 2/4).
+    * ``UNVERIFIED`` — a validator exists but could not run. Requires a
+      *non-failure* reason code (e.g. ``OFFICECLI_BINARY_MISSING``) plus a
+      non-empty ``detail`` for traceability (R2 req. 1/4).
+    """
+
+    backend: str
+    status: ValidationStatus
+    reason_code: Optional[ReasonCode] = None
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.backend, str) or not self.backend:
+            raise ValueError("backend must be a non-empty string")
+        if not isinstance(self.detail, str):
+            raise ValueError("detail must be a string")
+        object.__setattr__(self, "detail", self.detail[:DETAIL_MAX_CHARS])
+        if self.status is ValidationStatus.PASSED:
+            if self.reason_code is not None:
+                raise ValueError("PASSED must not carry a reason_code")
+        elif self.status is ValidationStatus.FAILED:
+            if self.reason_code is not ReasonCode.BACKEND_VALIDATE_FAILED:
+                raise ValueError("FAILED requires reason_code BACKEND_VALIDATE_FAILED")
+            if not self.detail:
+                raise ValueError("FAILED requires a non-empty detail naming the problem")
+        elif self.status is ValidationStatus.UNAVAILABLE:
+            if self.reason_code is not ReasonCode.BACKEND_VALIDATE_UNAVAILABLE:
+                raise ValueError("UNAVAILABLE requires reason_code BACKEND_VALIDATE_UNAVAILABLE")
+            if not self.detail:
+                raise ValueError("UNAVAILABLE requires a non-empty detail for traceability")
+        else:  # UNVERIFIED
+            spec = REASON_CODE_CATALOG.get(self.reason_code) if self.reason_code else None
+            if spec is None or spec.is_failure:
+                raise ValueError(
+                    "UNVERIFIED requires a non-failure reason code such as "
+                    "OFFICECLI_BINARY_MISSING (a failure reason belongs to FAILED)"
+                )
+            if not self.detail:
+                raise ValueError("UNVERIFIED requires a non-empty detail for traceability")
+
+    @classmethod
+    def passed(cls, backend: str) -> "ValidationResult":
+        """Validation executed and found no schema error."""
+        return cls(backend=backend, status=ValidationStatus.PASSED)
+
+    @classmethod
+    def failed(cls, backend: str, detail: str) -> "ValidationResult":
+        """Validation executed and found schema problems."""
+        return cls(backend=backend, status=ValidationStatus.FAILED,
+                   reason_code=ReasonCode.BACKEND_VALIDATE_FAILED, detail=detail)
+
+    @classmethod
+    def unavailable(cls, backend: str, detail: str) -> "ValidationResult":
+        """This backend has no OpenXML validator; the check stays UNVERIFIED upstream."""
+        return cls(backend=backend, status=ValidationStatus.UNAVAILABLE,
+                   reason_code=ReasonCode.BACKEND_VALIDATE_UNAVAILABLE, detail=detail)
+
+    @classmethod
+    def unverified(cls, backend: str, reason_code: ReasonCode, detail: str) -> "ValidationResult":
+        """A validator exists but the run could not execute (tooling missing)."""
+        return cls(backend=backend, status=ValidationStatus.UNVERIFIED,
+                   reason_code=reason_code, detail=detail)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-ready view; the reason code serializes as its registry spelling."""
+        return {
+            "backend": self.backend,
+            "status": self.status.value,
+            "reason_code": self.reason_code.value if self.reason_code is not None else None,
+            "detail": self.detail,
+        }

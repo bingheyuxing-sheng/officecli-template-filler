@@ -530,6 +530,36 @@
       "owner": "AGENT03",
       "message_template": "Backend {backend} attempted to write {path} while another backend holds the document",
       "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_BATCH_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Backend {backend} failed to apply its batch: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_READBACK_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Backend {backend} read-back failed at {path}: {reason}",
+      "introduced_in": "4.2.0"
+    },
+    {
+      "code": "BACKEND_NORMALIZE_FAILED",
+      "severity": "high",
+      "retryable": false,
+      "rollback_required": true,
+      "human_intervention": false,
+      "owner": "AGENT03",
+      "message_template": "Backend {backend} post-batch normalisation failed: {reason}",
+      "introduced_in": "4.2.0"
     }
   ]
 }

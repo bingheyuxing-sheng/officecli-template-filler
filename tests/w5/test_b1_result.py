@@ -26,9 +26,13 @@ from document_backends.result import (  # noqa: E402
     BackendError,
     BackendResult,
     ErrorCategory,
+    OFFICECLI_BACKEND_NAME,
+    OFFICECLI_ENVELOPE_ALIASES,
     OpOutcome,
     ReasonCode,
     REASON_CODE_CATALOG,
+    ValidationStatus,
+    ValidationResult,
     envelope_code_for,
     reason_category,
 )
@@ -113,6 +117,61 @@ class ReasonCatalogTests(unittest.TestCase):
             self.assertIsNotNone(spec.envelope_code)
 
 
+class EnvelopeAttributionTests(unittest.TestCase):
+    """R1: generic Backend failures map to BACKEND_* codes; only the
+    officecli path resolves the B0-era OFFICECLI_* spellings."""
+
+    def setUp(self) -> None:
+        self.registry = _registered_codes()
+
+    def test_failure_reasons_map_to_generic_backend_codes(self) -> None:
+        self.assertEqual(envelope_code_for(ReasonCode.BATCH_ROLLED_BACK), "BACKEND_BATCH_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.READBACK_MISMATCH), "BACKEND_READBACK_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.NORMALIZE_FAILED), "BACKEND_NORMALIZE_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.STAGE_CHECK_FAILED), "STAGE_CHECK_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.BACKEND_VALIDATE_FAILED),
+                         "BACKEND_VALIDATE_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.BACKEND_SINGLE_WRITER_VIOLATION),
+                         "BACKEND_SINGLE_WRITER_VIOLATION")
+
+    def test_officecli_backend_resolves_backward_compatible_spellings(self) -> None:
+        self.assertEqual(envelope_code_for(ReasonCode.BATCH_ROLLED_BACK, OFFICECLI_BACKEND_NAME),
+                         "OFFICECLI_WRITE_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.READBACK_MISMATCH, OFFICECLI_BACKEND_NAME),
+                         "OFFICECLI_READBACK_FAILED")
+        self.assertEqual(envelope_code_for(ReasonCode.NORMALIZE_FAILED, OFFICECLI_BACKEND_NAME),
+                         "OFFICECLI_NORMALIZE_FAILED")
+
+    def test_python_backend_never_reports_officecli_codes(self) -> None:
+        for reason, spec in REASON_CODE_CATALOG.items():
+            if spec.is_failure:
+                code = envelope_code_for(reason, "python-docx")
+                self.assertFalse(
+                    code.startswith("OFFICECLI_"),
+                    "%s leaked an OfficeCLI spelling for a python-docx failure" % reason,
+                )
+
+    def test_same_failure_is_attributed_per_backend(self) -> None:
+        # R1.6: the same failure type resolves to the right family both ways.
+        for reason in (ReasonCode.BATCH_ROLLED_BACK, ReasonCode.READBACK_MISMATCH,
+                       ReasonCode.NORMALIZE_FAILED):
+            self.assertTrue(
+                envelope_code_for(reason, OFFICECLI_BACKEND_NAME).startswith("OFFICECLI_")
+            )
+            self.assertTrue(envelope_code_for(reason, "python-docx").startswith("BACKEND_"))
+
+    def test_generic_codes_and_aliases_are_registered(self) -> None:
+        for generic, officecli in OFFICECLI_ENVELOPE_ALIASES.items():
+            self.assertIn(generic, self.registry)
+            self.assertIn(officecli, self.registry,
+                          "the B0 executor still emits %s; it must stay registered" % officecli)
+
+    def test_alias_table_covers_all_generic_failure_codes(self) -> None:
+        generic_codes = {spec.envelope_code for spec in REASON_CODE_CATALOG.values()
+                         if spec.is_failure}
+        self.assertTrue(set(OFFICECLI_ENVELOPE_ALIASES) <= generic_codes)
+
+
 class BackendResultTests(unittest.TestCase):
     def test_success_factory(self) -> None:
         result = BackendResult.success("officecli")
@@ -157,6 +216,39 @@ class BackendResultTests(unittest.TestCase):
         result = BackendResult.success("python-docx", per_op=source)
         source.clear()
         self.assertEqual(result.per_op, {"OP_001": outcome})
+
+    def test_per_op_is_read_only(self) -> None:
+        # R3: the proxy must reject every mutation route.
+        result = BackendResult.success(
+            "officecli", per_op={"OP_001": OpOutcome(status="SUCCESS")}
+        )
+        with self.assertRaises(TypeError):
+            result.per_op["OP_002"] = OpOutcome(status="SKIPPED")
+        with self.assertRaises(TypeError):
+            del result.per_op["OP_001"]
+        # mappingproxy does not even expose the mutating helpers.
+        self.assertFalse(hasattr(result.per_op, "clear"))
+        self.assertFalse(hasattr(result.per_op, "update"))
+        self.assertEqual(result.per_op["OP_001"].status, "SUCCESS")
+
+    def test_result_serializes_through_to_dict(self) -> None:
+        # R3.4: per_op is a proxy, so serialization must go through to_dict().
+        result = BackendResult.failure(
+            "python-docx", ReasonCode.READBACK_MISMATCH, detail="stale",
+            per_op={"OP_001": OpOutcome(status="FAILED",
+                                        reason_code=ReasonCode.READBACK_MISMATCH)},
+        )
+        payload = json.dumps(result.to_dict())
+        restored = json.loads(payload)
+        self.assertEqual(restored["backend"], "python-docx")
+        self.assertFalse(restored["ok"])
+        self.assertEqual(restored["reason_code"], "READBACK_MISMATCH")
+        self.assertEqual(restored["per_op"]["OP_001"]["status"], "FAILED")
+        self.assertEqual(restored["per_op"]["OP_001"]["reason_code"], "READBACK_MISMATCH")
+
+    def test_op_outcome_to_dict_keeps_null_reason_for_success(self) -> None:
+        payload = json.dumps(OpOutcome(status="SKIPPED").to_dict())
+        self.assertIsNone(json.loads(payload)["reason_code"])
 
 
 class OpOutcomeTests(unittest.TestCase):
@@ -204,6 +296,80 @@ class BackendErrorTests(unittest.TestCase):
     def test_error_detail_is_truncated(self) -> None:
         error = BackendError(ReasonCode.BATCH_ROLLED_BACK, "y" * 1000)
         self.assertEqual(len(error.detail), DETAIL_MAX_CHARS)
+
+
+class ValidationResultTests(unittest.TestCase):
+    """R2: the four-state validation model and its legal transitions."""
+
+    def test_state_model_has_exactly_four_distinct_states(self) -> None:
+        self.assertEqual(
+            {status.value for status in ValidationStatus},
+            {"PASSED", "FAILED", "UNAVAILABLE", "UNVERIFIED"},
+        )
+
+    def test_passed_means_validation_executed(self) -> None:
+        result = ValidationResult.passed("officecli")
+        self.assertEqual(result.status, ValidationStatus.PASSED)
+        self.assertIsNone(result.reason_code)
+
+    def test_passed_rejects_reason_code(self) -> None:
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", ValidationStatus.PASSED, ReasonCode.BACKEND_VALIDATE_FAILED)
+
+    def test_failed_requires_validate_reason_and_detail(self) -> None:
+        result = ValidationResult.failed("officecli", "schema violation at /body/p[2]")
+        self.assertEqual(result.status, ValidationStatus.FAILED)
+        self.assertEqual(result.reason_code, ReasonCode.BACKEND_VALIDATE_FAILED)
+        self.assertTrue(result.detail)
+        with self.assertRaises(ValueError):
+            ValidationResult.failed("officecli", "")
+        with self.assertRaises(ValueError):
+            ValidationResult("officecli", ValidationStatus.FAILED,
+                             ReasonCode.OFFICECLI_BINARY_MISSING, "wrong reason")
+
+    def test_unavailable_keeps_traceability(self) -> None:
+        result = ValidationResult.unavailable("python-docx", "no OpenXML validator in this backend")
+        self.assertEqual(result.status, ValidationStatus.UNAVAILABLE)
+        self.assertEqual(result.reason_code, ReasonCode.BACKEND_VALIDATE_UNAVAILABLE)
+        self.assertTrue(result.detail)
+        with self.assertRaises(ValueError):
+            ValidationResult.unavailable("python-docx", "")
+
+    def test_unverified_keeps_traceability(self) -> None:
+        result = ValidationResult.unverified(
+            "officecli", ReasonCode.OFFICECLI_BINARY_MISSING, "binary not installed"
+        )
+        self.assertEqual(result.status, ValidationStatus.UNVERIFIED)
+        self.assertTrue(result.detail)
+        with self.assertRaises(ValueError):
+            ValidationResult.unverified("officecli", ReasonCode.OFFICECLI_BINARY_MISSING, "")
+
+    def test_unverified_rejects_failure_reasons(self) -> None:
+        # A validation that ran and found problems is FAILED, never UNVERIFIED.
+        with self.assertRaises(ValueError):
+            ValidationResult.unverified("officecli", ReasonCode.BATCH_ROLLED_BACK, "x")
+        with self.assertRaises(ValueError):
+            ValidationResult.unverified("officecli", ReasonCode.BACKEND_VALIDATE_FAILED, "x")
+
+    def test_not_executed_states_never_collapse_into_passed(self) -> None:
+        # R2.1/2: "no validator" and "not executed" are their own states.
+        unavailable = ValidationResult.unavailable("python-docx", "no validator")
+        unverified = ValidationResult.unverified(
+            "officecli", ReasonCode.OFFICECLI_BINARY_MISSING, "binary missing"
+        )
+        for result in (unavailable, unverified):
+            self.assertNotEqual(result.status, ValidationStatus.PASSED)
+
+    def test_validation_result_is_frozen(self) -> None:
+        result = ValidationResult.passed("officecli")
+        with self.assertRaises(FrozenInstanceError):
+            result.status = ValidationStatus.FAILED  # type: ignore[misc]
+
+    def test_validation_result_serializes(self) -> None:
+        payload = json.dumps(ValidationResult.unavailable("python-docx", "no validator").to_dict())
+        restored = json.loads(payload)
+        self.assertEqual(restored["status"], "UNAVAILABLE")
+        self.assertEqual(restored["reason_code"], "BACKEND_VALIDATE_UNAVAILABLE")
 
 
 if __name__ == "__main__":
