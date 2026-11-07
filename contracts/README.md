@@ -1,6 +1,6 @@
 # Office Skill v4.0 — W0 Contract Index
 
-- Contract set version: **4.3.0** (W0 freeze 4.0.0 + CP-W2-001 + CP-W2-002 + Contract 06, additive; independent W4 review pending at W4-9)
+- Contract set version: **4.3.0** (4.2.0 frozen baseline + CP-W2-001 + CP-W2-002 + Contract 06, which is still **DRAFT** and freezes only after the W4-6 review)
 - Freeze date: 2026-11-05; change date: 2026-11-06
 - Freeze authority: Agent 05 (Architecture & Integration)
 - Independent gate: Agent 07 (Architecture Reviewer)
