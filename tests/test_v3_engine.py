@@ -1755,12 +1755,23 @@ class TestV3EngineSuite(unittest.TestCase):
             cwd=ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", check=False,
         )
-        self.assertEqual(relaxed.returncode, 0, relaxed.stderr)
         relaxed_report = json.loads(relaxed.stdout)
         if relaxed_report["coverage_gaps"] or relaxed_report["unverified_count"]:
             self.assertEqual(relaxed_report["status"], "UNVERIFIED")
+            # UNVERIFIED is disclosed, not silently treated as success.
+            self.assertEqual(relaxed.returncode, 1, relaxed.stderr)
+            self.assertFalse(relaxed_report["exit_ok"])
+            allowed = subprocess.run(
+                [sys.executable, os.path.join(ROOT_DIR, "scripts", "run_qa.py"), path,
+                 "--review", "--allow-unverified"],
+                cwd=ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", check=False,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+            self.assertTrue(json.loads(allowed.stdout)["exit_ok"])
         else:
             self.assertEqual(relaxed_report["status"], "PENDING_HUMAN_REVIEW")
+            self.assertEqual(relaxed.returncode, 0, relaxed.stderr)
         self.assertFalse(relaxed_report["passed"])
         self.assertTrue(relaxed_report["passed_or_pending"])
         self.assertEqual(relaxed_report["hard_failure_count"], 0)

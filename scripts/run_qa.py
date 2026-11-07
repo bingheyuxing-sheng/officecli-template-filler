@@ -97,6 +97,11 @@ def main() -> int:
         action="store_true",
         help="OCR pictures to detect placeholder text inside images (requires an OCR backend)",
     )
+    parser.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="Exit 0 even when required checks could not run (status UNVERIFIED is disclosed in the report)",
+    )
     args = parser.parse_args()
 
     fpath = args.output_alias or args.file_path
@@ -158,10 +163,14 @@ def main() -> int:
         issues, PENDING_HUMAN_REVIEW_CODES if args.review else ()
     )
 
+    exit_ok = status in ("PASSED", "PENDING_HUMAN_REVIEW") or (
+        status == "UNVERIFIED" and args.allow_unverified
+    )
     report.update({
         "status": status,
         "passed": status == "PASSED",
         "passed_or_pending": status in ("PASSED", "PENDING_HUMAN_REVIEW", "UNVERIFIED"),
+        "exit_ok": exit_ok,
         "comparison_profile": comparison_profile,
         "issues": issues,
         "warnings": warnings,
@@ -178,7 +187,7 @@ def main() -> int:
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(payload)
     print(payload)
-    return 0 if report["passed_or_pending"] else 1
+    return 0 if exit_ok else 1
 
 
 if __name__ == "__main__":
