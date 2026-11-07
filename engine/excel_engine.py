@@ -15,6 +15,7 @@ Key v3.0 enhancements over v2.9:
 """
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shutil
@@ -219,6 +220,62 @@ def clone_excel_template_row(
     return formula_stats
 
 
+_ALLOWED_BIN_OPS = {
+    ast.Add: lambda left, right: left + right,
+    ast.Sub: lambda left, right: left - right,
+    ast.Mult: lambda left, right: left * right,
+    ast.Div: lambda left, right: left / right,
+}
+
+
+def _decimal_node(node: ast.AST) -> Decimal:
+    """Evaluate one whitelisted AST node with Decimal semantics.
+
+    Only numeric constants, ``Decimal(<literal>)`` and arithmetic operators are
+    accepted.  Attribute access, names other than ``Decimal``, comprehensions
+    and arbitrary calls are rejected, so a formula can never reach the
+    interpreter's execution machinery.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return Decimal(str(node.value))
+    if isinstance(node, ast.Call):
+        func = node.func
+        if (
+            isinstance(func, ast.Name)
+            and func.id == "Decimal"
+            and len(node.args) == 1
+            and not node.keywords
+        ):
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, (str, int, float)) and not isinstance(arg.value, bool):
+                return Decimal(str(arg.value))
+        raise ValueError("unsupported call in formula")
+    if isinstance(node, ast.BinOp):
+        handler = _ALLOWED_BIN_OPS.get(type(node.op))
+        if handler is None:
+            raise ValueError("unsupported operator in formula")
+        return handler(_decimal_node(node.left), _decimal_node(node.right))
+    if isinstance(node, ast.UnaryOp):
+        value = _decimal_node(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return value
+        if isinstance(node.op, ast.USub):
+            return -value
+        raise ValueError("unsupported unary operator in formula")
+    raise ValueError("unsupported expression in formula")
+
+
+def _safe_decimal_eval(py_expr: str) -> Decimal:
+    """Evaluate a substituted arithmetic expression without ``eval``.
+
+    The CALLER still applies the character whitelist; this function is the
+    structural second line of defence and is the only place allowed to turn a
+    document-derived expression into a value.
+    """
+    tree = ast.parse(py_expr, mode="eval")
+    return _decimal_node(tree.body)
+
+
 def _eval_simple_excel_formula(ws, formula: str, visited: Optional[set] = None) -> Tuple[Optional[Decimal], Optional[str]]:
     """
     Built-in deterministic Excel formula evaluator for QA verification when LibreOffice/Excel is absent.
@@ -332,8 +389,7 @@ def _eval_simple_excel_formula(ws, formula: str, visited: Optional[set] = None) 
         return None, arith_err
     if re.match(r"^[0-9Decimal()'.+\-*/\s]+$", py_expr):
         try:
-            res = eval(py_expr, {"__builtins__": {}}, {"Decimal": Decimal})
-            return Decimal(str(res)), None
+            return _safe_decimal_eval(py_expr), None
         except ZeroDivisionError:
             return None, "#DIV/0!"
         except Exception:
