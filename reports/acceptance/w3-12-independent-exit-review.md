@@ -124,13 +124,13 @@ py -3.15 -c "<zipfile 扫描 word/*.xml、xl/*.xml>"
 - 唯一命中的“用户目录模式”字符串为 `engine/pdf_backend.py:30-31` 的 WPS 转换器运行时探测路径，属于合法能力探测，不是语料路径。
 - 包内 8 个 `.docx` 二进制 fixture 为合成/结构化样本；内部 XML 扫描命中 0。
 - `tests/real_corpus_eval.py:400` 将 `--corpus` 设为 **required**，语料目录只在运行时传入；报告写入不保存该路径。
-- `reports/w3/real-corpus-eval.json` 的记录编号为 `D001`–`D046`，无路径/文件名/正文。
+- `reports/archive/real-corpus-eval.json` 的记录编号为 `D001`–`D046`，无路径/文件名/正文。
 
 **但发现阻断缺陷 B1**：包内测试代码仍内嵌了外部语料正文片段，见 §5。
 
 ### 3.3 真实语料报告自洽性
 
-从 `reports/w3/real-corpus-eval.json` 重新计算结果：
+从 `reports/archive/real-corpus-eval.json` 重新计算结果：
 
 | 指标 | Markdown 报告 | JSON 重算 | 结论 |
 |---|---|---|---|
@@ -208,7 +208,7 @@ py -3.15 -c "<zipfile 扫描 word/*.xml、xl/*.xml>"
 | 1 | W3-1/2/3/5/7 修复完成且测试绿（含 mock 矩阵） | **满足** | 全量 479 OK；定向 65 OK；对应测试文件齐全；E2 宿主无关 mock 路径存在 |
 | 2 | W3-4 契约 4.2.0 冻结（07 两次 PASS）且实施合入，SDT 闭环 | **满足（按任务书 W3-4 的解释）** | `contracts/README.md:3,92` 4.2.0 FROZEN；`07-cp-w2-002-gate-review.md` 提案阶段 CONDITIONAL_PASS，`07-cp-w2-002-post-review.md` 实施后 PASS；B1–B4 已折入 rev 2。严格按 §3 字面“两次 PASS”看，第一次为 CONDITIONAL_PASS，属条件措辞与任务书 W3-4 行的偏差，非阻断。`test_sdt_detection`/`test_sdt_discovery`/`test_e2e_v4` 覆盖发现→定位→`PROTECTED_SLOT_VIOLATION` 拒绝 |
 | 3 | W3-6 GENERATE 走 v4 链，集成测试证明不落回 schema 3 | **满足** | `07-w3-6-review.md` PASS；`tests/test_skill_workflow_v4.py` 3 项；定向运行通过；CLI 默认仍为 3（兼容边界未被翻转） |
-| 4 | 审计方 Linux/LibreOffice 环境复验 Excel 两测试转绿、完整套件跑完 | **不满足** | 当前为 Windows + WPS，未检测到 `soffice`；`reports/w3/10-exit-review.md:92-96` 自认 Linux/LibreOffice 未验证；`audit-triage.md` 明确 P2-01/P2-04 关闭条件为该环境复跑。本次审查无法替代 |
+| 4 | 审计方 Linux/LibreOffice 环境复验 Excel 两测试转绿、完整套件跑完 | **不满足** | 当前为 Windows + WPS，未检测到 `soffice`；`reports/acceptance/w3-10-exit-review.md:92-96` 自认 Linux/LibreOffice 未验证；`audit-triage.md` 明确 P2-01/P2-04 关闭条件为该环境复跑。本次审查无法替代 |
 | 5 | W3-9 真实语料报告存在，指标分列合成/真实 | **满足（主条件）** | 报告与 JSON 存在；46/46、21/21、0 字节、12 PASSED/9 UNVERIFIED 自洽；明确无标注、不声称准确率。附带 N3/N4/N6 非阻断偏差 |
 | 6 | AGENTS/README/SKILL/CHANGELOG 版本一致，重打包 zip 含清单与 SHA-256 | **满足（版本面）** | 五处版本均为 4.0.0 / 契约 4.2.0；zip 大小/SHA/条目数与 manifest 一致；Release 提供 `.sha256` 资产。测试计数文档仍有 473 vs 479 不一致（N1，非阻断） |
 | 7 | 全量回归 ≥ 基线，0 项既有测试被删除/弱化 | **满足** | 479 > 473；发布范围测试 diff 仅版本断言更新，无测试删除；全量 0 失败/0 跳过 |
@@ -253,7 +253,7 @@ Select-String -Path tests/test_fill_fidelity_inplace.py -Pattern "exam template"
 
 - 证据：
   - 当前环境 `soffice` 不存在；OS 为 Windows。
-  - `reports/w3/10-exit-review.md:92-96` 明确 Linux/LibreOffice 未验证。
+  - `reports/acceptance/w3-10-exit-review.md:92-96` 明确 Linux/LibreOffice 未验证。
   - `reports/development/w3-audit-triage.md` 将 P2-01/P2-04 的关闭条件定义为审计环境复跑。
 - 影响：W3 出口条件 4 不满足；无法宣称 P2-01/P2-04 已关闭。
 - 最小修复建议：在 Linux/LibreOffice 审计环境运行完整套件及 `test_excel_reliability.py` 两项宿主机相关测试，保存命令、环境、总数、耗时、日志；完成后由 Agent 07 复核。代码本身不需要为此改动。
@@ -333,6 +333,6 @@ Select-String -Path tests/test_fill_fidelity_inplace.py -Pattern "exam template"
 - 视觉档位：`qa/pipeline.py:439,483,685`；`engine/qa_engine.py:1235-1241`；`engine/layout_qa.py:208-231`
 - Excel：`engine/excel_spec.py:23,110-135`
 - 发布清单：`reports/acceptance/w3-11-package-manifest-v4.0.0.md:10-18`
-- 出口自评：`reports/w3/10-exit-review.md:92-102`
+- 出口自评：`reports/acceptance/w3-10-exit-review.md:92-102`
 - B1 位置：`tests/test_residual_inheritance.py:4`；`tests/test_fill_fidelity_inplace.py:284,294,307`
 </content>

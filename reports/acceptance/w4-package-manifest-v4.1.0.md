@@ -31,4 +31,4 @@ py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"
 py -3.15 -m ruff check . --output-format concise
 ```
 
-结果见 `reports/w4/w4-9-exit-review.md`。
+结果见 `reports/acceptance/w4-9-exit-review.md`。

@@ -494,10 +494,10 @@ py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"   # 契
 
 | 交付物 | 状态 | 产生任务 |
 |---|---|---|
-| reports/w5/w5-architecture-audit.md | ✅ 已交付 | W5-A |
-| reports/w5/w5-capability-matrix.md | ✅ 已交付（T 系列后更新 verified 列） | W5-A/B7 |
-| reports/w5/w5-target-architecture.md | ✅ 已交付（本计划配套设计） | W5-A |
-| reports/w5/w5-migration-plan.md | ✅ 本文件 | W5-A |
+| reports/development/w5-architecture-audit.md | ✅ 已交付 | W5-A |
+| reports/development/w5-capability-matrix.md | ✅ 已交付（T 系列后更新 verified 列） | W5-A/B7 |
+| reports/development/w5-target-architecture.md | ✅ 已交付（本计划配套设计） | W5-A |
+| reports/development/w5-migration-plan.md | ✅ 本文件 | W5-A |
 | document_backends/ | 待实施 | B1–B5 |
 | tests/w5/ | 待实施 | B6/B7 |
 | reports/w5/w5-test-report.md | 待实施 | B7 |

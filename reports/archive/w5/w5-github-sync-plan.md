@@ -281,8 +281,8 @@ BACKEND_NORMALIZE_FAILED
 归档前需要做两项清洗：
 
 1. **本机绝对路径替换为 `<repo_root>`**：
-   - `reports/w5/w5-architecture-audit.md` 第 4 行。
-   - `reports/w5/w5-g15-final-review.md` 第 27、232 行。
+   - `reports/development/w5-architecture-audit.md` 第 4 行。
+   - `reports/archive/w5/w5-g15-final-review.md` 第 27、232 行。
 2. **不纳入 `reports/w5/be95e82-review.patch`**：该文件是可由 `git show be95e82` 重建的 diff 产物，37,976 字节，不包含额外证据价值。
 
 结论：未发现需要阻止同步的敏感信息；唯一需要处理的是报告中的本机路径。
@@ -436,12 +436,12 @@ docs(w5): archive architecture and gate review reports
 ```
 
 - 新增纳入：
-  - `reports/w5/w5-architecture-audit.md`
-  - `reports/w5/w5-capability-matrix.md`
-  - `reports/w5/w5-target-architecture.md`
-  - `reports/w5/w5-migration-plan.md`
-  - `reports/w5/w5-g15-final-review.md`
-  - `reports/w5/w5-github-sync-plan.md`
+  - `reports/development/w5-architecture-audit.md`
+  - `reports/development/w5-capability-matrix.md`
+  - `reports/development/w5-target-architecture.md`
+  - `reports/development/w5-migration-plan.md`
+  - `reports/archive/w5/w5-g15-final-review.md`
+  - `reports/development/w5-github-sync-plan.md`
   - `reports/w5/README.md`（索引）
 - 路径清洗：把 2 个报告中的本机绝对路径替换为 `<repo_root>`。
 - **不纳入**：`reports/w5/be95e82-review.patch`、`dist/` 下任何 ZIP。

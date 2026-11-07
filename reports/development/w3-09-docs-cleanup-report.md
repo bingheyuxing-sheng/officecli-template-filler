@@ -54,11 +54,11 @@
 - `reports/w0/`：问题台账按“关闭项保留并标注解决”的规则，把 OI-01、OI-03、OI-05 标为 CLOSED 并写入 W1/W2 证据；冻结报告、门禁报告与验收报告增加历史记录说明；删除冻结报告与验收报告中重复的 OI 摘要表/列表，改为指向 `reports/w0/issues.md`。
 - `reports/w1/w1-acceptance.md`：增加历史状态说明（W1 为 4.0.0 / 357 项，当前 4.2.0 / 450 项）。
 - `reports/w2/`：变更清单标注为 4.1.0 历史清单；验收报告标明 4.1.0 / 397 为历史值；删除与 `reports/development/w2-issues.md` 重复的缺陷表（4 行）和遗留问题表（6 行），改为指向该台账，保留 W2-I1 后续由 CP-W2-002 解决的说明。
-- `reports/w3/w3-task-book.md`：版本基线 4.1.0 → 4.2.0；W3-4 的 07 复核状态从“待二次审查”更新为“提案 CONDITIONAL_PASS、实施后 PASS、4.2.0 冻结”；移除本机绝对路径。
+- `reports/development/w3-task-book.md`：版本基线 4.1.0 → 4.2.0；W3-4 的 07 复核状态从“待二次审查”更新为“提案 CONDITIONAL_PASS、实施后 PASS、4.2.0 冻结”；移除本机绝对路径。
 - `reports/development/w3-04b-implementation.md`：冻结状态更新为“已冻结”，保留实施当时“候选/未冻结”的历史说明；447 项标注为实施时数据并补充当前 450；移除本机工作目录。
 - `reports/w3/07-cp-w2-002-gate-review.md`、`07-w3-6-review.md`、`07-w3-8-review.md`：增加后续状态（实施后 PASS、F-1 已处理、打包已完成），原裁定与证据不变。
 - `reports/archive/w3-08-package-manifest-dev-snapshot.md`：注明该包对应 `b74f059`，本次文档清理未重新打包，包内文档与工作树可能有措辞差异。
-- `reports/development/w3-audit-triage.md`：删除与任务书重复的 9 行修复计划表，改为指向 `reports/w3/w3-task-book.md`；保留全部审计裁定与证据。
+- `reports/development/w3-audit-triage.md`：删除与任务书重复的 9 行修复计划表，改为指向 `reports/development/w3-task-book.md`；保留全部审计裁定与证据。
 - `reports/archive/w3-real-corpus-candidates.md`：把“SDT 槽位不可发现”的旧描述更新为 4.2.0 下的“发现为 PROTECTED 并拒绝填充”。
 
 ## 4. 删除与合并清单
@@ -68,7 +68,7 @@
 | `reports/w0/w0-acceptance.md` | 删除重复的 6 行 OI 摘要表 | 明细在 `reports/w0/issues.md` |
 | `reports/w0/05-contract-freeze-report.md` | 删除重复的 5 条 OI 列表 | 明细在 `reports/w0/issues.md` |
 | `reports/acceptance/w2-acceptance.md` | 删除重复的 4 行缺陷表、6 行遗留问题表 | 明细在 `reports/development/w2-issues.md` |
-| `reports/development/w3-audit-triage.md` | 删除重复的 9 行修复计划表 | 明细在 `reports/w3/w3-task-book.md` |
+| `reports/development/w3-audit-triage.md` | 删除重复的 9 行修复计划表 | 明细在 `reports/development/w3-task-book.md` |
 | `SKILL.md` | 压缩 9 行逐测试文件枚举为 7 行代表性文件 + 契约套件 | 测试总数与关键入口保留 |
 | `README.md` | 替换 v3 目录树为当前目录结构 | 模块说明保留 |
 | `references/engine-internals.md` | 合并孤立 v3.5.9 条目为 H2 小节 | 全部条目保留 |

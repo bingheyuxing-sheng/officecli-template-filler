@@ -20,8 +20,8 @@ never copied into reports.
 
 Usage:
     py -3.15 tests/real_corpus_eval.py --corpus "<path-to-docx-dir>" \
-        [--out reports/w3/real-corpus-eval.json] \
-        [--report reports/w3/real-corpus-eval.md] \
+        [--out reports/current/real-corpus-eval.json] \
+        [--report reports/current/real-corpus-eval.md] \
         [--timeout 120] [--fill-sample 6] [--limit 0]
 """
 
@@ -471,8 +471,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", required=True,
                         help="external corpus directory (never embedded in the repo)")
-    parser.add_argument("--out", default=str(ROOT / "reports" / "w3" / "real-corpus-eval.json"))
-    parser.add_argument("--report", default=str(ROOT / "reports" / "w3" / "real-corpus-eval.md"))
+    parser.add_argument("--out", default=str(ROOT / "reports" / "current" / "real-corpus-eval.json"))
+    parser.add_argument("--report", default=str(ROOT / "reports" / "current" / "real-corpus-eval.md"))
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--fill-sample", type=int, default=6,
                         help="run the fill smoke chain on the first N parseable token templates")

@@ -93,7 +93,7 @@ py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"
 
 结果：**Ran 70 tests in 1.193s — OK**，退出码 0。
 
-与历史基线（`reports/w3/10-exit-review.md` 的 479 项）一致，无测试删除或弱化。
+与历史基线（`reports/acceptance/w3-10-exit-review.md` 的 479 项）一致，无测试删除或弱化。
 
 ### A.6 资料冲突与过时描述
 
@@ -429,7 +429,7 @@ py -3.15 -m unittest discover -s tests/contracts -t tests -p "test_*.py"
 | W4-6 | Gate Validator | `template_gate/validator.py`、`errors.py`、契约 06 | W4-1/2/5 | 10 类失败码 | 无放行分支 | 删除 validator |
 | W4-7 | 执行入口接入 | `fill_executor.py`、`repair_engine.py`、`review_engine.py`、`reformat_engine.py`、4 个 CLI、13 个测试文件 | W4-6 | 绕过/非 gated/回归 | 无记录全部拒绝 | 按入口回退 |
 | W4-8 | SKILL 集成 | `SKILL.md`、`references/engine-internals.md` | W4-7 | 文档一致性 | 文档与代码一致 | 文档回滚 |
-| W4-9 | E2E/发布 | `tests/test_template_gate_e2e.py`、`reports/w4/`、版本文件 | 全部 | 15+ 场景/全量 | 可发布 | 保留证据 |
+| W4-9 | E2E/发布 | `tests/test_template_gate_e2e.py`、`reports/acceptance/`、版本文件 | 全部 | 15+ 场景/全量 | 可发布 | 保留证据 |
 
 ### I.2 顺序理由
 

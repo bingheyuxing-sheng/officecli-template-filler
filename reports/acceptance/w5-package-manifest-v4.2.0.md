@@ -4,7 +4,7 @@
 - 大小：**1,187,653** 字节
 - 条目数：**271**
 - SHA-256：`22a9fb5d9933fe4902bc7cc6b053d4f41fe19c1261804a773f27978ba84a494d`
-- 构建方式：逐文件读取 `git show v4.2.0:<path>` 的 blob 内容并用 Python `zipfile` 打包（固定 ZIP 时间戳），因此不受工作区 CRLF/未跟踪文件影响；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/w4/w4-9-exit-review.md`。已逐条比对 271 个条目与 tag blob 的 SHA-256，**0 mismatch**。
+- 构建方式：逐文件读取 `git show v4.2.0:<path>` 的 blob 内容并用 Python `zipfile` 打包（固定 ZIP 时间戳），因此不受工作区 CRLF/未跟踪文件影响；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/acceptance/w4-9-exit-review.md`。已逐条比对 271 个条目与 tag blob 的 SHA-256，**0 mismatch**。
 - 构建日期：2026-11-07
 
 ## 内容核对

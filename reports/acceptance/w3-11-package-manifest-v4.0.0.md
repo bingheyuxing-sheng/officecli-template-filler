@@ -39,4 +39,4 @@ python -m unittest discover -s tests -p "test_*.py"
 - 不支持 SDT 内填充（`sdt_edit=false`）；SDT 仅作为 PROTECTED 位置发现并拒绝。
 - 本机缺 PyMuPDF/matplotlib/OCR，相关检查如实 `UNVERIFIED`。
 - 仅在 Windows + WPS 后端完成全量验证；Linux/LibreOffice 未验证。
-- 独立 Agent 07 复查缺口见 `reports/w3/10-exit-review.md` §6。
+- 独立 Agent 07 复查缺口见 `reports/acceptance/w3-10-exit-review.md` §6。

@@ -4,7 +4,7 @@
 - 大小：**1,189,228** 字节
 - 条目数：**271**
 - SHA-256：`33ee1f3bf722b81f0d4efb3af4deeda65ceb68131f09dea43a6201e91c3e5a9f`
-- 构建方式：先 `git add` 全部 v4.2.1 变更，再逐文件读取暂存区 blob（`git show :<path>`）用 Python `zipfile` 打包（固定 ZIP 时间戳），因此不受工作区 CRLF、未跟踪文件或构建顺序影响；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/w4/w4-9-exit-review.md`。本清单本身也被排除，所以更新哈希不会改变发布包。
+- 构建方式：先 `git add` 全部 v4.2.1 变更，再逐文件读取暂存区 blob（`git show :<path>`）用 Python `zipfile` 打包（固定 ZIP 时间戳），因此不受工作区 CRLF、未跟踪文件或构建顺序影响；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/acceptance/w4-9-exit-review.md`。本清单本身也被排除，所以更新哈希不会改变发布包。
 - 构建日期：2026-11-07
 
 ## 内容核对

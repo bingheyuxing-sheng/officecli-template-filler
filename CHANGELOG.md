@@ -262,7 +262,7 @@ Skill 文档越来越长，Agent 每次加载都要读很多内容。这个版�
 
 ### 测试
 
-- 全量 **532 项通过**；契约测试 70+ 项通过；`reports/w4/w4-9-exit-review.md` 记录 72 项契约测试通过。
+- 全量 **532 项通过**；契约测试 70+ 项通过；`reports/acceptance/w4-9-exit-review.md` 记录 72 项契约测试通过。
 - 覆盖无记录阻断、模板修改后失效、任务类型变化、记录被篡改、证据冲突等场景。
 
 ### 已知限制
@@ -323,7 +323,7 @@ v4.0.0 的独立出口审查发现一个阻断项：测试代码里残留了外�
 
 - `engine.__version__` 从 4.0.0 改为 4.0.1。
 - 执行器 `data` 增加 `coverage_gaps` 自由字段，用于证据复核；ToolEnvelope 的 `data` 本来就是自由对象，不构成契约变更。
-- 新增独立出口审查记录 `reports/w3/12-independent-exit-review.md`：v4.0.0 时裁定 FAIL，B1 由本补丁关闭。
+- 新增独立出口审查记录 `reports/acceptance/w3-12-independent-exit-review.md`：v4.0.0 时裁定 FAIL，B1 由本补丁关闭。
 
 ### 测试
 

@@ -1,7 +1,7 @@
 # W3-8 抽查复审：文档措辞更正（Agent 07）
 
 **结论：PASS（本次措辞抽查通过，无阻断项）。**
-**可接受性**：W3-8 的文档/措辞部分可接受；但 task book W3-8 ⑤「重新打包 zip 并核对包内清单」（`reports/w3/w3-task-book.md:103,105`）当时尚未完成，故 W3-8 整行与 W3 出口条件 6（同书 `:137`）不能凭本次审查宣称完成。
+**可接受性**：W3-8 的文档/措辞部分可接受；但 task book W3-8 ⑤「重新打包 zip 并核对包内清单」（`reports/development/w3-task-book.md:103,105`）当时尚未完成，故 W3-8 整行与 W3 出口条件 6（同书 `:137`）不能凭本次审查宣称完成。
 
 > 后续状态：`reports/archive/w3-08-package-manifest-dev-snapshot.md` 已记录 `v4.0.0-dev-w3` 包（commit `b74f059`，450 tests OK，含 AGENTS.md 且无 `dist/`）。W3-8 ⑤ 的完成以该清单为准。
 

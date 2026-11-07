@@ -112,7 +112,7 @@
 | 输入 | **外部依赖：用户提供的去标识化真实 DOCX**（不同来源/版本 Word/WPS；不得由 Agent 编造或从互联网随意抓取未授权文档） |
 | 修改 | `tests/fixtures/real_corpus/<case>/`：`template.docx` + `annotation.json`（人工标注：预期槽位 location+类型、保护区域、格式边界、预期输出摘要、Office 来源与版本）+ `review.md`（人工视觉复核）。评测脚本 `tests/real_corpus_eval.py` 输出：槽位 P/R/F1、漏检率（分结构类别）、未授权差异数（目标 0）、UNVERIFIED 比例、人工介入率。合成与真实两套指标**分开统计，禁止合并**（E3） |
 | Owner | 06 建管线；标注由用户提供/确认 |
-| 验收 | 语料 ≥ 每来源类别 1 份；评测报告入 `reports/w3/real-corpus-eval.md` |
+| 验收 | 语料 ≥ 每来源类别 1 份；评测报告入 `reports/archive/real-corpus-eval.md` |
 | 07 复核 | **强制**：W3 出口评审（含全部前 8 项证据） |
 
 ## 2. 依赖与执行序

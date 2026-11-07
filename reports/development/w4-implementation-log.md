@@ -2,7 +2,7 @@
 
 - 日期：2026-11-06
 - 基线：软件 v4.0.2 → v4.1.0；契约集 4.2.0 → 4.3.0
-- 说明：本文件按阶段记录实现范围、证据与验收结果；W4-9 的最终出口见 `reports/w4/w4-9-exit-review.md`。
+- 说明：本文件按阶段记录实现范围、证据与验收结果；W4-9 的最终出口见 `reports/acceptance/w4-9-exit-review.md`。
 
 ## W4-0 架构审计
 
@@ -72,7 +72,7 @@
 - `contracts/06-template-understanding-gate.md`
 - `schemas/template_evidence-1.0.schema.json`、`template_gate_record-1.0.schema.json`、`template_analysis_report-1.0.schema.json`
 - `tests/test_template_evidence.py`、`test_template_gate_state.py`、`test_template_gate_report.py`、`test_template_gate_incremental.py`、`test_template_gate_store.py`、`test_template_gate_validator.py`、`test_template_gate_enforcement.py`、`test_template_gate_e2e.py`、`tests/contracts/test_template_gate_schema.py`、`tests/gate_helpers.py`
-- `reports/w4/`
+- `reports/acceptance/`
 
 修改：
 

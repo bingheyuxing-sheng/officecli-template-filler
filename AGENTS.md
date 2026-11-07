@@ -137,15 +137,15 @@
 
 W2（Real-World Template Validation & Transaction Hardening）已完成：CP-W2-001（页眉页脚 location 语法，4.1.0）、六类结构化回归 Fixtures、环境能力矩阵、事务二次门禁、`logic_qa → workflow` 依赖倒置。
 
-W3 按 `reports/w3/w3-task-book.md` 执行，目标是修复 v4.0 技术审计发现。当前状态：
+W3 按 `reports/development/w3-task-book.md` 执行，目标是修复 v4.0 技术审计发现。当前状态：
 
 1. **P1-01 body 级 SDT 静默漏检。** W3-3 短期 fail-closed 披露已交付；W3-4/CP-W2-002 已发现为 PROTECTED 位置，契约 4.2.0 冻结；`sdt_edit` 保持 false，SDT 内填充属独立 W4 能力项，不得顺手开放。
 2. **P1-02 Skill 默认 GENERATE 仍走 v3。** W3-6 已完成：Skill 文档主链切 v4 plan chain，CLI `--spec-version` 默认值保持 3（兼容边界）。
 3. **P2-01 Excel 状态覆盖、P2-02 PDF 临时副本残留、P2-03 ZIP 资源限制。** W3-2/W3-1/W3-7 已修复；审计环境复验仍是 P2-01/P2-04 的关闭条件。
 4. **P2-04 套件停滞。** W3-5 私有 soffice profile 已实施；最终关闭需审计方 Linux/LibreOffice 完整套件复跑。
-5. **W3-9 真实模板语料。** 已完成：语料在运行时由 `--corpus` 传入，仓库不保存路径、文件名或正文；报告 `reports/w3/real-corpus-eval.md` 仅含匿名序号与聚合指标。语料未经人工标注，按 E3 不计算槽位准确率，真实与合成指标分开报告。
+5. **W3-9 真实模板语料。** 已完成：语料在运行时由 `--corpus` 传入，仓库不保存路径、文件名或正文；报告 `reports/archive/real-corpus-eval.md` 仅含匿名序号与聚合指标。语料未经人工标注，按 E3 不计算槽位准确率，真实与合成指标分开报告。
 6. **W3-8 文档与交付一致性。** AGENTS.md 入仓、CHANGELOG/README v4 章节、W2 验收措辞更正。
-7. **发布。** `v4.0.0` 稳定版已完成版本号、CHANGELOG、README、SKILL 与发布包一致性更新；真实语料、全量测试、环境能力与已知限制的证据见 `reports/w3/10-exit-review.md`。
+7. **发布。** `v4.0.0` 稳定版已完成版本号、CHANGELOG、README、SKILL 与发布包一致性更新；真实语料、全量测试、环境能力与已知限制的证据见 `reports/acceptance/w3-10-exit-review.md`。
 
 W3 不得顺手扩展为无关功能开发。新增需求必须单独登记、评估和排期。
 
