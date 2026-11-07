@@ -277,6 +277,7 @@ python scripts/run_tests.py --profile all
 - SVG / EMF / WMF 等矢量图无法做字节级校验，替换后只能报告 `VECTOR_IMAGE_UNVERIFIED`，需要人工或 PDF 比对确认。
 - Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象不会被 `openpyxl` 保留；默认会以 `OBJECT_LOSS_RISK` 拒绝执行，需要显式允许对象丢失。
 - 版面检查使用 DOCX 版面指纹（字体、字号、对齐、缩进、列宽、图片比例），不承诺逐像素一致；像素级比对需要本机 LibreOffice + PyMuPDF。
+- `document_backends/` 是 W5 的后端抽象骨架，**尚未接入执行链**（`PACKAGE_STATUS = EXPERIMENTAL_NOT_WIRED`）；当前实际写入仍由 `engine/officecli_writer.py` 与 `fill_executor` 负责，后续 B2–B5 迁移完成前不要把它当作可用后端。
 - 视觉检查依赖本机 PDF 后端（WPS 或 LibreOffice）；两者都没有时状态是 `UNVERIFIED`，不是通过。
 - 进程清理只终止能证明由本次任务启动的实例；无法证明归属的进程会保留，不做猜测性终止。
 - 不承诺与 Word / WPS 逐像素一致；Chart、SmartArt、OLE 等复杂对象只做只读保留，并在 `coverage_gaps` 中列明。

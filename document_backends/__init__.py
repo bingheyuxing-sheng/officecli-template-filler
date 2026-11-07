@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """W5 document backend adapter layer (B1 skeleton).
 
+**STATUS: EXPERIMENTAL — this package is not wired into the execution chain.**
+The production fill path still uses ``engine.officecli_writer`` directly from
+``document_engine.fill_executor``; see ``PACKAGE_STATUS`` below.  The interface,
+result model and reason-code vocabulary are frozen for the B2–B5 migration, but
+nothing in ``scripts/`` or ``document_engine/`` imports this package yet.
+
 The package separates *what may change* (the executor + FillPlan) from
 *how it is written* (officecli subprocess vs python-docx). B1 delivers the
 interface, the result model and the reason-code vocabulary only — no
@@ -15,6 +21,10 @@ Layout:
 * ``officecli_backend`` / ``python_backend`` / ``capability_registry`` /
   ``operation_router`` land in B2–B5 and are not importable yet.
 """
+
+#: Machine-readable status consumed by the disclosure test and by callers that
+#: need to distinguish "available API" from "integrated backend".
+PACKAGE_STATUS = "EXPERIMENTAL_NOT_WIRED"
 
 from .base import (
     BACKEND_FORMATS,
@@ -45,6 +55,7 @@ from .result import (
 )
 
 __all__ = [
+    "PACKAGE_STATUS",
     "BACKEND_FORMATS",
     "OPERATION_KINDS",
     "BackendError",

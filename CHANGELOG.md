@@ -87,6 +87,7 @@
 
 - officecli 只覆盖 `.docx` 的三类文字操作；其他位置和 Excel 全部回退 python-docx。
 - officecli 是外部闭源二进制，升级后需要重新跑一致性测试。
+- `document_backends/`（W5-B1 后端抽象）尚未接入执行链，`PACKAGE_STATUS = EXPERIMENTAL_NOT_WIRED`；当前写入仍走 `engine/officecli_writer.py`。
 - 本版本尚未发布，普通用户无法从 Releases 下载。
 
 ---
