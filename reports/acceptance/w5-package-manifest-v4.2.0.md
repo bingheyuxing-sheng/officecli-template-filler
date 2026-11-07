@@ -1,10 +1,10 @@
 # 发布包清单（v4.2.0）
 
 - 包路径：`dist/officecli-template-filler-v4.2.0.zip`
-- 大小：**1,241,425** 字节
-- 条目数：**288**
-- SHA-256：`350e2c306291789369865b092031a16bd9306c336684248e2f00503b29cdf19d`
-- 构建方式：Python `zipfile` 遍历仓库，排除 `.git/`、`dist/`、`.github/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`；按设计排除历史 package manifest 与 `reports/w4/w4-9-exit-review.md`
+- 大小：**1,188,050** 字节
+- 条目数：**271**
+- SHA-256：`1aed8a32fb3d47eaa637559cc1aea4d61aaaef5545ad0c2eb0dd0c4f1fdb096d`
+- 构建方式：以 tag `v4.2.0` 的受控文件清单（`git ls-tree -r --name-only v4.2.0`）为唯一来源，用 Python `zipfile` 打包；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/w4/w4-9-exit-review.md`。未跟踪文件不会进入发布包。
 - 构建日期：2026-11-07
 
 ## 内容核对
