@@ -232,7 +232,7 @@ class SuccessTests(_ExecutorCase):
 
         artifacts = result["artifacts"]
         self.assertEqual(len(artifacts), 1)
-        self.assertEqual(Path(artifacts[0]["path"]), Path(self.output).resolve())
+        self.assertEqual(Path(artifacts[0]["path"]).resolve(), Path(self.output).resolve())
         self.assertEqual(artifacts[0]["kind"], "docx")
         self.assertTrue(artifacts[0]["required"])
         self.assertRegex(artifacts[0]["sha256"], r"^[0-9a-f]{64}$")
@@ -503,7 +503,7 @@ class LedgerAndCliTests(unittest.TestCase):
         target = self.directory / "ledger.json"
         written = ledger.write(str(target))
 
-        self.assertEqual(Path(written), target.resolve())
+        self.assertEqual(Path(written).resolve(), target.resolve())
         self.assertFalse((self.directory / "ledger.json.tmp").exists())
         payload = json.loads(target.read_text(encoding="utf-8"))
         self.assertEqual(payload["record_count"], 1)

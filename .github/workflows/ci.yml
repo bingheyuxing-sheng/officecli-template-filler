@@ -13,6 +13,9 @@ jobs:
   test:
     name: test (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +46,9 @@ jobs:
   external:
     name: external (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
     # External tests need a real PDF backend (for pagination) or officecli.
     # They are informational: a missing tool skips the module instead of failing
     # the run, and the fast job above is the required gate.

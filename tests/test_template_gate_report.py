@@ -83,9 +83,14 @@ class AnalysisReportTests(unittest.TestCase):
             analysis = build_analysis(_standard(directory), "GENERATE")
         first = build_report(analysis)
         second = build_report(analysis)
-        self.assertNotEqual(first["generated_at"], second["generated_at"])
+        # Windows' clock resolution can return the same microsecond twice, so
+        # assert the invariant (digest ignores the timestamp) rather than
+        # requiring two different timestamps.
         self.assertEqual(first["report_digest"], second["report_digest"])
         self.assertEqual(report_digest(first), report_digest(second))
+        mutated = dict(first)
+        mutated["generated_at"] = "1999-01-01T00:00:00+00:00"
+        self.assertEqual(report_digest(mutated), report_digest(first))
 
     def test_report_validates_against_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

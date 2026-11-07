@@ -66,6 +66,11 @@ def _validate_verified_at(value: object) -> str:
     # ``fromisoformat`` accepts 'Z' from Python 3.11 on; normalise so the
     # check behaves identically on the project's older interpreters.
     candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    # ``fromisoformat`` accepts the ISO-8601 end-of-day form 24:00:00 on some
+    # interpreters (3.11+) but rejects it on others (3.12). Normalize it before
+    # parsing so the validation verdict is identical across the supported
+    # Python range; the stored value keeps the caller's original spelling.
+    candidate = candidate.replace("T24:00:00", "T00:00:00")
     try:
         parsed = datetime.fromisoformat(candidate)
     except ValueError as exc:

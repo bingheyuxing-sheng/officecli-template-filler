@@ -24,9 +24,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import sys
 import unittest
+
+# Tests spawn CLI scripts with subprocess.run(); on a Windows runner the default
+# console encoding is cp1252, which cannot encode the Chinese output and turns a
+# valid command into UnicodeEncodeError.  Child processes inherit this value.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TESTS = ROOT / "tests"
