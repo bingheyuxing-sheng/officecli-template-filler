@@ -1,10 +1,10 @@
 # 发布包清单（v4.2.0）
 
 - 包路径：`dist/officecli-template-filler-v4.2.0.zip`
-- 大小：**1,188,050** 字节
+- 大小：**1,187,653** 字节
 - 条目数：**271**
-- SHA-256：`1aed8a32fb3d47eaa637559cc1aea4d61aaaef5545ad0c2eb0dd0c4f1fdb096d`
-- 构建方式：以 tag `v4.2.0` 的受控文件清单（`git ls-tree -r --name-only v4.2.0`）为唯一来源，用 Python `zipfile` 打包；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/w4/w4-9-exit-review.md`。未跟踪文件不会进入发布包。
+- SHA-256：`22a9fb5d9933fe4902bc7cc6b053d4f41fe19c1261804a773f27978ba84a494d`
+- 构建方式：逐文件读取 `git show v4.2.0:<path>` 的 blob 内容并用 Python `zipfile` 打包（固定 ZIP 时间戳），因此不受工作区 CRLF/未跟踪文件影响；排除 `.github/`、`dist/`、`__pycache__/`、`.ruff_cache/`、`*.pyc`、`*.pyo`、`*.zip`，以及历史 package manifest 与 `reports/w4/w4-9-exit-review.md`。已逐条比对 271 个条目与 tag blob 的 SHA-256，**0 mismatch**。
 - 构建日期：2026-11-07
 
 ## 内容核对
