@@ -2,7 +2,7 @@
 
 > 给 Word / Excel 模板自动填内容，尽量不改变原有格式；改完能检查、能留痕、能回滚。
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Word](https://img.shields.io/badge/Word-.docx-2B579A)
 ![Excel](https://img.shields.io/badge/Excel-.xlsx%20%2F%20.xlsm-217346)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -77,7 +77,7 @@ officecli-template-filler 是一个面向 Word 和 Excel 的文档处理工具�
 
 ### 环境要求
 
-- Python 3.9 或更高版本。
+- Python 3.10 或更高版本（代码使用 `zip(..., strict=)` 等 3.10 语法）。
 - Windows 是主要验证平台；Linux / macOS 未在发布验证范围内。PDF 渲染和部分视觉检查依赖本机 WPS / LibreOffice。
 
 ### 安装依赖

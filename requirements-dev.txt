@@ -4,5 +4,5 @@
 jsonschema>=4.20
 
 # Run:
-#   py -3.15 -m pip install -r requirements-dev.txt
-#   py -3.15 -m unittest discover -s tests/contracts -t tests
+#   python -m pip install -r requirements-dev.txt
+#   python -m unittest discover -s tests/contracts -t tests
