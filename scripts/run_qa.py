@@ -30,6 +30,7 @@ from engine import (
     resolve_comparison_profile,
     split_issues,
 )
+from engine.package_guard import reject_first_package
 
 
 SECTION_KEYS = ("package_integrity", "format_and_text_qa", "content_qa", "image_text_qa", "visual_qa", "review_qa", "excel_qa")
@@ -101,6 +102,11 @@ def main() -> int:
     fpath = args.output_alias or args.file_path
     if not fpath:
         parser.error("an output file path is required (positional, --output)")
+
+    rejected = reject_first_package({"document": fpath, "reference": args.reference})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     comparison_profile = resolve_comparison_profile(
         args.profile,

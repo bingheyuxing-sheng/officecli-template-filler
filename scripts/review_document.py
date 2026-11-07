@@ -42,6 +42,7 @@ from engine import (
     write_review_snapshot,
 )
 from engine.review_engine import build_findings_review_plan
+from engine.package_guard import reject_first_package
 from template_gate.errors import TemplateGateError
 
 
@@ -65,6 +66,11 @@ def main() -> int:
         help="Disable automatic template-vs-draft text diff (only --revisions become tracked edits)",
     )
     args = parser.parse_args()
+
+    rejected = reject_first_package({"reference": args.reference, "target": args.target})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     revisions = []
     if args.revisions:

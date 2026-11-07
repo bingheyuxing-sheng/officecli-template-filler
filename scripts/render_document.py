@@ -29,6 +29,7 @@ from engine import (
     install_auto_cleanup,
     run_visual_layout_qa,
 )
+from engine.package_guard import reject_first_package
 
 
 def main() -> int:
@@ -38,6 +39,11 @@ def main() -> int:
     parser.add_argument("--reference", default=None, help="Optional reference .docx path")
     parser.add_argument("--outdir", default=None, help="Optional output directory for PDF")
     args = parser.parse_args()
+
+    rejected = reject_first_package({"document": args.docx_path, "reference": args.reference})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     outdir = os.path.abspath(args.outdir) if args.outdir else None
     final_pdf = None

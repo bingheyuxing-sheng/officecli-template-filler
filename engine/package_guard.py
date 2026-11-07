@@ -160,4 +160,62 @@ class _zf_lazy:
         return io.BytesIO(data)
 
 
-__all__ = ["DEFAULT_LIMITS", "load_limits", "check_package"]
+class PackageRejected(RuntimeError):
+    """Raised when an untrusted package exceeds a pre-parse quota."""
+
+    def __init__(self, verdict: Dict[str, Any], what: str = "document") -> None:
+        self.verdict = verdict
+        self.what = what
+        super().__init__(
+            "%s rejected: %s %s"
+            % (what, verdict.get("code"), verdict.get("violations") or [])
+        )
+
+
+def require_package(
+    path: str,
+    limits: Optional[Dict[str, int]] = None,
+    what: str = "document",
+) -> Dict[str, Any]:
+    """Fail closed unless ``path`` passes the pre-parse quota.
+
+    Every entrypoint that hands a user-supplied .docx/.xlsx to python-docx or
+    openpyxl must call this first; the quota check only reads the ZIP central
+    directory, so it is cheap relative to parsing the document.
+    """
+    verdict = check_package(path, load_limits() if limits is None else limits)
+    if not verdict.get("ok"):
+        raise PackageRejected(verdict, what)
+    return verdict
+
+
+def reject_first_package(
+    paths: Dict[str, Optional[str]],
+    limits: Optional[Dict[str, int]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return a JSON-ready rejection payload for the first over-budget input.
+
+    ``paths`` maps an input label to its path (empty paths are skipped).  A
+    ``None`` return means every supplied input passed.  CLI entrypoints print
+    the payload and exit 2, which keeps their error surface consistent.
+    """
+    for label, path in paths.items():
+        if not path:
+            continue
+        verdict = check_package(str(path), load_limits() if limits is None else limits)
+        if not verdict.get("ok"):
+            payload = dict(verdict)
+            payload["input"] = label
+            payload["path"] = str(path)
+            return {"error": payload.get("code"), "package_guard": payload}
+    return None
+
+
+__all__ = [
+    "DEFAULT_LIMITS",
+    "load_limits",
+    "check_package",
+    "PackageRejected",
+    "require_package",
+    "reject_first_package",
+]

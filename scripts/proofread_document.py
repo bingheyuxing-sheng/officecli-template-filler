@@ -38,6 +38,7 @@ from engine import (
     install_auto_cleanup,
     write_review_snapshot,
 )
+from engine.package_guard import reject_first_package
 
 
 def main() -> int:
@@ -55,6 +56,11 @@ def main() -> int:
         help="Disable automatic content/typo checks (only --revisions and placeholder comments remain)",
     )
     args = parser.parse_args()
+
+    rejected = reject_first_package({"target": args.target})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     revisions = []
     if args.revisions:

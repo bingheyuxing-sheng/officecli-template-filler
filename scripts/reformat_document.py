@@ -34,6 +34,7 @@ from engine import (
     execute_reformat_plan,
     install_auto_cleanup,
 )
+from engine.package_guard import reject_first_package
 from template_gate.errors import TemplateGateError
 
 
@@ -57,6 +58,11 @@ def main() -> int:
     parser.add_argument("--author", default="OfficeCLI REFORMAT", help="Revision author")
     parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     args = parser.parse_args()
+
+    rejected = reject_first_package({"reference": args.reference, "target": args.target})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     plan = build_reformat_plan(
         args.reference,

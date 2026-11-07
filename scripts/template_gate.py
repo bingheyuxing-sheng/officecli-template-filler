@@ -22,7 +22,8 @@ if ROOT_DIR not in sys.path:
 from template_gate import build_analysis  # noqa: E402
 from template_gate.report import build_report, render_markdown  # noqa: E402
 from template_gate.store import GateStore  # noqa: E402
-from template_gate.supplements import resolve_evidence  # noqa: E402
+from template_gate.supplements import resolve_evidence
+from engine.package_guard import reject_first_package  # noqa: E402
 
 
 def _write_text(path: str, text: str) -> None:
@@ -46,6 +47,11 @@ def _load_json(path: str) -> dict:
 
 
 def _cmd_analyze(args) -> int:
+    rejected = reject_first_package({"template": args.template})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
+
     analysis = build_analysis(args.template, args.task_type, supplements=args.supplement or None)
     text = json.dumps(analysis, ensure_ascii=False, indent=2)
     if args.out:

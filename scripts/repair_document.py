@@ -33,6 +33,7 @@ from engine import (
     execute_repair_plan,
     install_auto_cleanup,
 )
+from engine.package_guard import reject_first_package
 from template_gate.errors import TemplateGateError
 
 
@@ -46,6 +47,11 @@ def main() -> int:
     parser.add_argument("--plan-only", action="store_true", help="Only generate repair_plan.json without executing")
     parser.add_argument("--gate-record", default="", help="Optional Template Understanding Gate record path/id")
     args = parser.parse_args()
+
+    rejected = reject_first_package({"reference": args.reference, "broken": args.broken})
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
 
     plan = build_repair_plan(args.reference, args.broken)
     if args.plan_out:
