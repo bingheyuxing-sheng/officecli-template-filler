@@ -1,251 +1,296 @@
-# OfficeCLI Template Filler
+# officecli-template-filler
 
-> 面向 Word / Excel 模板的文档智能引擎：把「填充模板」做成**可验证、可留痕、可回滚**的工程流程。
-
-给它一个模板和资料，它交出一份格式不走样、内容可审计的文档；给它一份草稿，它交回一份**能用 Word/WPS 修订模式打开、逐条接受或拒绝**的审阅稿。
-
-## v4.1.2 发布状态（稳定版候选）
-
-| 项目 | 状态 |
-|---|---|
-| 版本 | **v4.1.2**（契约集 **4.3.0**：W0 五份契约 + CP-W2-001/002 + Contract 06；均 MINOR 加法；独立出口审查待完成） |
-| 执行链 | DocumentSpec 4.0 → ContentPlan/FillPlan → 事务执行器 + fill ledger → QAReport 4.0 → 提交门禁（已实现并有端到端测试） |
-| Template Gate | `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` 执行前必须通过模板理解与用户确认闸门；无有效 Gate Record 时执行入口拒绝继续 |
-| Skill 工作流 | GENERATE 文档主链使用 v4 plan chain；CLI `--spec-version` 默认值仍为 3（兼容边界） |
-| 测试基线 | **535 项通过**；覆盖 W4 Evidence/State/Report/Store/Validator/Enforcement/E2E 与 REVIEW findings 批注路径 |
-| 真实验证 | 46 份外部真实 `.docx`：解析 46/46、0 字节改动、0 Spec 校验失败；21 份可填模板全部完成填充并提交（12 PASSED / 9 UNVERIFIED 如实披露） |
-| 状态 | W0–W3 + W4 完成；W4 独立出口审查待 W4-9 证据包复核 |
-
-**已知限制**：不支持 SDT 内填充（`sdt_edit=false`，SDT 仅作为 PROTECTED 位置发现并拒绝）；本机缺 PyMuPDF/matplotlib/OCR，相关检查如实 `UNVERIFIED`；真实语料无人工标注基线，不声称槽位准确率。详见 [CHANGELOG.md](CHANGELOG.md) 与 [reports/w3/w3-task-book.md](reports/w3/w3-task-book.md)。
+> 给 Word / Excel 模板自动填内容，尽量不改变原有格式；改完能检查、能留痕、能回滚。
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
 ![Word](https://img.shields.io/badge/Word-.docx-2B579A)
 ![Excel](https://img.shields.io/badge/Excel-.xlsx%20%2F%20.xlsm-217346)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
----
+## 项目简介
 
-## 为什么需要它
+officecli-template-filler 是一个面向 Word 和 Excel 的文档处理工具，适合“有固定模板、需要反复填内容”的场景。
 
-模板填充的失败往往不是「没填上」，而是：
+它和普通的“查找替换”脚本不同：处理之前会先分析模板结构，遇到不确定的地方会要求确认；修改时尽量保留原来的字体、字号、表格、图片、页眉页脚和公式；修改完成后会做一轮检查，检查不了的项会明确写“未验证”，不会把“没检查”说成“没问题”。
 
-- 字号、字体悄悄偏离模板，肉眼才发现；
-- 表格表头底色、垂直居中、列宽、行高丢了，文字检查完全查不出来；
-- AI 把「项目总投资 100 万元」改在了错的段落，因为文中有两处相同文字；
-- 交付了一个 Markdown 或 JSON 报告，用户却需要一份能逐条确认的 Word 修订稿；
-- 明明「已修复」，打开文件却没有任何修改痕迹；
-- QA 返回 `passed: true`，但其实根本没渲染、没计算出公式。
+一句话概括：**模板不被擅自改变，事实不被编造，失败不被隐藏，检查不可绕过。**
 
-这个引擎针对的就是这些问题。核心原则只有一条：**报告通过，必须是真的通过；无法验证，就明确标注。**
+## 这个项目能做什么？
 
----
+- 根据 Word 模板生成文档：把主题、资料或数据填进模板，输出一份格式基本不变的 `.docx`。
+- 按模板修复格式：拿一份格式走样的文档，对照模板把字体、字号、表格样式恢复回来。
+- 按模板统一格式：先列出“哪里和模板不一样”，再把能安全修复的地方写成 Word 修订，供你逐条接受或拒绝。
+- 审阅并留下修改痕迹：把修改写成 Word 的“修订”和“批注”，在 Word / WPS 里可以逐条确认。
+- 校对文档：检查错别字、重复标题、空章节、编号跳号、日期前后矛盾等问题。
+- 填 Excel 模板：填充 `.xlsx` / `.xlsm`，尽量保留公式；对可能丢失的宏、透视表、切片器等对象会提前警告。
+- 检查文档质量：检查文件结构、字体字号、表格、图片、内容数字和版面，并给出可读的检查报告。
+- 处理图片：替换图片时尽量保持引用关系；可以按“logo / 公章 / 二维码 / 插图”等角色查找图片；可选 OCR 读取图片里的文字。
+- 生成图表图片：把表格、柱状图、饼图渲染成 PNG，再按普通图片替换流程放进文档。
 
-## 核心能力
+## 核心功能
 
-| 能力 | 说明 |
+| 能力 | 用普通话说 |
 |---|---|
-| **8 种任务路由** | `GENERATE` / `POLISH` / `REPAIR` / `REVIEW` / `MERGE` / `REFORMAT` / `EXCEL_GENERATE` / `PROOFREAD`，按输入文件与意图自动分类；尚未实现的 `POLISH` / `MERGE` 返回 `CAPABILITY_NOT_AVAILABLE` |
-| **内容真值 QA** | 正文↔表格数值冲突、表内合计闭合、名称拼写漂移、日期/单位写法混用；事实条目强制 `source` 溯源 |
-| **图片完整性** | 栅格图 MIME 匹配替换、SVG 双嵌入清理、VML（`w:pict`）图片替换、裁剪框清除、矢量图显式报告未验证 |
-| **按角色定位图片** | `find_images(role="logo" / "stamp" / "qr" / "illustration")`，每条都给出判定依据；多个匹配时拒绝替换 |
-| **可选 OCR** | 装了 RapidOCR / PaddleOCR / Tesseract 就能读图内文字并报占位残留；没装则明确 `OCR_UNAVAILABLE` |
-| **图形重绘** | `render_chart_image()` 从数据渲染表格/柱状/饼图为 PNG，再走标准替换通道；缺 matplotlib 或中文字体时返回明确状态 |
-| **模板兼容性分级** | `L1`–`L4`：从标准模板到 OLE / SmartArt / Chart / OMML 等只读保护区 |
-| **非破坏式改写** | 保留未映射的样式、`<w:proofErr>`、书签、域代码、共享图片 `rId`，不重建整篇文档 |
-| **Word 原生修订** | 文字改动写 `<w:ins>` / `<w:del>`，格式改动写 `w:*PrChange`，判断类问题写 `w:comment` |
-| **修订生命周期** | `list_revisions()` / `accept_revision()` / `reject_revision()` / `restore_revision()` |
-| **表格结构比对** | 列宽、`tblLayout`、边框、单元格边距、表头底纹、垂直对齐、行高、`tcW`、合并拓扑、单元格字体字号 |
-| **Decimal SSOT** | 金额、占比、分项求和用 `Decimal` 精确校验，不使用浮点 |
-| **诚实 QA** | 四态报告 + `issues` + `coverage_gaps` + `unverified_count` |
-| **进程收尾** | 自己启动的 `editor_sdk.exe` 由入口脚本自动清理，不锁定文档，不全局杀进程 |
+| **先理解模板，再动手** | 处理前先分析模板结构，标出需要填写的位置；如果关键内容无法确定，会先要求确认，避免“没看懂就改”。 |
+| **识别 8 种任务** | 根据输入文件和你的描述，自动判断是生成、修复、审阅、校对、重排还是 Excel 填充；其中 6 种已有执行入口。 |
+| **Word 原生修订** | 文字修改写成 Word 的“插入 / 删除”，格式修改写成 Word 的“格式修订”，判断类问题写成批注，能在 Word / WPS 里逐条接受或拒绝。 |
+| **尽量保留原格式** | 不重建整篇文档；未涉及到的样式、书签、域代码、页眉页脚、共享图片关系尽量不动。 |
+| **内容一致性检查** | 检查正文和表格的数字是否冲突、分项合计是否等于总数、同一名称是否有两种写法、日期和金额单位是否混用。 |
+| **表格结构比对** | 对比列宽、边框、表头底纹、垂直对齐、行高、合并单元格、单元格字体字号。 |
+| **金额精确计算** | 金额、占比、分项求和用精确小数计算，减少“差一分钱”的问题。 |
+| **Excel 可靠性处理** | 公式平移使用官方解析器；无法计算的公式标为“未验证”；`.xlsm` 尽量保留 VBA 宏；可能丢失对象时默认拒绝执行。 |
+| **事务式交付** | 先写临时文件，检查通过后再替换正式文件；失败不会留下半成品。 |
+| **诚实的检查报告** | 检查结果分四种状态；没执行、缺依赖或覆盖不足的检查会明确标出来。 |
+| **进程收尾** | 只清理本次任务自己启动的进程，不会全局强杀；无法证明归属的进程保持运行。 |
 
----
+## 适用场景
+
+- 学校、培训机构的培养方案、教学计划、课程表等固定模板文档。
+- 企业合同、项目报告、申请表、通知书等需要反复填写的 Word 模板。
+- 需要把修改交给别人逐条确认的审阅场景。
+- 需要保留公式和宏的 Excel 台账、报价单、统计表。
+- 已经有一份“格式正确”的模板，想把另一份草稿的格式对齐过来的场景。
+
+## 使用流程
+
+```text
+准备模板和资料
+      ↓
+识别任务类型（生成 / 修复 / 审阅 / 校对 / 重排 / Excel）
+      ↓
+分析模板并确认（不确定的地方先问你）
+      ↓
+生成或修改文档（写入临时文件）
+      ↓
+自动检查（结构 / 格式 / 内容 / 图片 / 版面）
+      ↓
+交付 .docx 或 .xlsx（需要时带 Word 修订和批注）
+```
+
+几个关键点：
+
+1. **先确认，再修改**：生成、修复、重排、审阅这四类任务，会先检查模板是否已经理解并确认；没有确认记录就不会继续。
+2. **修改留痕**：审阅和重排默认输出带修订的文档，不是一份“看不出改了什么”的成品。
+3. **检查结果分状态**：通过就是通过，没检查就是没检查，不会混在一起。
+
+## 安装方法
+
+### 环境要求
+
+- Python 3.9 或更高版本。
+- Windows 是主要验证平台；Linux / macOS 未在发布验证范围内。PDF 渲染和部分视觉检查依赖本机 WPS / LibreOffice。
+
+### 安装依赖
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+必需依赖：`python-docx`、`openpyxl`、`lxml`、`Pillow`、`jsonschema`。
+
+### 可选组件
+
+| 组件 | 用途 | 不安装时 |
+|---|---|---|
+| PyMuPDF | PDF 页面级差异比对 | 页数改用 WPS `pdfinfo`；像素级比对不可用 |
+| WPS Office | Word 转 PDF、读取真实页数 | 相关检查标为“未验证” |
+| LibreOffice | PDF 转换后备、Excel 重算 | 相关检查标为“未验证” |
+| RapidOCR / PaddleOCR / Tesseract | 读取图片里的文字 | OCR 检查标为 `OCR_UNAVAILABLE` |
+| matplotlib + 中文字体 | 把表格/柱状图/饼图渲染成图片 | 图表重绘不可用，不会输出乱码图 |
+
+### 作为 Agent Skill 使用
+
+把整个目录放进 Agent 的 skills 目录，例如：
+
+```text
+~/.claude/skills/officecli-template-filler
+```
+
+或 Trae 对应的 skills 路径。Agent 会根据 `SKILL.md` 自动判断任务类型和操作流程。
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 先判断该走哪个模式
 
 ```bash
-pip install -r requirements.txt
+python scripts/inspect_document.py --inputs template.docx --intent "按模板生成"
 ```
 
-可选组件：
-
-- **PyMuPDF**（`pip install pymupdf`）：用于 PDF 页面级差异比对（可选；缺失时页数改用 WPS `pdfinfo`）。
-- **WPS Office**（Windows，可选）：`kwpsconvert.exe word2pdf` 提供 PDF 转换、`pdfinfo` 提供真实页数；需要登录 WPS 账号并有 VIP，否则报 `WPS_VIP_REQUIRED`。
-- **LibreOffice**（可选，`soffice`）：WPS 缺失时的 PDF 转换后备，也用于 Excel 重算；缺失时相关检查标记为 `UNVERIFIED`。
-
-### 2. 作为 Agent Skill 使用
-
-把本目录放入 skills 目录（如 `~/.claude/skills/officecli-template-filler` 或 Trae 的 skills 路径），Agent 会依据 `SKILL.md` 自动路由任务。
-
-### 3. 直接用 CLI
+### 2. 生成 Word 文档（v4 主链）
 
 ```bash
-# 路由判断：先看输入该走哪个模式
-python scripts/inspect_document.py --inputs template.docx --intent "按模板生成"
-
-# v4.0 plan chain（GENERATE 默认）：spec 4.0 -> ContentPlan/FillPlan -> 执行器 -> QA/门禁
+# 分析模板，输出 DocumentSpec
 python scripts/analyze_template.py --input template.docx --spec-version 4 --out spec.json
-# ContentPlan/FillPlan 由 Agent 按 schemas/ 生成（可用 content_intelligence.build_*），并先校验
-python scripts/generate_document.py --template template.docx --spec spec.json `
-  --content-plan content_plan.json --plan fill_plan.json --out output.docx `
+
+# 由 Agent 或调用方生成 ContentPlan / FillPlan，并先校验
+python scripts/generate_document.py --template template.docx --spec spec.json \
+  --content-plan content_plan.json --plan fill_plan.json --out output.docx \
   --mode STANDARD --allow-unverified
+```
 
-# Legacy token mode（兼容路径，不是 v4 主链）
-python scripts/generate_document.py --template template.docx --data payload.json --out output.docx
+> 旧的 `--data payload.json` 仍然可用，但它是兼容路径，不是 v4 主链。
 
-# 按模板修复格式（双文档 REPAIR）
+### 3. 审阅文档并留下修订
+
+```bash
+python scripts/review_document.py --reference template.docx --target draft.docx \
+  --revisions revisions.json --out reviewed.docx
+```
+
+如果检查结果来自 Excel 或 JSON，可以直接转成目标文档里的批注：
+
+```bash
+python scripts/review_document.py --target draft.docx --findings findings.json --out reviewed.docx
+```
+
+### 4. 修复格式或按模板重排
+
+```bash
+# 双文档修复：保留内容，对齐模板格式
 python scripts/repair_document.py --reference template.docx --broken broken.docx --out repaired.docx
 
-# 按模板对齐格式（REFORMAT：先看差异清单，再应用为带修订的 .docx）
+# 重排：先看差异清单，再写成带修订的文档
 python scripts/reformat_document.py --reference template.docx --target draft.docx --plan-out plan.json --plan-only
 python scripts/reformat_document.py --reference template.docx --target draft.docx --out formatted.docx
+```
 
-# 审阅：输出可在 Word/WPS 中以修订模式打开的 .docx
-python scripts/review_document.py --reference template.docx --target draft.docx \
-    --revisions revisions.json --out reviewed.docx
+### 5. 填充 Excel
 
-# 审阅外部证据（Excel/JSON findings）：输出仍是目标方案正文，批注内联在原文
-python scripts/review_document.py --target draft.docx --findings findings.json --out reviewed.docx
-
-# Excel 模板填充（.xlsm 会保留 VBA 工程）
+```bash
 python scripts/generate_excel.py --template book.xlsx --data payload.json --out book_filled.xlsx
+```
 
-# 完整 QA（DOCX 包完整性 + 字体字号 + 表格 + 视觉 + 修订结构）
+`.xlsm` 会尽量保留 VBA 工程；如果模板里有 ActiveX、Power Query、透视表、切片器等 `openpyxl` 无法保留的对象，默认会拒绝执行，需要显式加 `--allow-object-loss`。
+
+### 6. 运行完整检查
+
+```bash
 python scripts/run_qa.py output.docx --reference template.docx --profile style-guide --task-mode GENERATE
 ```
 
----
+## 支持的文档处理任务
 
-## 任务模式
+| 任务 | 输入 | 输出 | 当前状态 |
+|---|---|---|---|
+| `GENERATE` | 1 个 `.docx` 模板 + 主题/资料/数据 | 填充后的 `.docx` | 可用 |
+| `EXCEL_GENERATE` | 1 个 `.xlsx` / `.xlsm` 模板 + 数据 | 填充后的工作簿 | 可用 |
+| `REPAIR` | 参考模板 + 待修复文档 | 格式对齐、内容不变的 `.docx` | 可用 |
+| `REVIEW` | 参考模板 + 待审文档，或外部 findings | 带修订和批注的 `.docx` | 可用 |
+| `PROOFREAD` | 单个 `.docx` | 带修订和批注的校对稿 | 可用 |
+| `REFORMAT` | 参考模板 + 待调整文档 | 格式差异清单 + 带格式修订的 `.docx` | 可用 |
+| `POLISH` | 单个草稿 | 措辞优化、版式保持 | 暂未开放 |
+| `MERGE` | 多个同格式来源或明确合并意图 | 汇总文档 | 暂未开放 |
 
-| 模式 | 输入 | 输出 |
+补充说明：
+
+- `.docx` + `.xlsx` 不会自动当成“合并”。如果是生成意图，`.docx` 是模板，`.xlsx` 是数据源，主模式仍是 `GENERATE`。
+- 双 `.docx` + “按模板修复格式”走 `REPAIR`；单个 `.docx` + “统一字体 / 重新排版”走 `REFORMAT`。
+- `POLISH` / `MERGE` 目前没有执行入口，会返回 `CAPABILITY_NOT_AVAILABLE`，不会被悄悄当成别的模式处理。
+
+## 文档检查与质量保障
+
+`scripts/run_qa.py` 的检查结果分四种状态：
+
+| 状态 | 含义 | 能不能交付 |
 |---|---|---|
-| `GENERATE` | 1 个 `.docx` 模板 + 主题/资料 | 填充后的 `.docx` |
-| `EXCEL_GENERATE` | 1 个 `.xlsx` / `.xlsm` 模板 + 数据 | 填充后的工作簿（保留公式与宏） |
-| `REPAIR` | 参考模板 + 待修复文档（2 个 `.docx`） | 格式对齐、内容不变的 `.docx` |
-| `REVIEW` | 参考模板 + 待审文档 | **带修订与批注的 `.docx`**，供人工逐条确认 |
-| `PROOFREAD` | 单个 `.docx` | **带修订与批注的 `.docx`**，校对错别字与数据问题 |
-| `POLISH` | 单个草稿 | 措辞优化、版式保持（执行入口规划中） |
-| `REFORMAT` | 参考模板 + 待调整文档（1–2 个 `.docx`）+ 排版意图 | **格式差异清单 + 带 `w:*PrChange` 修订的 `.docx`**，人工逐条接受/拒绝 |
-| `MERGE` | 显式合并/汇总意图，或多个同格式来源 | 汇总文档 |
+| `PASSED` | 没有高严重度问题；中低严重度问题列在警告里 | 可以交付，但要说明警告项 |
+| `PENDING_HUMAN_REVIEW` | 只剩有意留给人工确认的占位项 | 可以交付，但要说明待确认项 |
+| `UNVERIFIED` | 有检查没执行，或覆盖不足 | 不能声称“通过”，必须说明缺口 |
+| `FAILED` | 存在高严重度问题 | 不能交付 |
 
-> `.docx` + `.xlsx` 不再自动判 `MERGE`：生成意图下 `.xlsx` 作为 `data_sources` 数据源，主模式为 `GENERATE`；只有显式合并意图或无意图多源输入才走 `MERGE`。
+检查内容大致包括：
 
----
+- DOCX 包结构是否完整，图片引用、关系、内容类型是否正常。
+- 字体、字号、段落、对齐、缩进、行高、列宽是否偏离模板。
+- 表格结构、合并单元格、表头底纹、单元格字体是否一致。
+- 正文和表格的数字是否冲突，分项合计是否等于总数。
+- 名称、日期、金额单位的写法是否一致。
+- 图片是否是共享引用，SVG / VML / 外部链接图片是否处理正确。
+- Excel 公式是否能重新计算，宏和复杂对象是否可能丢失。
+- 页面数量、字体是否安装、PDF 渲染是否成功（依赖本机后端）。
 
-## QA 状态
+检查报告会同时给出：
 
-`scripts/run_qa.py` 返回四种状态，绝不用「没问题」混淆「没检查」：
+- `issues`：具体问题和位置。
+- `warnings`：中低严重度建议。
+- `coverage_gaps`：没有覆盖到的检查项。
+- `unverified_count`：未验证数量。
 
-| 状态 | 含义 | 交付策略 |
+## 当前版本
+
+截至 2026-11-07：
+
+| 类型 | 版本 | 状态 | 说明 |
+|---|---|---|---|
+| 公开稳定版 | **[v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1)** | GitHub Latest | 普通用户建议优先使用这个版本 |
+| 最新预发布 | **[v4.1.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.1.2)** | Pre-release（已发布） | 审阅结果可直接写成 Word 批注；稳定版仍建议 v4.0.1 |
+| 公开预发布 | **[v4.1.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.1.1)** | Pre-release | 只改了 Skill 文档，运行时行为与 v4.1.0 相同 |
+| Draft | **v4.1.0** | 未公开 | 模板理解闸门；Release 仍在 Draft |
+| 开发中 | **4.2.0** | 未发布 | 新增可选 officecli 写入后端，默认行为不变 |
+
+测试情况：
+
+- v4.1.2 本地构建包：**535 项通过**，契约测试 72 项通过。
+- 当前开发分支（4.2.0，未发布）：**653 项通过**，契约测试 72 项通过（2026-11-07 实测）。
+- v4.1.1：532 项通过；v4.0.1：479 项通过。
+
+### 版本号说明
+
+项目里同时有三个容易混淆的编号：
+
+| 编号 | 当前值 | 含义 |
 |---|---|---|
-| `PASSED` | 没有 `high` 级问题；`medium` / `low` 级问题列在 `warnings`，不阻断交付 | 可交付，需向用户说明警告项 |
-| `PENDING_HUMAN_REVIEW` | 仅剩有意留给人工的占位项 | 可交付，需说明待确认项 |
-| `UNVERIFIED` | 存在无法执行或覆盖不足的检查 | **不得声称通过**，须说明缺口 |
-| `FAILED` | 存在 `high` 级问题 | 不可交付 |
+| 软件版本 | v4.1.2（Pre-release）；4.2.0（开发中） | 用户通常说的“版本号”，对应 Git tag 和 Release |
+| 契约集版本 | 4.3.0 | 公共接口契约的集合版本，由多份契约和变更提案组成 |
+| 产物 `schema_version` | 4.0 | 生成的 JSON 产物使用的 Schema 版本 |
 
-报告同时包含：
+三者不是同一个编号体系。看到 `4.3.0` 时，它通常指契约集，不是软件版本。
 
-- `issues`：结构化问题（`code` / `location` / `detail` / `severity`）
-- `warnings` / `warning_count`：`medium` / `low` 级建议项
-- `comparison_profile`：`STYLE_GUIDE`（生成，按语义锚点对齐）或 `REPLICA`（修复/审核，按模板顺序）
-- `alignment`：匹配/新增/删除的段落与表格
-- `coverage_gaps`：未能覆盖的检查项
-- `unverified_count`：未验证数量
+真实文档验证：
 
----
-
-## 设计原则
-
-1. **不猜位置**：修订目标优先用 `location_id` 精确定位；多处匹配且未指定 `occurrence` 时**拒绝自动修改**，转为批注请人工确认。
-2. **不静默改格式**：`REVIEW` 中每一处格式恢复都会写入 Word 格式修订（`w:rPrChange` / `w:pPrChange` / `w:tblPrChange` / `w:tcPrChange`），人工可逐条接受或拒绝。
-3. **不破坏结构**：替换只在连续纯文本 Run 内进行；超链接、内容控件、域代码容器绝不移动位置；含图片/域的 Run 拒绝拆分。
-4. **不越界收尾**：只终止本任务记录为启动且身份可验证的进程；任务期间新出现但无法证明归属的进程计入 `unowned_pids`，保持运行，绝不强杀。
-5. **不用断言做校验**：所有质量门禁抛出真实异常（`SSOTValidationError` / `QAValidationError`），`python -O` 下依然生效。
-
----
-
-## 目录结构
-
-```
-officecli-template-filler/
-├── AGENTS.md             # 项目级开发规则（权威版本）
-├── README.md             # 项目介绍与使用说明
-├── CHANGELOG.md          # 版本变更记录
-├── SKILL.md              # Agent 使用规范与流程约束
-├── contracts/            # v4.0 契约集（4.3.0，含 Contract 06 Gate）与变更提案
-├── config/               # QA 策略、错误码、环境能力与输入配额
-├── engine/               # v3.5.9 核心引擎（OOXML / 表格 / 审阅 / QA / Excel / SSOT）
-├── template_intelligence/# DocumentSpec 4.0 生产、槽位、指纹与语义校验
-├── content_intelligence/ # ContentPlan / FillPlan 构建与校验
-├── document_engine/      # FillPlan 执行器、填充台账与事务衔接
-├── qa/                   # QAReport 4.0、QA Gate、Pipeline 与环境探测
-├── scripts/              # CLI 入口（路由、生成、修复、审阅、QA、渲染、清理）
-├── schemas/              # JSON Schema（3.0 兼容与 4.0 契约）
-├── references/           # 引擎实现参考
-├── reports/              # W0–W3 验收、门禁与问题记录
-└── tests/                # 单元、契约、回归与端到端测试
-```
-
----
-
-## 测试
-
-```bash
-python -m unittest discover -s tests -p "test_*.py"
-```
-
-当前完整套件：**532 项通过**（v3.5.9 基线、W0 契约、W1–W3 回归、W4 闸门与端到端测试共同计入）。
-
----
-
-## 历史版本
-
-各版本的打包文件发布在 [Releases](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases)，仓库内不再保留归档副本；变更细节见 [CHANGELOG.md](CHANGELOG.md)。
-
-| 版本 | 下载 | 要点 |
-|---|---|---|
-| v4.1.2 | 本地构建包（`dist/officecli-template-filler-v4.1.2.zip`） | REVIEW 外部证据路径：`--findings` 将 Excel/JSON findings 转为目标 Word 的内联批注；不再交付独立核查报告 |
-| v4.1.1 | 本地构建包（`dist/officecli-template-filler-v4.1.1.zip`） | Skill 文档补丁：精简 SKILL.md、新增 `references/workflow-details.md`；运行时行为、契约与 Schema 不变 |
-| v4.1.0 | 本地构建包（`dist/officecli-template-filler-v4.1.0.zip`） | W4 Template Understanding Gate：证据四态、状态机、Analysis Report、Confirmation Store、执行入口强制校验；契约集 4.3.0 |
-| v4.0.2 | 本地构建包（尚未发布 Release） | 供应链风险修复：删除第三方镜像安装脚本与 `dist/` 归档副本；静态检查清理；SKILL.md 精简 |
-| v4.0.1 | [Release v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1) | v4.0.0 稳定版补丁：移除测试中残留的外部语料正文，统一测试计数，补齐真实语料报告可复现信息 |
-| v4.0.0 | [Release v4.0.0](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.0) | v4 文档主链（DocumentSpec 4.0 → 计划 → 事务执行 → QA 门禁）、契约集 4.2.0、真实语料无损评测、授权填充零结构漂移 |
-| v3.5.9 | [Release v3.5.9](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.9) | 按角色定位图片、可选 OCR、图形重绘、流程闭环（MUST_ASK_USER、自动文字 diff、校对自动检查、SSOT 证据）与 workflow 编排辅助 |
-| v3.5.8 | [Release v3.5.8](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.8) | 内容真值 QA（数值冲突/合计闭合/名称漂移）、SVG 双嵌入修复、VML 图片替换、矢量图显式未验证、事实溯源校验 |
-| v3.5.7 | [Release v3.5.7](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.7) | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 路径与真实页数测量 |
-| v3.5.6 | 已并入 v3.5.7 | 路由角色化（docx+xlsx 数据源不再误判 MERGE）、语义对齐 QA、严重级门禁、字体名归一、文件锁报告 |
-| v3.5.5 | [Release v3.5.5](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.5) | REVIEW 修订 ID 唯一性修复、修订/批注感知的版面 QA、全链路功能验证 |
-| v3.5.4 | [Release v3.5.4](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.4) | 进程所有权收紧（无 spawn 证明不终止）、GENERATE/REPAIR 事务 QA 补齐、QA 状态诚实性修正 |
-| v3.5.3 | [Release v3.5.3](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.3) | FAST/STANDARD/FULL、培养方案语义预检、分阶段检查点、渲染与目录降级（编排层） |
-| v3.5.2 | [Release v3.5.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.5.2) | Excel Translator 与对象预检、版面指纹 QA、进程所有权、PROOFREAD、合并安全写入 |
-| v3.5.0 | 已并入 v3.5.2 | 事务化交付、修订生命周期与快照、表格签名收紧、能力注册表 |
-| v3.4.2 | [Release v3.4.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.2) | 修订 ID 真实一致、超链接结构保护、定位防误改、XLSM 保宏、QA 四态 |
-| v3.4.1 | [Release v3.4.1-archive](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v3.4.1-archive) | 格式修复写入 Word 原生格式修订痕迹 |
-
----
+- v4.0.0 曾用 46 份外部真实 `.docx` 做无损验证：解析 46/46、模板字节 0 改动、0 个 Spec 校验失败；21 份可填模板全部完成填充并提交（12 份 `PASSED`，9 份因浮动图片覆盖缺口如实标为 `UNVERIFIED`）。
+- v4.1.x 尚未在模板闸门链路重跑这批真实语料，因此不能把上述结果直接当作 v4.1.2 的验证结论。
 
 ## 已知限制
 
-- `POLISH` / `MERGE` 目前没有独立执行入口，路由返回 `CAPABILITY_NOT_AVAILABLE`，不再让 Agent 自行挑选脚本。
-- 图片内文字需要额外安装 OCR 后端（RapidOCR / PaddleOCR / Tesseract）；未安装时 `run_qa.py --ocr` 报 `OCR_UNAVAILABLE`，默认不执行这一项。
-- 图形重绘需要 matplotlib，中文标签还需要本机 CJK 字体；缺失时返回 `RENDER_BACKEND_UNAVAILABLE` / `CJK_FONT_UNAVAILABLE`，不会输出乱码图。
-- SVG/EMF/WMF 等矢量图无法字节级校验，替换后只能报告 `VECTOR_IMAGE_UNVERIFIED`，渲染结果需人工或 PDF 比对确认。
-- Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象不会被 `openpyxl` 保留：`inspect_excel_objects()` 会预检，`generate_excel.py` 默认以 `OBJECT_LOSS_RISK` 拒绝执行，需显式加 `--allow-object-loss`。
-- 版面 QA 使用 DOCX 版面指纹（字体、字号、对齐、缩进、表格列宽、图片比例），不承诺逐像素一致；像素级比对仍需本机 LibreOffice + PyMuPDF。
-- 进程清理只终止能证明归属的实例；读取不到进程创建时间时记入 `unreleased_pids`，不做猜测性终止。
-- 视觉 QA 依赖本机 PDF 后端：优先 WPS `kwpsconvert word2pdf` + `pdfinfo`，其次 LibreOffice；两者都没有时状态为 `UNVERIFIED`，不是通过。像素级页面比对仍需 PyMuPDF。
-- 不承诺与 Word/WPS 逐像素一致；`L4` 对象只做只读保留并在 `coverage_gaps` 中列明。
+- `POLISH` / `MERGE` 还没有独立执行入口，会返回 `CAPABILITY_NOT_AVAILABLE`。
+- 不支持在 Word 内容控件（SDT）内部填充；SDT 只作为“受保护位置”被发现并拒绝修改。
+- 图片里的文字需要额外安装 OCR 后端；没安装时 `run_qa.py --ocr` 会报 `OCR_UNAVAILABLE`，默认不执行这项检查。
+- 图表重绘需要 matplotlib；中文标签还需要本机安装中文字体，否则返回明确状态，不会输出乱码图。
+- SVG / EMF / WMF 等矢量图无法做字节级校验，替换后只能报告 `VECTOR_IMAGE_UNVERIFIED`，需要人工或 PDF 比对确认。
+- Excel 的 ActiveX、Power Query、透视表、切片器等复杂对象不会被 `openpyxl` 保留；默认会以 `OBJECT_LOSS_RISK` 拒绝执行，需要显式允许对象丢失。
+- 版面检查使用 DOCX 版面指纹（字体、字号、对齐、缩进、列宽、图片比例），不承诺逐像素一致；像素级比对需要本机 LibreOffice + PyMuPDF。
+- 视觉检查依赖本机 PDF 后端（WPS 或 LibreOffice）；两者都没有时状态是 `UNVERIFIED`，不是通过。
+- 进程清理只终止能证明由本次任务启动的实例；无法证明归属的进程会保留，不做猜测性终止。
+- 不承诺与 Word / WPS 逐像素一致；Chart、SmartArt、OLE 等复杂对象只做只读保留，并在 `coverage_gaps` 中列明。
 
----
+## 历史版本
 
-## 路线图
+各版本的发布包和说明见 [Releases](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases)，完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-v4.0 聚焦「契约化、可验证、可回滚的模板填充」：DocumentSpec → ContentPlan/FillPlan → 事务执行 → QAReport → 提交门禁的统一链路。当前处于 W3 修复波，出口条件是 W3-9 真实语料验证、P2-01/P2-04 审计环境复验和 Agent 07 出口评审；未满足前不宣布 Alpha。
-
----
+| 版本 | 状态 | 主要变化 |
+|---|---|---|
+| 4.2.0 | 开发中，未发布 | 新增可选 officecli 写入后端和后端适配层；默认仍走 python-docx，行为不变 |
+| v4.1.2 | 预发布 | 审阅时可以把 Excel/JSON 检查结果直接写成目标 Word 的批注，不再单独交付一份“核查报告” |
+| v4.1.1 | 预发布 | 精简 Skill 文档，把工作流细节移到 `references/`；不改运行时行为 |
+| v4.1.0 | Draft | 新增模板理解与确认闸门：先理解模板，再允许生成、修复、重排、审阅 |
+| v4.0.2 | 未发布 | 删除两个有供应链风险的第三方下载脚本，清理历史归档，修复静态检查问题 |
+| v4.0.1 | 正式版（Latest） | v4.0.0 合规补丁：移除测试中残留的外部语料，统一测试计数，补齐真实语料报告信息 |
+| v4.0.0 | 正式版 | 首个 v4 稳定版：DocumentSpec → 计划 → 事务执行 → 检查 → 提交；46 份真实文档无损验证 |
+| v4.0.0-dev.1 | 预发布 | v4 文档主链和 W3 加固的开发快照，不是 Alpha |
+| v3.5.9 | 正式版 | 按角色定位图片、可选 OCR、图表重绘、内部事实确认、审阅自动文字修订、校对自动检查、工作流编排辅助 |
+| v3.5.8 | 正式版 | 内容真值检查、SVG/VML 图片修复、矢量图显式标为未验证、事实来源检查 |
+| v3.5.7 | 正式版 | REFORMAT 差异清单与带修订应用、WPS/LibreOffice PDF 渲染与真实页数测量（含 v3.5.6 修复） |
+| v3.5.6 | 未单独发布 | 路由不再把 `.docx + .xlsx` 误判为合并；语义对齐、严重级门禁、字体名归一、文件锁报告；内容随 v3.5.7 发布 |
+| v3.5.5 | 正式版 | 修复审阅修订 ID 冲突和版面检查误报；20 个端到端场景验证 |
+| v3.5.4 | 正式版 | 收紧进程清理权限；补齐生成和修复的事务检查；修正检查状态 |
+| v3.5.3 | 正式版 | 增加 FAST / STANDARD / FULL 执行档位、培养方案语义预检、分阶段检查点、渲染和目录降级 |
+| v3.5.2 | 正式版 | Excel 公式与对象预检、版面指纹、进程身份、PROOFREAD 模式、合并单元格安全写入（含 v3.5.0 事务层） |
+| v3.5.0 | 未单独发布 | 事务化交付、修订生命周期与快照、表格签名、能力注册表；内容随 v3.5.2 发布 |
+| v3.4.2 | 正式版 | 审阅修订 ID 真实一致、超链接结构保护、定位防误改、XLSM 保宏、检查四态 |
+| v3.4.1 | 归档版 | 恢复格式时写入 Word 原生格式修订，可在修订窗格逐条接受或拒绝 |
+| v3.4.0 | 未单独发布 | 表格逐单元格字体字号一致性、单元格结构记录、修订生命周期；内容在 v3.4.2 中 |
+| v3.3.1 | 未单独发布 | 明确审阅交付物必须是可修订的 `.docx`；未定位修改转批注；结构化检查报告；内容在 v3.4.2 中 |
 
 ## License
 
