@@ -9,7 +9,7 @@
 - **版本状态**：正式版、预发布、Draft（未公开）、未发布、未单独发布。
 - **测试数字**：指该版本发布时记录的全量测试数，不代表当前开发分支的测试数。
 - **契约集版本**：公共接口契约的版本，和软件版本不是一回事；产物里的 `schema_version` 又是另一个版本号。
-- 当前开发分支与最新发布均为 **v4.2.0**，2026-11-07 实测 **692 项通过**（含契约 76 项）；v4.1.2 本地构建包记录为 **535 项通过**。
+- 当前开发分支与最新发布均为 **v4.2.1**，2026-11-07 实测 **692 项通过**（含契约 76 项）；v4.1.2 本地构建包记录为 **535 项通过**。
 
 ### 名词说明
 
@@ -26,6 +26,7 @@
 
 | 版本 | 日期 | 状态 | 一句话说明 |
 |---|---|---|---|
+| v4.2.1 | 2026-11-07 | 正式版 | CI 跨平台修复：UTF-8、短路径、Python 3.12 时间/摘要 |
 | v4.2.0 | 2026-11-07 | 正式版 | 安全与 QA 收口；新增可选 officecli 写入后端 |
 | v4.1.2 | 2026-11-07 | 预发布 | 审阅时可以把外部检查结果直接写成 Word 批注 |
 | v4.1.1 | 2026-11-06 | 预发布 | 只精简 Skill 文档，不改运行时行为 |
@@ -49,6 +50,40 @@
 | v3.3.1 | — | 未单独发布 | 审阅交付契约、结构化 QA；内容在 v3.4.2 |
 
 > v3.5.1 没有 tag、Release 或 CHANGELOG 记录，版本序列从 v3.5.0 直接到 v3.5.2。
+
+---
+
+## v4.2.1（2026-11-07，正式版）
+
+> 状态：正式版。软件版本 4.2.1；契约集 4.3.0；产物 `schema_version` 4.0。
+> 本版本只修复 v4.2.0 首次 CI 运行暴露的跨平台问题，不改变 CLI 参数、契约字段或默认行为。
+
+### 问题修复
+
+- **Windows CI 的 UTF-8 输出**：子进程默认使用 cp1252，输出中文时抛 `UnicodeEncodeError`，导致 analyze / generate / QA 等 8 个 CLI 测试失败。`scripts/run_tests.py` 现在为自身和所有子进程设置 `PYTHONIOENCODING=utf-8` / `PYTHONUTF8=1`，CI 工作流也显式设置同一环境变量。
+- **Windows 8.3 短路径**：GitHub Runner 的 `TEMP` 是 `RUNNER~1` 短路径，而测试期望 `resolve()` 后的长路径。两处路径断言改为双侧 `resolve()`。
+- **Python 3.12 拒绝 `24:00:00`**：`datetime.fromisoformat` 在不同解释器上对 ISO-8601 的 end-of-day 形式接受度不一致。`_validate_verified_at` 在解析前把 `T24:00:00` 归一化为 `T00:00:00`，使 3.10–3.14 的判定一致；保存的仍是调用方原始字符串。
+- **Windows 时钟精度导致摘要测试偶发失败**：连续两次 `datetime.now()` 可能落在同一微秒。测试改为断言真正的不变量——`report_digest` 忽略 `generated_at`，并显式篡改时间戳验证摘要不变。
+- **Ubuntu 字体假设**：两个视觉 QA 测试要求本机安装宋体、Times New Roman 等字体。断言改为宿主无关的不变量：`missing` 必须是 `requested` 的子集，且不存在的字体必须被报告。
+
+### 测试
+
+- 全量：**692 项通过，0 失败 / 0 错误**（243s，Windows 11 / Python 3.14.10）。
+- GitHub Actions：**6/6 job 通过**（Ubuntu + Windows × Python 3.10 + 3.12 的 fast profile，以及两个 external job）。
+- 契约测试：76 项通过；Ruff 0.17.4：`All checks passed`。
+
+### 破坏性变更
+
+- 无。CLI 参数、默认行为、契约字段与 `schema_version` 均未变化。
+
+### 已知限制
+
+- 与 v4.2.0 相同：officecli 仅覆盖 `.docx` 三类文字操作；`document_backends/` 仍为 `EXPERIMENTAL_NOT_WIRED`；POLISH / MERGE 无入口；SDT 内填充不开放；视觉检查依赖 WPS/LibreOffice；Linux/macOS 仅通过 CI fast profile 验证，未做真实文档发布验证。
+
+### 发布资产
+
+- `officecli-template-filler-v4.2.1.zip`
+- SHA-256 与大小见 Release 页面及 `reports/acceptance/w5-package-manifest-v4.2.1.md`。
 
 ---
 
