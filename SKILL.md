@@ -336,6 +336,41 @@ Every entrypoint ends with a `transaction` object:
 
 For `STANDARD` / `FULL`, persist `content → tables → images → toc` checkpoints with `WorkflowCheckpointStore`; a failed stage resumes from the last valid checkpoint and never redoes a successful earlier stage. One bounded render attempt per stage; missing rendering or TOC verification becomes `coverage_gaps` / `UNVERIFIED`, never a pass. The full checkpoint, renderer fallback and `PENDING_FIELD_UPDATE` rules are in [`references/workflow-details.md`](references/workflow-details.md) §2–3.
 
+#### Step 4B: Direct Review Deliverable — Word + Excel, No Report
+
+Use this flow when the user asks for a **review draft** rather than a review report. The deliverable is the document itself; a separate `审查报告*.docx` / `核查报告*.docx` / Markdown checklist is a failure mode.
+
+1. **Route the target, do not infer from the verb.**
+   - 1 `.docx` → `PROOFREAD`.
+   - 2 `.docx` (reference + target) → `REVIEW`.
+   - findings JSON → `REVIEW --findings`.
+   - A single `.docx` must not be routed to `GENERATE` just because the intent contains “生成/输出”; the object being delivered is a reviewed copy, not a newly generated document.
+2. **Deliverable contract.**
+   - Produce the `.docx` with native `w:ins` / `w:del` and optional comments; WPS/Word must open it in revision mode for per-item accept/reject.
+   - Do **not** create a separate report document. `review_report.json` / `proofread_report.json` are optional audit sidecars and must stay outside the delivery folder.
+   - Keep `<deliverable>.review_snapshot.json` next to the document until the user finishes deciding; it is a restore helper, not a report.
+3. **Write only explicit, objective revisions.**
+   - `revisions.json` is a list of `{"old_text": "...", "new_text": "...", "reason": "..."}`.
+   - Each `old_text` must match exactly one paragraph. If it occurs more than once, supply `location_id` (`body.p[3]`, `body.tbl[1].r[2].c[3]`) or `occurrence`; otherwise the engine leaves a comment instead of guessing.
+   - Safe scope: typos, grammar particles, punctuation, unit spacing and superscripts, table-header units. Do not invent facts, numbers or conclusions; leave ambiguous wording unchanged or as a comment.
+   - Example:
+   ```powershell
+   python scripts/proofread_document.py --target "$INPUT_DOCX" --out "$OUTPUT_DOCX" `
+       --revisions "$TEMP/revisions.json" --author "OfficeCLI Reviewer" --no-auto-check
+   ```
+4. **Handle pre-existing package defects without touching the source.**
+   - If package QA blocks on `PACKAGE_SPACE_PRESERVE_MISSING`, make a working copy and add `xml:space="preserve"` to every `w:t` with leading/trailing/double spaces; proofread the copy, never the read-only source.
+   - A source defect that already existed must be disclosed, not hidden by lowering the QA threshold.
+5. **Verify before delivering.**
+   - `run_qa.py "$OUTPUT_DOCX" --review --reference "$REFERENCE_DOCX" --profile replica --task-mode REVIEW` (for PROOFREAD, omit the reference).
+   - Require `review_qa.passed`, package integrity and `REVIEW_INTEGRITY`; report the `w:ins` / `w:del` / comment counts and any `UNRESOLVED` item.
+6. **If an `.xlsx` is present, produce a revised workbook.**
+   - Token template → `EXCEL_GENERATE`; otherwise make minimal, verifiable consistency fixes (missing rows, broken references, inconsistent summaries) with `openpyxl`.
+   - Always write a new file; never overwrite the source.
+   - Preserve formulas, styles and data validations; do not fabricate values or silently drop objects. `openpyxl` does not retain cached formula results — formulas recalculate on open; charts, macros and pivots may be lost and must be refused or disclosed as `OBJECT_LOSS_RISK`.
+   - Verify the result: formula count, data-validation count, row/column coverage, and that every added formula follows the existing pattern.
+7. **Final answer.** List deliverable paths, what changed, and any item left unchanged because it was ambiguous. Do not attach or generate a review report.
+
 ### Step 5: Mandatory Package, Format, Formula & Visual QA
 ```powershell
 # GENERATE / EXCEL_GENERATE: template is a style guide; content volume may change
