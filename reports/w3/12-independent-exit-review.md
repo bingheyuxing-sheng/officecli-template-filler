@@ -77,7 +77,7 @@ py -3.15 -m unittest test_pdf_hygiene test_excel_status_merge test_sdt_detection
 
 - 归档文件 214 个；发布包文件均匹配（`DIFF` 0 条）。
 - 仅 11 个 `dist\*.zip` 历史归档被发布包按设计排除。
-- `reports/w3/11-package-manifest.md` 按设计自排除。
+- `reports/acceptance/w3-11-package-manifest-v4.0.0.md` 按设计自排除。
 - 结论：发布包内容对应 `e50f27c`，tag `8a4f7ab` 包含该包与清单提交。
 
 ---
@@ -177,7 +177,7 @@ py -3.15 -c "<zipfile 扫描 word/*.xml、xl/*.xml>"
 | SHA-256 | `2c22cf4c20ebfb571516a9f2e11e7e0e725e3c7fbe983d78ea42497367207719` |
 | 条目数 | 243 |
 | 前缀 | `officecli-template-filler/` |
-| manifest | `reports/w3/11-package-manifest.md:14-17` 与上述完全一致 |
+| manifest | `reports/acceptance/w3-11-package-manifest-v4.0.0.md:14-17` 与上述完全一致 |
 | 包内顶层 | `AGENTS.md`、`LICENSE`、`README.md`、`SKILL.md`、`requirements*.txt` 等 |
 | 包内排除 | `dist/`、`.git/`、缓存、清单自身 |
 
@@ -254,7 +254,7 @@ Select-String -Path tests/test_fill_fidelity_inplace.py -Pattern "exam template"
 - 证据：
   - 当前环境 `soffice` 不存在；OS 为 Windows。
   - `reports/w3/10-exit-review.md:92-96` 明确 Linux/LibreOffice 未验证。
-  - `reports/w3/audit-triage.md` 将 P2-01/P2-04 的关闭条件定义为审计环境复跑。
+  - `reports/development/w3-audit-triage.md` 将 P2-01/P2-04 的关闭条件定义为审计环境复跑。
 - 影响：W3 出口条件 4 不满足；无法宣称 P2-01/P2-04 已关闭。
 - 最小修复建议：在 Linux/LibreOffice 审计环境运行完整套件及 `test_excel_reliability.py` 两项宿主机相关测试，保存命令、环境、总数、耗时、日志；完成后由 Agent 07 复核。代码本身不需要为此改动。
 
@@ -332,7 +332,7 @@ Select-String -Path tests/test_fill_fidelity_inplace.py -Pattern "exam template"
 - 继承降级：`qa/pipeline.py:292-354`；`engine/qa_engine.py:301-312,805-812`
 - 视觉档位：`qa/pipeline.py:439,483,685`；`engine/qa_engine.py:1235-1241`；`engine/layout_qa.py:208-231`
 - Excel：`engine/excel_spec.py:23,110-135`
-- 发布清单：`reports/w3/11-package-manifest.md:10-18`
+- 发布清单：`reports/acceptance/w3-11-package-manifest-v4.0.0.md:10-18`
 - 出口自评：`reports/w3/10-exit-review.md:92-102`
 - B1 位置：`tests/test_residual_inheritance.py:4`；`tests/test_fill_fidelity_inplace.py:284,294,307`
 </content>

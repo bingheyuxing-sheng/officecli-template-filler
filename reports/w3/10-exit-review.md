@@ -81,7 +81,7 @@
 ## 5. 发布包与一致性
 
 - 发布包：`dist/officecli-template-filler-v4.0.0.zip`（`git archive` 构建，排除 `dist/`、`.git/`、缓存与本清单自身）。
-- 校验值、条目数与内容核对见 `reports/w3/11-package-manifest.md`。
+- 校验值、条目数与内容核对见 `reports/acceptance/w3-11-package-manifest-v4.0.0.md`。
 - 包内不含真实用户文档；`tests/fixtures` 均为合成/结构化样本。
 - 版本一致性：`engine.__version__`、`CHANGELOG.md`、`README.md`、`SKILL.md`、`references/python-docx-engine.md`、发布 tag 均为 `4.0.0`；契约集保持 `4.2.0`，产物 `schema_version` 保持 `4.0`。
 

@@ -79,7 +79,7 @@ Gate Record 绑定：模板 SHA-256、DocumentSpec digest、四类指纹、evide
 - 条目：234
 - SHA-256：`6451954c14258fb78b17f7b6eb9938a5d1ac490cbb73ec5e88fb423068c7f71a`
 - 核对：不含 `.git/`、`dist/`、`__pycache__`、`.pyc`、真实语料；包含 `template_gate/`、Contract 06、3 个 Schema、W4 测试与审计/实施记录。
-- 详细清单：`reports/w4/w4-package-manifest.md`
+- 详细清单：`reports/acceptance/w4-package-manifest-v4.1.0.md`
 
 ---
 

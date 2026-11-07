@@ -7,7 +7,7 @@
 - Independent gate: `reports/w0/07-gate-review.md`
 - Decision: **FROZEN** (formal, not conditional)
 
-> Historical record: this report freezes contract set **4.0.0**. The current set is **4.2.0** (CP-W2-001/002; see `contracts/README.md` and `reports/w3/04b-manifest.md`). OI-01/OI-03/OI-05 were closed in W1/W2 (`reports/w0/issues.md`). The hashes in §5 are the 4.0.0 freeze evidence, not hashes of the current files.
+> Historical record: this report freezes contract set **4.0.0**. The current set is **4.2.0** (CP-W2-001/002; see `contracts/README.md` and `reports/development/w3-04b-manifest.md`). OI-01/OI-03/OI-05 were closed in W1/W2 (`reports/w0/issues.md`). The hashes in §5 are the 4.0.0 freeze evidence, not hashes of the current files.
 
 ## 1. Scope delivered
 

@@ -4,7 +4,7 @@
 - 产物：`dist/officecli-template-filler-v4.0.1.zip`
 - 来源：`git archive`，源提交 `b4b1625`（`docs(release): record v4.0.1 B1 closure evidence`）
 - 发布级别：**稳定版补丁**（GitHub Release Latest stable）
-- 自引用处理：本清单不进入包内（`:(exclude)reports/w3/14-package-manifest-v4.0.1.md`），`dist/` 整体排除
+- 自引用处理：本清单不进入包内（`:(exclude)reports/acceptance/w3-14-package-manifest-v4.0.1.md`），`dist/` 整体排除
 - 说明：tag `v4.0.1` 指向包含本清单与 zip 的提交；zip 内容对应该提交之前的源提交 `b4b1625`，差异仅为清单与 zip 自身
 
 ## 校验值

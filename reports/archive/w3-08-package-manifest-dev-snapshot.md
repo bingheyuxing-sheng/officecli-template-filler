@@ -5,7 +5,7 @@
 - 来源：`git archive HEAD`（commit `ca7a4df`，含 W3-8 文档同步、全量 Markdown 清理与发布预检路径修正）
 - 性质：**开发快照，不是正式发布**；无 tag、无 Release、未 push
 - 版本关系：本包取代此前两次 dev 构建（旧 SHA-256 `8266d550…` / `f12b90f4…`）；旧包不再作为当前交付物
-- 自引用处理：本清单文件不进入包内（`:(exclude)reports/w3/08-package-manifest.md`），否则清单记录自身哈希会形成循环依赖
+- 自引用处理：本清单文件不进入包内（`:(exclude)reports/archive/w3-08-package-manifest-dev-snapshot.md`），否则清单记录自身哈希会形成循环依赖
 
 ## 校验值
 

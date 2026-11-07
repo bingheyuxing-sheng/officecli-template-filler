@@ -6,7 +6,7 @@
 
 ## W4-0 架构审计
 
-- 交付：`reports/w4/w4-0-architecture-audit.md`
+- 交付：`reports/development/w4-0-architecture-audit.md`
 - 结论：`PASS`
 - 关键事实：所有正式执行入口（CLI、Python API、legacy `--data`）在 W4 前均无模板确认校验；DocumentSpec 4.0 结构摘要不覆盖段距/行距/边框/底纹/页码/页数；无 evidence registry、Gate Record、状态机或闸门错误码。
 - 实测：全量 479 项通过；契约 70 项通过。

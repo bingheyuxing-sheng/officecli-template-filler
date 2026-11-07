@@ -4,7 +4,7 @@
 - 产物：`dist/officecli-template-filler-v4.0.0.zip`
 - 来源：`git archive`，源提交 `e50f27c`（`release: v4.0.0 stable`）
 - 发布级别：**稳定版**（GitHub Release 标记 Latest stable）
-- 自引用处理：本清单不进入包内（`:(exclude)reports/w3/11-package-manifest.md`），`dist/` 整体排除
+- 自引用处理：本清单不进入包内（`:(exclude)reports/acceptance/w3-11-package-manifest-v4.0.0.md`），`dist/` 整体排除
 - 说明：本清单与 zip 作为发布提交的一部分提交；tag `v4.0.0` 指向包含它们的提交，而 zip 内容对应其上一条源提交 `e50f27c`，两者差异仅为清单与 zip 自身
 
 ## 校验值

@@ -18,6 +18,6 @@
 
 ## 冻结决定
 
-**契约集 4.2.0 可由 Agent 05 于 2026-11-05 正式冻结。** 冻结时须：更新 Contract 01/02 状态行、README 头部 `4.1.0 → 4.2.0` 且 4.2.0 行改为 “frozen”、重算并复核 `reports/w3/04b-manifest.md` 的 SHA-256（02/CP 文本已变）、在 CP §7 记录本复审。
+**契约集 4.2.0 可由 Agent 05 于 2026-11-05 正式冻结。** 冻结时须：更新 Contract 01/02 状态行、README 头部 `4.1.0 → 4.2.0` 且 4.2.0 行改为 “frozen”、重算并复核 `reports/development/w3-04b-manifest.md` 的 SHA-256（02/CP 文本已变）、在 CP §7 记录本复审。
 
 非阻断：`LOCATION_RE` 仍接受任意 `[a-z_]+`；单个 header/footer 异常 `continue`；空/仅嵌套容器 `SDT_BODY_EMPTY` 措辞；class_05 fixture 仅 stat 变化。

@@ -1,6 +1,6 @@
 # W3 修复任务书（Remediation Task Book）
 
-- 依据：`reports/w3/audit-triage.md`（审计核查裁定）
+- 依据：`reports/development/w3-audit-triage.md`（审计核查裁定）
 - 版本基线：契约集 **4.2.0**（W3-4 完成后冻结）；代码 HEAD 含 W0–W2 + W3 修复 + dev 包
 - 批准：主智能体；本任务书为 W3 唯一工作清单，未列入项不得顺手实施（AGENTS §5）
 
@@ -100,7 +100,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 修改 | ① 工作区 `AGENTS.md` 复制入仓库根并更新基线段（契约集版本按 W3 推进实况：4.1.0→4.2.0；W1/W2 完成、W3 进行中）；② `CHANGELOG.md` 增 v4.0.0-dev 条目（W0/W1/W2/审计修复，区分契约版本与软件版本）；③ `README.md` v4 章节；④ `reports/w2/w2-acceptance.md` 追加“更正记录”节：real-template → 结构化回归 Fixture；补记跨环境未验证；**不改写历史正文**；⑤ 重新打包 skill zip 时包含 AGENTS.md，剔除 dist |
+| 修改 | ① 工作区 `AGENTS.md` 复制入仓库根并更新基线段（契约集版本按 W3 推进实况：4.1.0→4.2.0；W1/W2 完成、W3 进行中）；② `CHANGELOG.md` 增 v4.0.0-dev 条目（W0/W1/W2/审计修复，区分契约版本与软件版本）；③ `README.md` v4 章节；④ `reports/acceptance/w2-acceptance.md` 追加“更正记录”节：real-template → 结构化回归 Fixture；补记跨环境未验证；**不改写历史正文**；⑤ 重新打包 skill zip 时包含 AGENTS.md，剔除 dist |
 | Owner | 05 |
 | 验收 | 包内文件清单核对；文档间版本号一致 |
 | 07 复核 | 抽查（措辞更正是否忠实） |

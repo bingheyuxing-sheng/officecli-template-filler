@@ -41,7 +41,7 @@
 - **Impact:** cross-field rules (policy binding, slot uniqueness, region containment, overflow) are proven expressible but not enforced at runtime.
 - **Acceptance:** runtime validators under `content_intelligence/` and `qa/gate.py`; `transaction.py` refuses commit when a required check was not executed.
 - **Owner:** Agents 01–04. **Target:** W1 (validators) / W2 (gate wiring).
-- **Resolution (W1/W2):** `spec_validator`, plan validators and `qa.gate` exist and run end-to-end; `DocumentTransaction.record_gate` binds the QA report to the staged hash and refuses stale or ineligible reports. Evidence: `reports/w1/w1-acceptance.md` §6; `reports/w2/w2-acceptance.md` §5; `test_transaction_gate.py` (9 tests). **CLOSED.**
+- **Resolution (W1/W2):** `spec_validator`, plan validators and `qa.gate` exist and run end-to-end; `DocumentTransaction.record_gate` binds the QA report to the staged hash and refuses stale or ineligible reports. Evidence: `reports/w1/w1-acceptance.md` §6; `reports/acceptance/w2-acceptance.md` §5; `test_transaction_gate.py` (9 tests). **CLOSED.**
 
 ## OI-04 — Legacy CLIs do not emit ToolEnvelope 4.0
 
@@ -56,7 +56,7 @@
 - **Impact:** changing logic QA can cascade into workflow and QA modules owned by different agents.
 - **Acceptance:** move `is_heading_paragraph` to `alignment.py` (or a neutral `structure_utils.py`), remove the `logic_qa → workflow` edge, keep 186 baseline green.
 - **Owner:** Agents 04–05. **Target:** W1.
-- **Resolution (W2):** `engine/logic_qa.py` no longer imports `workflow`; dependent tests pass unchanged. Evidence: `reports/w2/w2-acceptance.md` §1 (dependency-inversion exit condition) and `test_logic_alignment.py` (6 tests). **CLOSED.**
+- **Resolution (W2):** `engine/logic_qa.py` no longer imports `workflow`; dependent tests pass unchanged. Evidence: `reports/acceptance/w2-acceptance.md` §1 (dependency-inversion exit condition) and `test_logic_alignment.py` (6 tests). **CLOSED.**
 
 ## OI-06 — FillPlan `policy` vs `mode` naming overlap
 

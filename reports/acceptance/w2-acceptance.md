@@ -69,11 +69,11 @@ Required capability unavailable → corresponding check `UNVERIFIED`, report can
 
 ## 6. Fixture-discovered defects fixed in W2
 
-Four defects were found by the fixtures and fixed: merged-cell physical column index, nested-table target resolution, `replace_image` placeholder residue, and authorized-image-resize fingerprint drift. Fixes and regression tests are recorded in `reports/w2/issues.md` ("Closed W2 defects"); `tests/test_w2_defects.py` holds 5 regression tests. Unauthorized paragraph/structure changes still fail FIDELITY.
+Four defects were found by the fixtures and fixed: merged-cell physical column index, nested-table target resolution, `replace_image` placeholder residue, and authorized-image-resize fingerprint drift. Fixes and regression tests are recorded in `reports/development/w2-issues.md` ("Closed W2 defects"); `tests/test_w2_defects.py` holds 5 regression tests. Unauthorized paragraph/structure changes still fail FIDELITY.
 
 ## 7. Remaining limitations / open issues
 
-`reports/w2/issues.md` is the maintained register. At W2 close, W2-I1 (body-level SDT) was high severity and not yet fixed; W2-I2 (PyMuPDF / OCR / matplotlib absent) remains an environment fact; W2-I3 (legacy CLI envelope) remains a beta item; W2-I5 (fixture relative image path) remains a test-fixture note. W2-I4 and W2-I6 are closed. W2-I1 was subsequently addressed by CP-W2-002 (see the correction record).
+`reports/development/w2-issues.md` is the maintained register. At W2 close, W2-I1 (body-level SDT) was high severity and not yet fixed; W2-I2 (PyMuPDF / OCR / matplotlib absent) remains an environment fact; W2-I3 (legacy CLI envelope) remains a beta item; W2-I5 (fixture relative image path) remains a test-fixture note. W2-I4 and W2-I6 are closed. W2-I1 was subsequently addressed by CP-W2-002 (see the correction record).
 
 ## 8. Process and ownership notes
 
@@ -100,7 +100,7 @@ py -3.15 -m unittest discover -s tests -p "test_*.py"                # 397 OK, 1
 
 ## Correction record (2026-11-05, appended after later audit; history above unchanged)
 
-1. **"Real-template-tested" corrected.** The six fixture classes are **programmatically constructed structured regression fixtures**, not validated real-world business templates. W2 proves the chain on controlled structures, not general DOCX support. Real-corpus validation is W3-9 and remains external-input dependent (`reports/w3/real-corpus-candidates.md`).
+1. **"Real-template-tested" corrected.** The six fixture classes are **programmatically constructed structured regression fixtures**, not validated real-world business templates. W2 proves the chain on controlled structures, not general DOCX support. Real-corpus validation is W3-9 and remains external-input dependent (`reports/archive/w3-real-corpus-candidates.md`).
 2. **Cross-environment status.** The 397-test run was on Windows/Python 3.15 with the WPS PDF backend and no LibreOffice. Two Excel reliability tests fail on a host with LibreOffice (audit P2-01), so W2 acceptance did **not** cover a cross-environment matrix. P2-01 was fixed in W3-2; P2-04 profile isolation in W3-5; both still require the auditor's Linux/LibreOffice run to close.
 3. **Body-level SDT (W2-I1).** Not merely "undisclosed": the original analyzer reported such templates as L1 with zero slots and no warning (audit P1-01). W3-3 added fail-closed disclosure and W3-4/CP-W2-002 made the content discoverable as PROTECTED positions; `sdt_edit` remains false.
 4. **Contract status.** W2 was accepted at 4.1.0; the contract set is now 4.2.0 (CP-W2-002, Agent 07 post-implementation PASS). The numbers above (4.1.0, 397 tests) are historical, not current.

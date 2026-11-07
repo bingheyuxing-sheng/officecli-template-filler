@@ -3,7 +3,7 @@
 - 任务：W3-4B（Agent 01 + Agent 03 角色实施）
 - 提案：`contracts/changes/CP-W2-002-sdt-location.md`（rev 2，已折入 Agent 07 门禁修正 B1–B4）
 - 契约集版本：4.2.0（实施时为候选；07 实施后复审 PASS 后正式冻结）
-- 冻结状态：**已冻结**（`reports/w3/07-cp-w2-002-post-review.md`、`reports/w3/04b-manifest.md`）。本报告是实施记录，本身不构成冻结证据。
+- 冻结状态：**已冻结**（`reports/w3/07-cp-w2-002-post-review.md`、`reports/development/w3-04b-manifest.md`）。本报告是实施记录，本身不构成冻结证据。
 - 日期：2026-11-05
 - 环境：Windows / PowerShell 7 / `py -3.15`（Python 3.15.0）/ python-docx 1.2.0 / `unittest`
 

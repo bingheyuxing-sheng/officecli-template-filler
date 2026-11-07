@@ -16,7 +16,7 @@
 | 包含 3 个 W4 Schema | 是 |
 | 包含 `scripts/template_gate.py` | 是 |
 | 包含 `config/template-gate-policy.json` | 是 |
-| 包含 `reports/w4/w4-0-architecture-audit.md`、`w4-implementation-log.md` | 是 |
+| 包含 `reports/development/w4-0-architecture-audit.md`、`w4-implementation-log.md` | 是 |
 | 包含 `.git/` 目录 | 否 |
 | 包含 `dist/` 目录 | 否 |
 | 包含 `__pycache__/` 或 `.pyc` | 否 |

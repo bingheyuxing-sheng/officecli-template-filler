@@ -5,7 +5,7 @@
 - Approval: Agent 05 (author); Agent 07 gate `07-n1-gate-review.md`
 - Artifact `schema_version`: remains `"4.0"`
 
-> Historical manifest for contract set **4.1.0**. The current set is **4.2.0**; current hashes are in `reports/w3/04b-manifest.md`. The hashes below pin the reviewed 4.1.0 bytes, not the current files.
+> Historical manifest for contract set **4.1.0**. The current set is **4.2.0**; current hashes are in `reports/development/w3-04b-manifest.md`. The hashes below pin the reviewed 4.1.0 bytes, not the current files.
 
 ## Changed artifacts (SHA-256, first 16 hex)
 
