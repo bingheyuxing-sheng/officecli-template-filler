@@ -86,11 +86,24 @@ class TaskResourceGuard:
         timeout: int = 60,
         cwd: Optional[str] = None,
         check: bool = False,
+        kill_tree: bool = False,
+        raise_on_timeout: bool = False,
     ) -> subprocess.CompletedProcess:
         """
         Spawn a subprocess (`officecli`, `soffice`, etc.), track its exact PID in
         `owned_processes`, wait for completion, and terminate ONLY that PID if it hangs.
+
+        When `kill_tree` is set the child is started in its own process group and,
+        on timeout, the whole tree is terminated.  Office converters spawn helper
+        processes (WPS starts `wps.exe` from `kwpsconvert.exe`); terminating only
+        the direct child leaves those helpers running.
         """
+        popen_kwargs: Dict[str, Any] = {}
+        if kill_tree:
+            if os.name == "nt":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
@@ -99,17 +112,23 @@ class TaskResourceGuard:
             text=True,
             encoding="utf-8",
             errors="replace",
+            **popen_kwargs,
         )
         proc_name = os.path.basename(cmd[0]) if cmd else "subproc"
         owned = self.register_pid(proc.pid, name=proc_name, cmd=cmd, popen=proc)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            self._terminate_single_pid(owned.pid, expected_name=owned.name, popen=proc)
+            if kill_tree:
+                self._terminate_process_tree(owned, proc)
+            else:
+                self._terminate_single_pid(owned.pid, expected_name=owned.name, popen=proc)
             try:
                 stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 stdout, stderr = "", ""
+            if raise_on_timeout:
+                raise
             if check:
                 raise
         finally:
@@ -120,6 +139,42 @@ class TaskResourceGuard:
         if check and proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
         return result
+
+    @classmethod
+    def _terminate_process_tree(cls, owned: "OwnedProcess", popen: Any) -> bool:
+        """Terminate a converter and every process it spawned.
+
+        Windows uses ``taskkill /T`` on the recorded PID; POSIX kills the process
+        group created by ``start_new_session=True``.  Both paths are scoped to the
+        tree this task started, so unrelated processes are never touched.
+        """
+        if popen is not None and popen.poll() is not None:
+            return False
+        pid = owned.pid
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return True
+        try:
+            pgid = os.getpgid(pid)
+        except OSError:
+            return cls._terminate_single_pid(pid, expected_name=owned.name, popen=popen)
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except OSError:
+            return False
+        try:
+            popen.wait(timeout=5)
+        except Exception:
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        return True
 
     @staticmethod
     def _query_windows_process_name(pid: int) -> Optional[str]:

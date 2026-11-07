@@ -17,6 +17,8 @@ import subprocess
 import tempfile
 from typing import Any, Dict, Optional, Tuple
 
+from .process_guard import TaskResourceGuard
+
 _BACKEND_WPS = "wps"
 _BACKEND_LIBREOFFICE = "libreoffice"
 _BACKEND_NONE = "none"
@@ -79,16 +81,24 @@ def _error_from_process(returncode: int, stdout: str, stderr: str) -> str:
 
 
 def _run(command, timeout: int) -> Tuple[int, str, str]:
-    proc = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        check=False,
-    )
-    return proc.returncode, proc.stdout or "", proc.stderr or ""
+    """Run a converter command under task-scoped process ownership.
+
+    ``kill_tree`` matters for WPS: ``kwpsconvert.exe`` starts ``wps.exe`` and
+    killing only the direct child leaves the helper running.  The guard records
+    the exact PID and starts the child in its own process group, so a timeout
+    terminates the tree this conversion started and nothing else.
+    """
+    guard = TaskResourceGuard(task_id="pdf-backend")
+    try:
+        result = guard.run_owned_command(
+            list(command),
+            timeout=timeout,
+            kill_tree=True,
+            raise_on_timeout=True,
+        )
+        return result.returncode, result.stdout or "", result.stderr or ""
+    finally:
+        guard.release_all()
 
 
 def _convert_with_wps(executable: str, source: str, pdf_path: str) -> Tuple[Optional[str], Optional[str]]:
