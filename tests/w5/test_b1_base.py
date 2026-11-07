@@ -129,7 +129,7 @@ class CapabilityRecordTests(unittest.TestCase):
 
     def test_available_without_evidence_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            _verified_record(verified_by=())
+            _verified_record(verified=False, verified_by=())
 
     def test_unavailable_unverified_record_is_fine(self) -> None:
         record = _verified_record(available=False, verified=False, verified_by=(),
