@@ -464,9 +464,23 @@ def _append_format_change(parent, change_tag: str, old_nodes, rev_id: int, autho
     parent.append(change)
 
 
-def _paragraph_mark_rpr(p_el):
-    pPr = p_el.find(qn("w:pPr"))
-    return pPr.find(qn("w:rPr")) if pPr is not None else None
+def _paragraph_mark_rpr(p_el, create: bool = False):
+    """Return ``w:pPr/w:rPr``, optionally creating it in schema order.
+
+    python-docx's ``CT_PPr`` does not expose ``get_or_add_rPr``; the paragraph
+    mark run properties must be inserted before ``w:sectPr`` / ``w:pPrChange``.
+    """
+    p_pr = p_el.find(qn("w:pPr"))
+    if p_pr is None:
+        if not create:
+            return None
+        p_pr = OxmlElement("w:pPr")
+        p_el.insert(0, p_pr)
+    r_pr = p_pr.find(qn("w:rPr"))
+    if r_pr is None and create:
+        r_pr = OxmlElement("w:rPr")
+        p_pr.insert_element_before(r_pr, "w:sectPr", "w:pPrChange")
+    return r_pr
 
 
 def _apply_paragraph_profile_tracked(paragraph, profile, strip_red: bool, author: str, date: str, ids) -> int:
@@ -485,7 +499,7 @@ def _apply_paragraph_profile_tracked(paragraph, profile, strip_red: bool, author
     # Paragraph-mark rPr first: schema requires w:rPr before w:pPrChange inside w:pPr.
     new_mark_nodes = _base_children(_paragraph_mark_rpr(p_el), _RPR_BASE_TAGS)
     if (new_mark_nodes or old_mark_nodes) and _serialize_nodes(new_mark_nodes) != _serialize_nodes(old_mark_nodes):
-        target = p_el.get_or_add_pPr().get_or_add_rPr()
+        target = _paragraph_mark_rpr(p_el, create=True)
         _append_format_change(target, "w:rPrChange", old_mark_nodes, ids.take(), author, date)
         added += 1
     new_ppr = p_el.find(qn("w:pPr"))
@@ -571,7 +585,7 @@ def _restore_table_style_tracked(target_tbl, reference_tbl, author: str, date: s
             for p, (old_mark, old_runs) in zip(cell.paragraphs, old_cell_marks, strict=False):
                 new_mark = _base_children(_paragraph_mark_rpr(p._p), _RPR_BASE_TAGS)
                 if (new_mark or old_mark) and _serialize_nodes(new_mark) != _serialize_nodes(old_mark):
-                    target = p._p.get_or_add_pPr().get_or_add_rPr()
+                    target = _paragraph_mark_rpr(p._p, create=True)
                     _append_format_change(target, "w:rPrChange", old_mark, ids.take(), author, date)
                     added += 1
                 for run, old_nodes in zip(p.runs, old_runs, strict=False):
