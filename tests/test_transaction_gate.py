@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gate_helpers import ensure_gate  # noqa: E402
+from support import sha256_file  # noqa: E402
 
 import docx  # noqa: E402
 
@@ -33,14 +34,6 @@ from qa.gate import resolve_required_checks  # noqa: E402
 from qa.report_builder import build_qa_report, check_record  # noqa: E402
 
 TASK_ID = "TASK_W2_GATE_001"
-
-
-def _sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _qa_report(staged: str, *, gate_mode: str = "STRICT", skip_check: str | None = None) -> dict:
@@ -153,7 +146,7 @@ class TransactionGateTests(unittest.TestCase):
 
         self.assertFalse(gate["eligible"])
         self.assertTrue(gate["missing_checks"])
-        self.assertEqual(gate["staged_sha256"], _sha256(tx.temp_path))
+        self.assertEqual(gate["staged_sha256"], sha256_file(tx.temp_path))
 
         with self.assertRaises(TransactionAborted) as ctx:
             tx.commit()
@@ -171,14 +164,14 @@ class TransactionGateTests(unittest.TestCase):
 
         self.assertTrue(gate["eligible"])
         self.assertTrue(gate["recorded"])
-        self.assertEqual(gate["staged_sha256"], _sha256(tx.temp_path))
+        self.assertEqual(gate["staged_sha256"], sha256_file(tx.temp_path))
         self.assertEqual(gate["policy_source"], "GENERATE/STRICT")
         self.assertEqual(gate["task_id"], TASK_ID)
 
         tx.commit()
         self.assertTrue(tx.committed)
         self.assertTrue(os.path.isfile(self.output))
-        self.assertEqual(_sha256(self.output), gate["staged_sha256"])
+        self.assertEqual(sha256_file(self.output), gate["staged_sha256"])
         self.assertEqual(_staged_leftovers(self.directory), [])
 
     def test_report_task_id_mismatch_is_refused(self) -> None:

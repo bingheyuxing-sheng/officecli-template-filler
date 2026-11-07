@@ -23,10 +23,7 @@ from template_gate.report import build_report  # noqa: E402
 from template_gate.store import GateStore  # noqa: E402
 from template_gate.supplements import resolve_evidence  # noqa: E402
 from template_intelligence import build_document_spec_from_path  # noqa: E402
-
-
-def _passing_qa(_staged):
-    return {"status": "PASSED", "passed": True, "issues": [], "coverage_gaps": []}
+from support import passing_qa  # noqa: E402
 
 
 def _template(directory: str) -> str:
@@ -94,7 +91,7 @@ class TemplateGateEndToEndTests(unittest.TestCase):
                     plan,
                     output,
                     content_plan=content,
-                    qa_runner=_passing_qa,
+                    qa_runner=passing_qa,
                     allow_unverified=True,
                     gate_record=record,
                 )

@@ -10,7 +10,6 @@ the original template byte-identical.
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import subprocess
 import sys
@@ -26,6 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gate_helpers import ensure_gate  # noqa: E402
+from support import sha256_file  # noqa: E402
 
 from template_intelligence import build_document_spec_from_path  # noqa: E402
 from template_intelligence.spec_validator import validate_document_spec  # noqa: E402
@@ -35,14 +35,6 @@ from qa.report_builder import build_qa_report, check_record  # noqa: E402
 from qa.gate import resolve_required_checks  # noqa: E402
 
 TASK_ID = "TASK_E2E_001"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _make_template(directory: Path) -> Path:
@@ -221,7 +213,7 @@ class EndToEndTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.directory = Path(self._tmp.name)
         self.template = _make_template(self.directory)
-        self.original_sha = _sha256(self.template)
+        self.original_sha = sha256_file(self.template)
         self.gate = ensure_gate(str(self.template), "GENERATE")
         self.spec, self.content, self.fill = _bundle(self.template)
 
@@ -230,7 +222,7 @@ class EndToEndTests(unittest.TestCase):
 
     def _assert_rollback(self, output: Path) -> None:
         self.assertFalse(output.exists(), "failed run must not publish a deliverable")
-        self.assertEqual(_sha256(self.template), self.original_sha, "template bytes must stay unchanged")
+        self.assertEqual(sha256_file(self.template), self.original_sha, "template bytes must stay unchanged")
         leftovers = [
             item.name for item in self.directory.iterdir()
             if ".tmp-" in item.name or ".pending-" in item.name
@@ -246,7 +238,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn(result["status"], ("SUCCESS", "UNVERIFIED"), result["errors"])
         self.assertTrue(result["transaction"]["committed"])
         self.assertTrue(output.exists())
-        self.assertEqual(_sha256(self.template), self.original_sha)
+        self.assertEqual(sha256_file(self.template), self.original_sha)
 
         written = docx.Document(str(output))
         texts = [paragraph.text for paragraph in written.paragraphs]
@@ -340,7 +332,7 @@ class EndToEndTests(unittest.TestCase):
     def test_11_first_page_header_slot_fills(self) -> None:
         template = _make_header_template(self.directory)
         ensure_gate(str(template), "GENERATE")
-        original_sha = _sha256(template)
+        original_sha = sha256_file(template)
         spec = build_document_spec_from_path(str(template))
         self.assertTrue(validate_document_spec(spec)["passed"])
 
@@ -381,7 +373,7 @@ class EndToEndTests(unittest.TestCase):
         )
         self.assertIn(result["status"], ("SUCCESS", "UNVERIFIED"), result["errors"])
         self.assertTrue(result["transaction"]["committed"])
-        self.assertEqual(_sha256(template), original_sha, "template bytes must stay unchanged")
+        self.assertEqual(sha256_file(template), original_sha, "template bytes must stay unchanged")
 
         written = docx.Document(str(output))
         header = written.sections[0].first_page_header

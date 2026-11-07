@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gate_helpers import ensure_gate  # noqa: E402
+from support import sha256_file  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
@@ -44,14 +45,6 @@ from template_intelligence.spec_validator import validate_document_spec  # noqa:
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 _PX_EMU = 9525  # one pixel at 96 DPI
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _find_slot(spec: dict, matched_text: str) -> dict:
@@ -146,7 +139,7 @@ class MergedCellColumnTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             template = _make_merged_row_template(directory)
-            before = _sha256(template)
+            before = sha256_file(template)
 
             spec = build_document_spec_from_path(str(template))
             self.assertTrue(validate_document_spec(spec)["passed"], spec["errors"][:3])
@@ -171,7 +164,7 @@ class MergedCellColumnTests(unittest.TestCase):
             )
             self.assertIn(result["status"], ("SUCCESS", "UNVERIFIED"), result["errors"])
             self.assertTrue(result["transaction"]["committed"])
-            self.assertEqual(_sha256(template), before, "template bytes must stay unchanged")
+            self.assertEqual(sha256_file(template), before, "template bytes must stay unchanged")
 
             written = docx.Document(str(output))
             self.assertEqual(written.tables[0].cell(0, 0).text, "固定值")
@@ -241,7 +234,7 @@ class ReplaceImageResidualTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             template, replacement = _make_image_token_template(directory)
-            before = _sha256(template)
+            before = sha256_file(template)
 
             spec = build_document_spec_from_path(str(template))
             self.assertTrue(validate_document_spec(spec)["passed"], spec["errors"][:3])
@@ -264,7 +257,7 @@ class ReplaceImageResidualTests(unittest.TestCase):
             )
             self.assertIn(result["status"], ("SUCCESS", "UNVERIFIED"), result["errors"])
             self.assertTrue(result["transaction"]["committed"])
-            self.assertEqual(_sha256(template), before, "template bytes must stay unchanged")
+            self.assertEqual(sha256_file(template), before, "template bytes must stay unchanged")
 
             error_codes = [error.get("code") for error in result["errors"]]
             self.assertNotIn("TEMPLATE_TEXT_RESIDUAL", error_codes)
@@ -280,7 +273,7 @@ class ReplaceImageResidualTests(unittest.TestCase):
                 if "/media/" in str(part.partname)
             ]
             self.assertEqual(len(media), 1)
-            self.assertEqual(hashlib.sha256(media[0].blob).hexdigest(), _sha256(replacement))
+            self.assertEqual(hashlib.sha256(media[0].blob).hexdigest(), sha256_file(replacement))
 
 
 class AuthorizedExtentFingerprintTests(unittest.TestCase):

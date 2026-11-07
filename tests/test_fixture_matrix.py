@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from gate_helpers import ensure_gate  # noqa: E402
+from support import sha256_file  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
@@ -63,14 +64,6 @@ _SLOT_FIELDS = (
     "confirmation_tier",
     "scope",
 )
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _load(path: Path) -> dict:
@@ -129,7 +122,7 @@ class FixtureMatrixTests(unittest.TestCase):
         template = class_dir / "template.docx"
         expected = self._expected(name)
 
-        self.assertEqual(_sha256(template), expected["template_sha256"],
+        self.assertEqual(sha256_file(template), expected["template_sha256"],
                          "%s: committed template bytes drifted from expectations" % name)
 
         spec_a = build_document_spec_from_path(str(template))
@@ -183,7 +176,7 @@ class FixtureMatrixTests(unittest.TestCase):
         template = class_dir / "template.docx"
         ensure_gate(str(template), "GENERATE")
         output = directory / "out.docx"
-        before = _sha256(template)
+        before = sha256_file(template)
         self.assertEqual(before, expected["template_sha256"], "%s: template changed before run" % name)
 
         result = execute_fill_plan(
@@ -191,7 +184,7 @@ class FixtureMatrixTests(unittest.TestCase):
             content_plan=content, qa_runner=qa_runner, allow_unverified=True,
         )
 
-        after = _sha256(template)
+        after = sha256_file(template)
         self.assertEqual(after, before, "%s: template bytes changed during the run" % name)
         self.assertEqual(_leftovers(directory), [], "%s: staged artifact was left behind" % name)
 

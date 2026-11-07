@@ -31,6 +31,7 @@ from engine import (  # noqa: E402
 )
 from template_gate.errors import TemplateGateError  # noqa: E402
 from template_intelligence import build_document_spec_from_path  # noqa: E402
+from support import passing_qa  # noqa: E402
 
 
 def _template(directory: str) -> str:
@@ -39,10 +40,6 @@ def _template(directory: str) -> str:
     document.add_paragraph("{{项目名称}}")
     document.save(path)
     return path
-
-
-def _passing_qa(_staged_path):
-    return {"status": "PASSED", "passed": True, "issues": [], "coverage_gaps": []}
 
 
 def _bundle(template: str) -> tuple:
@@ -90,7 +87,7 @@ class GateEnforcementTests(unittest.TestCase):
                 plan,
                 output,
                 content_plan=content,
-                qa_runner=_passing_qa,
+                qa_runner=passing_qa,
                 allow_unverified=True,
                 gate_record=record,
             )
