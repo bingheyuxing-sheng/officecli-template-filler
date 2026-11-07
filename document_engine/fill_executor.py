@@ -1046,8 +1046,13 @@ def _run_qa(
     if qa_runner is not None:
         return qa_runner(staged_path)
     try:
-        from qa.pipeline import run_full_qa  # noqa: PLC0415 - qa/ is optional in this build
-    except Exception:
+        from qa.pipeline import run_full_qa  # noqa: PLC0415 - import failure is handled below
+    except ModuleNotFoundError as exc:
+        # Only a genuinely absent qa package may degrade to the reduced report.
+        # An error raised *inside* qa.pipeline (missing dependency, syntax error,
+        # circular import) means the QA mainline is broken and must fail loudly.
+        if getattr(exc, "name", "") not in ("qa", "qa.pipeline"):
+            raise
         return _fallback_qa_report(staged_path, template_path, task_id, mode)
     return run_full_qa(
         staged_path,
