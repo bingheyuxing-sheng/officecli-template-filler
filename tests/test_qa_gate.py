@@ -262,9 +262,11 @@ class FullQARunnerTests(unittest.TestCase):
                 self.assertIn("page count", detail)
                 self.assertTrue(Path(record["evidence"]["artifact_path"]).is_file())
             elif record["status"] == "UNVERIFIED":
-                self.assertIn(
-                    record["evidence"].get("detail"),
-                    ("PDF_BACKEND_UNAVAILABLE", "PDF_PAGE_COUNT_UNVERIFIED"),
+                detail = str(record["evidence"].get("detail") or "")
+                self.assertTrue(
+                    detail in ("PDF_BACKEND_UNAVAILABLE", "PDF_PAGE_COUNT_UNVERIFIED")
+                    or detail.startswith("CAPABILITY_UNAVAILABLE["),
+                    "UNVERIFIED must name the missing capability, got: %r" % detail,
                 )
             else:
                 # FAILED is only allowed when a real blocking finding exists.

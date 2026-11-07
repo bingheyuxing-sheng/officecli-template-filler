@@ -251,6 +251,23 @@ python scripts/run_qa.py output.docx --reference template.docx --profile style-g
 - v4.0.0 曾用 46 份外部真实 `.docx` 做无损验证：解析 46/46、模板字节 0 改动、0 个 Spec 校验失败；21 份可填模板全部完成填充并提交（12 份 `PASSED`，9 份因浮动图片覆盖缺口如实标为 `UNVERIFIED`）。
 - v4.1.x 尚未在模板闸门链路重跑这批真实语料，因此不能把上述结果直接当作 v4.1.2 的验证结论。
 
+## 开发与测试
+
+测试分三种 profile，避免“没有 WPS 就跑不了全量”：
+
+```bash
+# 宿主无关：契约、W5 后端、python-docx/OOXML 断言（CI 必跑）
+python scripts/run_tests.py --profile fast
+
+# 外部依赖：需要 WPS / LibreOffice PDF 后端或 officecli 二进制
+python scripts/run_tests.py --profile external
+
+# 全量（等价于 unittest discover）
+python scripts/run_tests.py --profile all
+```
+
+`--profile fast` 会跳过 `tests/external.py` 中登记的模块，并打印跳过原因；`external` 只跑这些模块。GitHub Actions 的 `CI` 工作流在 Ubuntu / Windows、Python 3.10 / 3.12 上执行 `ruff` 与 `fast` profile，另有一个允许失败的外部依赖 job。
+
 ## 已知限制
 
 - `POLISH` / `MERGE` 还没有独立执行入口，会返回 `CAPABILITY_NOT_AVAILABLE`。

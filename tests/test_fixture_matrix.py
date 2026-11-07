@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 
 from gate_helpers import ensure_gate  # noqa: E402
 from support import sha256_file  # noqa: E402
+from external import requires_pdf_backend  # noqa: E402
 
 from content_intelligence import build_content_plan, build_fill_plan, validate_fill_plan  # noqa: E402
 from document_engine import execute_fill_plan  # noqa: E402
@@ -109,6 +110,7 @@ def _leftovers(directory: Path) -> list:
     )
 
 
+@requires_pdf_backend
 class FixtureMatrixTests(unittest.TestCase):
     """Six real-template classes exercised through the real execution chain."""
 
