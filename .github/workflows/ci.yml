@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt ruff
+
+      - name: Lint
+        run: python -m ruff check .
+
+      # The fast profile is host-independent: it skips the modules that need a
+      # WPS/LibreOffice PDF backend or the external officecli binary.  Contract
+      # and W5 backend tests are included.
+      - name: Fast test profile
+        run: python scripts/run_tests.py --profile fast
+
+  external:
+    name: external (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # External tests need a real PDF backend (for pagination) or officecli.
+    # They are informational: a missing tool skips the module instead of failing
+    # the run, and the fast job above is the required gate.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install LibreOffice (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer
+
+      - name: External test profile
+        run: python scripts/run_tests.py --profile external
