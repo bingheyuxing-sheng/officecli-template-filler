@@ -9,7 +9,7 @@
 - **版本状态**：正式版、预发布、Draft（未公开）、未发布、未单独发布。
 - **测试数字**：指该版本发布时记录的全量测试数，不代表当前开发分支的测试数。
 - **契约集版本**：公共接口契约的版本，和软件版本不是一回事；产物里的 `schema_version` 又是另一个版本号。
-- 当前开发分支（4.2.0，未发布）在 2026-11-07 实测 **653 项通过**；v4.1.2 本地构建包记录为 **535 项通过**。
+- 当前开发分支与最新发布均为 **v4.2.0**，2026-11-07 实测 **692 项通过**（含契约 76 项）；v4.1.2 本地构建包记录为 **535 项通过**。
 
 ### 名词说明
 
@@ -26,7 +26,7 @@
 
 | 版本 | 日期 | 状态 | 一句话说明 |
 |---|---|---|---|
-| 4.2.0 | 开发中 | 未发布 | 新增可选 officecli 写入后端，默认行为不变 |
+| v4.2.0 | 2026-11-07 | 正式版 | 安全与 QA 收口；新增可选 officecli 写入后端 |
 | v4.1.2 | 2026-11-07 | 预发布 | 审阅时可以把外部检查结果直接写成 Word 批注 |
 | v4.1.1 | 2026-11-06 | 预发布 | 只精简 Skill 文档，不改运行时行为 |
 | v4.1.0 | 2026-11-06 | Draft | 新增模板理解与确认闸门 |
@@ -52,43 +52,79 @@
 
 ---
 
-## 4.2.0（开发中，未发布）
+## v4.2.0（2026-11-07，正式版）
 
-> 状态：未发布。代码里的 `engine.__version__` 已经是 4.2.0，但 GitHub 上没有对应的 tag 或 Release；默认执行链仍是 python-docx。
+> 状态：正式版。软件版本 4.2.0；契约集 4.3.0（4.2.0 冻结基线 + Contract 06 DRAFT）；产物 `schema_version` 4.0。
+> 发布资产：`officecli-template-filler-v4.2.0.zip`，SHA-256 见 GitHub Release。
 
-### 这个版本会带来什么
+### 本次修复（P0/P1）
 
-- 增加一个**可选的 officecli 写入后端**：在支持的情况下，可以用 officecli 批量写入文字。
-- 遇到不支持的位置或操作时，会自动回退到原来的 python-docx 写法，并在结果里记录回退原因。
-- 默认行为没有改变，现有命令不需要修改。
+**P0 — 兼容性**
 
-### 用户能感受到的变化
+- README、badge 与开发说明统一为 **Python 3.10+**。旧文档声明 3.9，但生产代码使用 `zip(..., strict=)`，3.9 会在执行中段抛 `TypeError`。新增一致性测试，锁定 README、badge 与 `ruff.toml` 的版本口径。
 
-- `generate_document.py` 新增 `--writer {python-docx,officecli}`，默认仍是 `python-docx`。
-- 使用 officecli 时，只覆盖 `.docx` 的 `replace_text`、`fill_paragraph`、`fill_cell`；页眉页脚、文本框、SDT、脚注、批注、图片和 Excel 会回退。
-- officecli 是外部程序，不会自动安装；没安装时会跳过相关集成测试。
+**P1 — 安全**
 
-### 问题修复
+- 7 个解析入口（review / proofread / repair / reformat / run_qa / render / template-gate analyze）接入 ZIP 资源配额。此前只有生成与模板分析链路有配额，构造包可以直接进入 python-docx/openpyxl。现在统一返回 `PACKAGE_LIMIT_EXCEEDED` 并以退出码 2 拒绝。
+- Excel 公式求值移除 `eval()`，改为 AST 白名单（仅数字字面量、`Decimal(<literal>)` 与 `+ - * /`）。字符白名单保留为第二道防线。
 
-- 模板确认记录的密钥文件改为按原始字节读取。旧写法会裁掉密钥首尾的空白字节，导致签名和校验用错密钥，确认记录偶尔校验失败。
+**P1 — QA 语义**
+
+- `run_qa.py` 在 `UNVERIFIED` 时改为退出码 1；需要放行时显式加 `--allow-unverified`，报告新增 `exit_ok` 字段。此前 `UNVERIFIED` 返回 0，CI 会把“没检查完”当成成功。
+- FillPlan 执行器只在 `qa` 包确实缺失时降级为 PACKAGE+FORMAT 报告；`qa.pipeline` 内部错误（缺依赖、语法错误、循环导入）现在会以 `QA_EVIDENCE_MISSING` 失败，不再伪装成环境限制。
+
+**P1 — 进程与测试**
+
+- PDF 转换改用 `TaskResourceGuard.run_owned_command(kill_tree=True)`：子进程在独立进程组中启动，超时终止整棵进程树，避免 `kwpsconvert.exe` 派生的 `wps.exe` 残留。
+- 测试拆分为 `fast` / `external` / `all` 三种 profile（`scripts/run_tests.py`），`fast` 不依赖 WPS/LibreOffice 或 officecli；新增 GitHub Actions，在 Ubuntu/Windows + Python 3.10/3.12 上执行 ruff 与 fast profile。
+
+**P1 — 治理与披露**
+
+- `document_backends/` 明确标记为 `EXPERIMENTAL_NOT_WIRED`：它是 W5 的后端抽象骨架，尚未接入执行链；README、CHANGELOG 与模块 docstring 同步披露。
+- 契约集版本统一为 4.3.0（4.2.0 冻结基线 + Contract 06 DRAFT），AGENTS.md 同步；新增契约测试交叉校验索引、AGENTS.md、各契约冻结版本与 `engine.__version__`/CHANGELOG。
+- 4.2.0 正式发布后，`engine.__version__`、Git tag 与 CHANGELOG 三者一致，关闭“版本号早于发布状态”的问题。
+
+### 新增功能
+
+- 可选的 officecli 写入后端：`generate_document.py --writer {python-docx,officecli}`，默认仍为 `python-docx`。遇到不支持的位置或操作时回退并在 `data.writer_fallback` 记录原因。
+- `scripts/run_tests.py`：按 profile 运行测试，打印被跳过的外部依赖模块及原因。
+- `.github/workflows/ci.yml`：lint + fast profile 必跑，external profile 为允许失败的信息性 job。
 
 ### 技术记录
 
 - 新增 `engine/officecli_writer.py`、`document_backends/` 后端接口与结果类型，`tests/w5/` 104 项单元测试。
 - 新增 15 个 reason code 和 3 个通用 `BACKEND_*` 错误码；错误码配置只增不改。
 - 后端能力记录在构造时强制要求证据，未验证的能力不能标记为“支持”。
+- 模板确认记录的密钥文件按原始字节读取，避免裁掉首尾空白字节导致签名校验失败。
 
 ### 测试
 
-- CHANGELOG 记录 **648 项通过**；2026-11-07 在当前工作区实测 **653 项通过**，契约 72 项通过。
-- 2 项集成测试依赖本机 officecli 1.0.160，未安装时跳过。
+- 全量：**692 项通过，0 失败 / 0 错误**（243.154s，Windows 11，Python 3.14.10）。
+- `fast` profile：**670 项通过**（92.893s，`OFFICECLI_PDF_BACKEND=none`，证明不依赖 PDF 后端）。
+- `external` profile：**15 项通过**（76.586s，本机 WPS）。
+- 契约测试：**76 项通过**（含新增 4 项版本一致性）。
+- Ruff 0.17.4：`All checks passed`。
+
+### 破坏性变更与迁移
+
+- **Python 最低版本从 3.9 提升到 3.10**。3.9 用户需先升级解释器；这是修正既有声明与实现的偏差，不是 API 变化。
+- **`run_qa.py` 的 `UNVERIFIED` 退出码从 0 改为 1**。依赖旧退出码的 CI 需加 `--allow-unverified`，或改为消费报告里的 `status` / `exit_ok`。
+- 其余 CLI 参数与默认行为不变；`--writer` 默认仍是 `python-docx`。
 
 ### 已知限制
 
 - officecli 只覆盖 `.docx` 的三类文字操作；其他位置和 Excel 全部回退 python-docx。
 - officecli 是外部闭源二进制，升级后需要重新跑一致性测试。
 - `document_backends/`（W5-B1 后端抽象）尚未接入执行链，`PACKAGE_STATUS = EXPERIMENTAL_NOT_WIRED`；当前写入仍走 `engine/officecli_writer.py`。
-- 本版本尚未发布，普通用户无法从 Releases 下载。
+- `POLISH` / `MERGE` 仍无执行入口；SDT 内填充仍不开放（`sdt_edit=false`）。
+- 视觉检查依赖本机 WPS 或 LibreOffice；缺失时相关检查为 `UNVERIFIED`，不是通过。
+- Linux / macOS 未纳入本版本的发布验证范围。
+
+### 发布资产
+
+- `officecli-template-filler-v4.2.0.zip`
+- SHA-256 与文件大小见 Release 页面及 `reports/acceptance/w5-package-manifest-v4.2.0.md`。
+- 回滚：重新安装上一版本（v4.1.2 或 v4.0.1）并替换 Skill 目录即可；本版本未修改冻结契约的字段语义。
 
 ---
 

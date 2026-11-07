@@ -22,10 +22,6 @@ Layout:
   ``operation_router`` land in B2–B5 and are not importable yet.
 """
 
-#: Machine-readable status consumed by the disclosure test and by callers that
-#: need to distinguish "available API" from "integrated backend".
-PACKAGE_STATUS = "EXPERIMENTAL_NOT_WIRED"
-
 from .base import (
     BACKEND_FORMATS,
     OPERATION_KINDS,
@@ -53,6 +49,10 @@ from .result import (
     envelope_code_for,
     reason_category,
 )
+
+#: Machine-readable status consumed by the disclosure test and by callers that
+#: need to distinguish "available API" from "integrated backend".
+PACKAGE_STATUS = "EXPERIMENTAL_NOT_WIRED"
 
 __all__ = [
     "PACKAGE_STATUS",

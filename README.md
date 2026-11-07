@@ -222,16 +222,14 @@ python scripts/run_qa.py output.docx --reference template.docx --profile style-g
 
 | 类型 | 版本 | 状态 | 说明 |
 |---|---|---|---|
-| 公开稳定版 | **[v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1)** | GitHub Latest | 普通用户建议优先使用这个版本 |
-| 最新预发布 | **[v4.1.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.1.2)** | Pre-release（已发布） | 审阅结果可直接写成 Word 批注；稳定版仍建议 v4.0.1 |
-| 公开预发布 | **[v4.1.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.1.1)** | Pre-release | 只改了 Skill 文档，运行时行为与 v4.1.0 相同 |
-| Draft | **v4.1.0** | 未公开 | 模板理解闸门；Release 仍在 Draft |
-| 开发中 | **4.2.0** | 未发布 | 新增可选 officecli 写入后端，默认行为不变 |
+| 公开稳定版 | **[v4.2.0](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.2.0)** | GitHub Latest | 安全与 QA 收口；新增可选 officecli 写入后端 |
+| 上一预发布 | **[v4.1.2](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.1.2)** | Pre-release（已发布） | 审阅结果可直接写成 Word 批注 |
+| 公开稳定版（上一版） | **[v4.0.1](https://github.com/bingheyuxing-sheng/officecli-template-filler/releases/tag/v4.0.1)** | 正式版 | 需要回滚时使用 |
 
 测试情况：
 
+- v4.2.0：全量 **692 项通过**（契约 76 项）；`fast` profile 在无 PDF 后端时 **670 项通过**。
 - v4.1.2 本地构建包：**535 项通过**，契约测试 72 项通过。
-- 当前开发分支（4.2.0，未发布）：**653 项通过**，契约测试 72 项通过（2026-11-07 实测）。
 - v4.1.1：532 项通过；v4.0.1：479 项通过。
 
 ### 版本号说明
@@ -240,7 +238,7 @@ python scripts/run_qa.py output.docx --reference template.docx --profile style-g
 
 | 编号 | 当前值 | 含义 |
 |---|---|---|
-| 软件版本 | v4.1.2（Pre-release）；4.2.0（开发中） | 用户通常说的“版本号”，对应 Git tag 和 Release |
+| 软件版本 | v4.2.0 | 用户通常说的“版本号”，对应 Git tag 和 Release |
 | 契约集版本 | 4.3.0 | 公共接口契约的集合版本，由多份契约和变更提案组成 |
 | 产物 `schema_version` | 4.0 | 生成的 JSON 产物使用的 Schema 版本 |
 
