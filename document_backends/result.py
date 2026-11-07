@@ -316,32 +316,43 @@ class BackendResult:
         if not isinstance(self.detail, str):
             raise ValueError("detail must be a string")
         object.__setattr__(self, "detail", self.detail[:DETAIL_MAX_CHARS])
-        # R3: every per-op value must be an immutable OpOutcome. Copying
-        # into a fresh dict keeps construction decoupled from the caller's
-        # mapping; the proxy then makes the result read-only for everyone.
+        # R3: every per-op key must be a non-empty string and every value an
+        # immutable OpOutcome. Copying into a fresh dict keeps construction
+        # decoupled from the caller's mapping; the proxy then makes the result
+        # read-only for everyone. Keys are never coerced: ``str(key)`` would
+        # let ``{1: a, "1": b}`` collapse into one entry and silently drop an
+        # operation outcome.
         if not isinstance(self.per_op, Mapping):
             raise ValueError("per_op must be a mapping of op_id -> OpOutcome")
         frozen_ops: Dict[str, OpOutcome] = {}
         for key, value in dict(self.per_op).items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(
+                    "per_op keys must be non-empty strings, got %r" % (key,)
+                )
             if not isinstance(value, OpOutcome):
                 raise ValueError(
                     "per_op[%r] must be an OpOutcome, got %r" % (key, type(value).__name__)
                 )
-            frozen_ops[str(key)] = value
+            frozen_ops[key] = value
         object.__setattr__(self, "per_op", MappingProxyType(frozen_ops))
 
     @classmethod
     def success(cls, backend: str, per_op: Optional[Mapping[str, OpOutcome]] = None,
                 detail: str = "") -> "BackendResult":
         """Build an ``ok=True`` result."""
-        return cls(backend=backend, ok=True, detail=detail, per_op=per_op or {})
+        if per_op is None:
+            per_op = {}
+        return cls(backend=backend, ok=True, detail=detail, per_op=per_op)
 
     @classmethod
     def failure(cls, backend: str, reason_code: ReasonCode, detail: str = "",
                 per_op: Optional[Mapping[str, OpOutcome]] = None) -> "BackendResult":
         """Build an ``ok=False`` result carrying a structured reason."""
+        if per_op is None:
+            per_op = {}
         return cls(backend=backend, ok=False, reason_code=reason_code,
-                   detail=detail, per_op=per_op or {})
+                   detail=detail, per_op=per_op)
 
     def to_dict(self) -> Dict[str, Any]:
         """JSON-ready view of the whole result, including per-op outcomes.

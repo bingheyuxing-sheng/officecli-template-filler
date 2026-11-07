@@ -299,6 +299,104 @@ class BackendResultTests(unittest.TestCase):
                          ["FAILED", "SKIPPED", "SUCCESS"])
 
 
+class PerOpInputBoundaryTests(unittest.TestCase):
+    """R3: every construction path enforces the same per_op input contract."""
+
+    @staticmethod
+    def _make_outcome() -> OpOutcome:
+        return OpOutcome(status="SUCCESS")
+
+    def test_none_becomes_an_empty_mapping_for_both_factories(self) -> None:
+        success = BackendResult.success("officecli")
+        failure = BackendResult.failure("officecli", ReasonCode.BATCH_ROLLED_BACK)
+        for result in (success, failure):
+            self.assertEqual(dict(result.per_op), {})
+
+    def test_factories_accept_only_mappings(self) -> None:
+        outcome = self._make_outcome()
+        for per_op in ({}, {"op-1": outcome}):
+            with self.subTest(per_op=per_op):
+                success = BackendResult.success("officecli", per_op=per_op)
+                failure = BackendResult.failure(
+                    "officecli", ReasonCode.BATCH_ROLLED_BACK, per_op=per_op
+                )
+                self.assertEqual(dict(success.per_op), per_op)
+                self.assertEqual(dict(failure.per_op), per_op)
+
+        # Empty containers are the historical ``per_op or {}`` bypass; they
+        # must reach the constructor and be rejected like every other
+        # non-Mapping input.
+        for per_op in ([], (), "", "op-1", set(), 0, False, object()):
+            with self.subTest(per_op=per_op):
+                with self.assertRaises(ValueError):
+                    BackendResult.success("officecli", per_op=per_op)  # type: ignore[arg-type]
+                with self.assertRaises(ValueError):
+                    BackendResult.failure(
+                        "officecli", ReasonCode.BATCH_ROLLED_BACK,
+                        per_op=per_op,  # type: ignore[arg-type]
+                    )
+
+    def test_direct_construction_uses_the_same_contract(self) -> None:
+        outcome = self._make_outcome()
+        accepted = (
+            (True, None, {"op-1": outcome}),
+            (False, ReasonCode.BATCH_ROLLED_BACK, {"op-2": outcome}),
+        )
+        for ok, reason, per_op in accepted:
+            with self.subTest(ok=ok):
+                result = BackendResult(
+                    backend="officecli", ok=ok, reason_code=reason, per_op=per_op
+                )
+                self.assertEqual(dict(result.per_op), per_op)
+
+        for per_op in ([], (), "", "op-1", set(), 0, False, object()):
+            with self.subTest(per_op=per_op):
+                with self.assertRaises(ValueError):
+                    BackendResult(backend="officecli", ok=True, per_op=per_op)  # type: ignore[arg-type]
+                with self.assertRaises(ValueError):
+                    BackendResult(
+                        backend="officecli", ok=False,
+                        reason_code=ReasonCode.BATCH_ROLLED_BACK,
+                        per_op=per_op,  # type: ignore[arg-type]
+                    )
+
+    def test_keys_must_be_non_empty_strings(self) -> None:
+        outcome = self._make_outcome()
+        for key in ("op-1", "op-2", "OP_003"):
+            with self.subTest(key=key):
+                result = BackendResult.success("officecli", per_op={key: outcome})
+                self.assertEqual(tuple(result.per_op), (key,))
+                self.assertIs(result.per_op[key], outcome)
+
+        for key in (1, None, (), "", 0):
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    BackendResult.success("officecli", per_op={key: outcome})  # type: ignore[dict-item]
+                with self.assertRaises(ValueError):
+                    BackendResult.failure(
+                        "officecli", ReasonCode.BATCH_ROLLED_BACK,
+                        per_op={key: outcome},  # type: ignore[dict-item]
+                    )
+
+    def test_mixed_or_multiple_invalid_keys_are_rejected_without_collapse(self) -> None:
+        outcome = self._make_outcome()
+        invalid_maps = (
+            {1: outcome, "1": outcome},
+            {"op-1": outcome, 2: outcome},
+            {1: outcome, 2: outcome},
+            {None: outcome, "None": outcome},
+        )
+        for per_op in invalid_maps:
+            with self.subTest(per_op=per_op):
+                with self.assertRaises(ValueError):
+                    BackendResult.success("officecli", per_op=per_op)  # type: ignore[dict-item]
+                with self.assertRaises(ValueError):
+                    BackendResult.failure(
+                        "officecli", ReasonCode.BATCH_ROLLED_BACK,
+                        per_op=per_op,  # type: ignore[dict-item]
+                    )
+
+
 class OpOutcomeTests(unittest.TestCase):
     def test_valid_outcomes(self) -> None:
         for status in OP_STATUSES:
