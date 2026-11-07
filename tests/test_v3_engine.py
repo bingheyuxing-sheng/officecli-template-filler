@@ -407,8 +407,11 @@ class TestV3EngineSuite(unittest.TestCase):
             f"unexpected visual issues: {vis_qa['structured_issues']}",
         )
         if vis_qa["font_availability"]["checked"]:
+            # Which fonts exist depends on the host; the invariant is that the
+            # report only lists requested fonts as missing, never invented ones.
             self.assertTrue(
-                set(vis_qa["font_availability"]["missing"]) <= {"仿宋_GB2312", "Times New Roman"},
+                set(vis_qa["font_availability"]["missing"])
+                <= set(vis_qa["font_availability"]["requested"]),
                 f"font report wrong: {vis_qa['font_availability']}",
             )
 
@@ -1140,8 +1143,10 @@ class TestV3EngineSuite(unittest.TestCase):
         self.assertIn("checked", report)
         self.assertIn("missing", report)
         if report["checked"]:
-            self.assertNotIn("宋体", report["missing"])
+            # A font that cannot exist must be reported; a CJK font may or may
+            # not be installed depending on the host, so it is not asserted.
             self.assertIn("绝对不存在的字体XYZ", report["missing"])
+            self.assertTrue(set(report["missing"]) <= set(report["requested"]))
         else:
             self.assertEqual(report["source"], "none")
 
