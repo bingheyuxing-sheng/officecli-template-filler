@@ -1,5 +1,7 @@
 # Office Template Filler
 
+English | [简体中文](README.zh-CN.md)
+
 Template-driven Word and Excel document engine for AI agents: route a request, confirm the template,
 plan the content, execute the fill as a transaction, and report QA in four states.
 
