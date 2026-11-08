@@ -15,6 +15,6 @@ _c_*.docx
 _c_*.xlsx
 _c_*.json
 
-# Archives (release packages under dist/ are tracked on purpose)
+# Build output — release zips are produced by the release flow and are not versioned
+dist/
 *.zip
-!dist/*.zip

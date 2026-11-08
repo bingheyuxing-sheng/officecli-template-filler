@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.2.0 — contract set 4.3.0; v3.5.9 compatibility baseline)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.2.2)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -71,7 +71,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.2.0)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.2.2)
 
 ```
 officecli-template-filler/
@@ -82,7 +82,7 @@ officecli-template-filler/
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
-├── engine/                               # v3.5.9 standalone, importable Python engine package
+├── engine/                               # importable Python engine package (v4.2.2)
 └── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ```
 
@@ -108,7 +108,7 @@ Per-module internals live in the module docstrings under `engine/` — read them
 
 ---
 
-## Engine Guarantees (implemented and test-covered)
+## Engine Guarantees (implemented and enforced)
 
 The behaviours below are enforced in `engine/`, not advisory.
 
