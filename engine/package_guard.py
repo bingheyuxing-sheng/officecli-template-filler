@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import zipfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_LIMITS: Dict[str, int] = {
     "max_input_bytes": 64 * 1024 * 1024,               # 64 MB file on disk
@@ -52,13 +52,67 @@ def load_limits(path: Optional[str] = None) -> Dict[str, int]:
     return limits
 
 
+# A JPEG's SOF (size) segment sits behind the EXIF/APP segments, which can be
+# hundreds of bytes or more: reading only the first 64 bytes let oversized
+# photos silently escape the pixel quota. 1 MiB covers realistic EXIF headers;
+# anything larger is already caught by the per-entry size limits.
+_HEADER_READ_BYTES = 1024 * 1024
+
+# SOF0-SOF15 marker codes minus DHT (0xC4), JPG (0xC8) and DAC (0xCC).
+_SOF_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
+
+
+def _jpeg_size(data: bytes) -> Optional[Tuple[int, int]]:
+    """Locate the SOF segment of a JPEG and return ``(width, height)``.
+
+    The marker segments are scanned directly, so a large EXIF/APP block between
+    the SOI marker and the SOF segment cannot hide the image dimensions.
+    """
+    if len(data) < 4 or data[0:2] != b"\xff\xd8":
+        return None
+    i = 2
+    n = len(data)
+    while i + 4 <= n:
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker in (0x00, 0x01, 0xFF) or 0xD0 <= marker <= 0xD9:
+            i += 2  # standalone / fill / restart markers carry no length
+            continue
+        segment_length = int.from_bytes(data[i + 2 : i + 4], "big")
+        if segment_length < 2:
+            return None
+        if marker in _SOF_MARKERS:
+            if i + 9 <= n:
+                height = int.from_bytes(data[i + 5 : i + 7], "big")
+                width = int.from_bytes(data[i + 7 : i + 9], "big")
+                if width and height:
+                    return width, height
+            return None
+        i += 2 + segment_length
+    return None
+
+
+def _image_size(name: str, head: bytes) -> Optional[Tuple[int, int]]:
+    """Dimensions of a media entry from its header prefix, or None."""
+    if name.lower().endswith((".jpg", ".jpeg")):
+        size = _jpeg_size(head)
+        if size is not None:
+            return size
+    try:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(head)) as image:
+            return image.size
+    except Exception:
+        return None
+
+
 def _image_pixels(zf: zipfile.ZipFile) -> int:
     total = 0
-    try:
-        from PIL import Image
-        import io
-    except Exception:
-        return 0
     for info in zf.infolist():
         name = info.filename
         if not any(marker in name for marker in _MEDIA_MARKERS):
@@ -67,19 +121,14 @@ def _image_pixels(zf: zipfile.ZipFile) -> int:
             continue
         try:
             with zf.open(info) as handle:
-                head = handle.read(64)
-            with Image.open(io.BytesIO(_pad_for_header(head, info))) as image:
-                width, height = image.size
-            total += int(width) * int(height)
+                head = handle.read(_HEADER_READ_BYTES)
+            size = _image_size(name, head)
+            if size is None:
+                continue
+            total += int(size[0]) * int(size[1])
         except Exception:
             continue  # undecodable media is reported by package QA, not here
     return total
-
-
-def _pad_for_header(head: bytes, info: zipfile.ZipInfo) -> bytes:
-    # Some formats (PNG/JPEG/GIF/BMP) expose dimensions inside the first bytes;
-    # Image.open only needs the header, and BytesIO keeps it from seeking the zip.
-    return head
 
 
 def check_package(path: str, limits: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
@@ -153,7 +202,7 @@ class _zf_lazy:
     def open(self, info: zipfile.ZipInfo):
         self._zf = zipfile.ZipFile(self._path)
         handle = self._zf.open(info)
-        data = handle.read(64)
+        data = handle.read(_HEADER_READ_BYTES)
         handle.close()
         self._zf.close()
         import io

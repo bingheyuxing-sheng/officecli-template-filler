@@ -473,7 +473,11 @@ def recalculate_and_verify_excel_formulas(
                     timeout=45,
                     check=False,
                 )
-            recalc_file = os.path.join(tmpdir, os.path.basename(xlsx_path))
+            # `--convert-to xlsx` always writes the .xlsx container: an .xlsm
+            # input produces <stem>.xlsx, so looking up the original basename
+            # would silently skip the external recalculation for macro workbooks.
+            recalc_name = os.path.splitext(os.path.basename(xlsx_path))[0] + ".xlsx"
+            recalc_file = os.path.join(tmpdir, recalc_name)
             if res.returncode == 0 and os.path.exists(recalc_file):
                 engine_used = "libreoffice+builtin"
                 wb_val = openpyxl.load_workbook(recalc_file, data_only=True)

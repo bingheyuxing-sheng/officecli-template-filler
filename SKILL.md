@@ -27,10 +27,10 @@ Use this skill only when a **template** drives the work. Start with four checks:
 | Need | Read / run |
 |---|---|
 | Task routing, template gate, mode commands | this file |
-| Transaction, checkpoints, rendering, TOC, QA report details | [`references/workflow-details.md`](references/workflow-details.md) |
-| Engine internals (OOXML, SSOT, images, tables, Excel, process guard) | [`references/engine-internals.md`](references/engine-internals.md) |
-| Python API and QA comparison mechanics | [`references/python-docx-engine.md`](references/python-docx-engine.md) |
-| Frozen contracts and Schemas | `contracts/`, `schemas/` |
+| Engine internals (OOXML, SSOT, images, tables, Excel, process guard) | module docstrings under `engine/` |
+| Transaction, checkpoints, rendering, TOC details | `engine/transaction.py`, `engine/workflow.py`, `engine/pdf_backend.py` |
+| Python API and QA comparison mechanics | `engine/__init__.py`, `engine/qa_engine.py` |
+| JSON Schemas | `schemas/` |
 
 ---
 
@@ -75,18 +75,15 @@ Routing notes that prevent the common misroutes:
 
 ```
 officecli-template-filler/
-├── AGENTS.md / SKILL.md                  # Project rules (authoritative) / this skill workflow
-├── contracts/  config/  schemas/         # Frozen contract set 4.3.0 / Gate + QA policy / JSON Schemas
+├── SKILL.md                              # This skill workflow
+├── config/  schemas/                     # Gate + QA policy / JSON Schemas
 ├── template_gate/                        # W4 evidence, state machine, report, store, validator
 ├── template_intelligence/                # DocumentSpec 4.0 producer, slot ids, fingerprint, validator
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
 ├── engine/                               # v3.5.9 standalone, importable Python engine package
-├── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
-├── tests/                                # Automated suite (692 tests)
-├── reports/                              # current / development / acceptance / archive / anchors
-└── references/                           # workflow-details.md / engine-internals.md / python-docx-engine.md
+└── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ```
 
 CLI surface an agent orchestrates through (`scripts/`):
@@ -107,13 +104,13 @@ CLI surface an agent orchestrates through (`scripts/`):
 | `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
 | `cleanup_editor_sdk.py` | Manual diagnostic only — auto cleanup runs inside every entrypoint |
 
-Per-module internals of `engine/` live in [`references/engine-internals.md`](references/engine-internals.md) — read it before editing `engine/`. Transaction/checkpoint/rendering/QA details live in [`references/workflow-details.md`](references/workflow-details.md). Python API usage and QA comparison mechanics live in [`references/python-docx-engine.md`](references/python-docx-engine.md).
+Per-module internals live in the module docstrings under `engine/` — read them before editing `engine/`. Transaction/checkpoint/rendering behaviour lives in `engine/transaction.py`, `engine/workflow.py` and `engine/pdf_backend.py`; QA comparison mechanics live in `engine/qa_engine.py`.
 
 ---
 
 ## Engine Guarantees (implemented and test-covered)
 
-The behaviours below are enforced in `engine/`, not advisory. Rationale and code paths live in [`references/engine-internals.md`](references/engine-internals.md).
+The behaviours below are enforced in `engine/`, not advisory.
 
 | Area | Guarantee |
 |---|---|
@@ -162,7 +159,7 @@ Rules:
 - The Gate Record binds the template SHA-256, DocumentSpec digest, four fingerprints, evidence digest, analysis/parser/policy versions and task type. Any change invalidates it (`TEMPLATE_GATE_STALE`); re-analyze and re-confirm.
 - `PROOFREAD` (no template), `EXCEL_GENERATE`, `POLISH`, `MERGE` and `RENDER` keep their existing behavior and do not trigger this gate.
 - Execution CLIs accept an optional `--gate-record`; without it the validator looks up the newest `CONFIRMED` record for the template SHA + task type. Passing a record does not bypass validation.
-- Contract: [`contracts/06-template-understanding-gate.md`](contracts/06-template-understanding-gate.md). Evidence/Schema: `schemas/template_evidence-1.0.schema.json`, `template_gate_record-1.0.schema.json`, `template_analysis_report-1.0.schema.json`.
+- Evidence/Schema: `schemas/template_evidence-1.0.schema.json`, `template_gate_record-1.0.schema.json`, `template_analysis_report-1.0.schema.json`.
 
 ### Step 2: Analyze Template & Emit `DocumentSpec`
 Pick the analyzer by container type — never run the Word analyzer on a workbook:
@@ -334,7 +331,7 @@ Every entrypoint ends with a `transaction` object:
 
 #### Step 4A: Checkpoints, Rendering and TOC
 
-For `STANDARD` / `FULL`, persist `content → tables → images → toc` checkpoints with `WorkflowCheckpointStore`; a failed stage resumes from the last valid checkpoint and never redoes a successful earlier stage. One bounded render attempt per stage; missing rendering or TOC verification becomes `coverage_gaps` / `UNVERIFIED`, never a pass. The full checkpoint, renderer fallback and `PENDING_FIELD_UPDATE` rules are in [`references/workflow-details.md`](references/workflow-details.md) §2–3.
+For `STANDARD` / `FULL`, persist `content → tables → images → toc` checkpoints with `WorkflowCheckpointStore`; a failed stage resumes from the last valid checkpoint and never redoes a successful earlier stage. One bounded render attempt per stage; missing rendering or TOC verification becomes `coverage_gaps` / `UNVERIFIED`, never a pass. The full checkpoint, renderer fallback and `PENDING_FIELD_UPDATE` rules live in `engine/workflow.py` and `engine/pdf_backend.py`.
 
 #### Step 4B: Direct Review Deliverable — Word + Excel, No Report
 
@@ -394,7 +391,7 @@ Read `status` in `qa_report.json` — it is one of four values, never a bare boo
 
 The report also carries `issues` (flattened objects with `code`, `location`, `detail`, `severity`), `warnings`, `comparison_profile`, `alignment`, `coverage_gaps`, `unverified_count`. Branch on `code`, never prose. Never describe a `FAILED` report as delivered, and never call `PENDING_HUMAN_REVIEW` broken. Medium findings are advisory.
 
-**Content truth** (`content_qa`, on by default; disable with `--no-content-qa`) checks numeric conflicts, subtotal closure, label-value variance, name drift and mixed date/unit styles. Codes, severities, `label_values` and `audit_fact_sources()` rules are in [`references/workflow-details.md`](references/workflow-details.md) §4.
+**Content truth** (`content_qa`, on by default; disable with `--no-content-qa`) checks numeric conflicts, subtotal closure, label-value variance, name drift and mixed date/unit styles. Codes, severities and `label_values` are produced by `engine/qa_engine.py` and `engine/consistency_qa.py`; `audit_fact_sources()` lives in `engine/consistency_qa.py`.
 
 For REVIEW outputs, run `python scripts/run_qa.py "$OUTPUT_FILE" --review --reference "$REF_DOCX" --profile replica --task-mode REVIEW`:
 

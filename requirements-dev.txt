@@ -1,8 +1,0 @@
-# Test/dev convenience. jsonschema is a RUNTIME dependency of the v4.0 plan
-# path since W2 (declared in requirements.txt); this file only repeats it for
-# contract-test-only environments.
-jsonschema>=4.20
-
-# Run:
-#   python -m pip install -r requirements-dev.txt
-#   python -m unittest discover -s tests/contracts -t tests
