@@ -1,9 +1,9 @@
 ---
 name: officecli-template-filler
-description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
+description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, OfficeCLI-backed polish/merge, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, polish, merge, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订, 润色措辞, 文档合并 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.2.2)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.3.0)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -43,8 +43,8 @@ Run `python scripts/inspect_document.py --inputs <file1> [<file2> ...] --intent 
 | **`GENERATE`** | 1 `.docx` template + user topic/data to populate; an accompanying `.xlsx` is recorded as `data_sources` when the intent is generation | `analyze_template.py --spec-version 4` → validate DocumentSpec → ContentPlan + FillPlan → `generate_document.py --spec/--plan/--content-plan` → QAReport + commit gate | **ENABLED** (Standards + Official Institution Site) | `FULL_CONFIRM` (if unsearchable internal slots exist) or `LIGHT_CONFIRM` |
 | **`REPAIR`** | exactly 2 `.docx` files (`reference_template.docx` + `broken_target.docx`) | `repair_document.py` (`build_repair_plan` → `repair_plan.json` → `execute_repair_plan`) → `run_qa.py` | **DISABLED BY DEFAULT** (Strict content preservation from broken doc) | `SKIP` (or `HOLD_AND_ASK` if `L4` structural mismatch) |
 | **`REVIEW`** | 2 `.docx` files + intent containing 审核/审阅/修订/留痕/review/track changes/按模板修正 | `review_document.py` (`build_review_plan` → `execute_review_plan`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** (No external rewriting during audit) | `LIGHT_CONFIRM` for the revision list; `HOLD_AND_ASK` if `L4` regions need manual edits |
-| **`POLISH`** | 1 `.docx` draft + request to refine wording/terminology while keeping layout | **NO HANDLER — `CAPABILITY_NOT_AVAILABLE`** (planned: `analyze_template.py` → `LogicalParagraphView` surgical replacement → `run_qa.py`) | **DISABLED BY DEFAULT** (On-demand only if user asks to verify standards) | `LIGHT_CONFIRM` |
-| **`MERGE`** | Explicit merge/summarize intent (合并/汇总/整合/merge), 2+ same-format sources without a template, or a multi-source input with no intent signal | **NO HANDLER — `CAPABILITY_NOT_AVAILABLE`** (planned: `analyze_template.py` → `ssot_engine` cross-doc reconciliation → format-specific generator → `run_qa.py`) | **DISABLED BY DEFAULT** | `LIGHT_CONFIRM` |
+| **`POLISH`** | 1 `.docx` draft + request to refine wording/terminology while keeping layout | `polish_document.py` (`build_polish_plan` → officecli `set` run/paragraph batch → read-back → `run_qa.py`) | **DISABLED BY DEFAULT** (On-demand only if user asks to verify standards) | `LIGHT_CONFIRM` |
+| **`MERGE`** | Explicit merge/summarize intent (合并/汇总/整合/merge), 2+ same-format sources without a template, or a multi-source input with no intent signal | `merge_documents.py` (`plan_*_merge` → officecli `dump`/`batch` replay → `verify_merge` → `run_qa.py`) | **DISABLED BY DEFAULT** | `LIGHT_CONFIRM` |
 | **`REFORMAT`** | 1 or 2 `.docx` + typographic intent (统一字体/统一字号/重新排版/格式统一/按模板修改格式/改格式/对齐格式/修复格式) | `reformat_document.py` (`build_reformat_plan` → `format_plan.json` → `execute_reformat_plan` writes `w:*PrChange`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** | `SKIP` (plan-only) / `LIGHT_CONFIRM` (apply: show the diff summary first) |
 | **`EXCEL_GENERATE`** | exactly 1 `.xlsx`/`.xlsm` template + data/topic to populate; extra workbooks become `data_sources` | `analyze_excel_template.py` → `ssot_engine` (`Decimal`) → `generate_excel.py` → `run_qa.py` | **CONDITIONAL** (Enabled if external standards/rates needed) | `FULL_CONFIRM` or `LIGHT_CONFIRM` |
 
@@ -71,7 +71,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.2.2)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.3.0)
 
 ```
 officecli-template-filler/
@@ -82,7 +82,7 @@ officecli-template-filler/
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
-├── engine/                               # importable Python engine package (v4.2.2)
+├── engine/                               # importable Python engine package (v4.3.0)
 └── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ```
 
@@ -99,6 +99,8 @@ CLI surface an agent orchestrates through (`scripts/`):
 | `repair_document.py` | Dual-document REPAIR (emit & execute repair_plan.json) |
 | `review_document.py` | REVIEW (tracked changes + comments + review_report.json) |
 | `proofread_document.py` | PROOFREAD (single-document tracked fixes) |
+| `polish_document.py` | POLISH (OfficeCLI run/paragraph wording edits, layout preserved) |
+| `merge_documents.py` | MERGE (OfficeCLI dump/replay consolidation of DOCX or XLSX inputs) |
 | `reformat_document.py` | REFORMAT (semantic format diff + tracked `w:*PrChange` apply) |
 | `render_document.py` | DOCX visual QA; PDF via WPS word2pdf / LibreOffice, else `RENDER_PDF_NOT_PRODUCED` |
 | `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
@@ -122,12 +124,14 @@ The behaviours below are enforced in `engine/`, not advisory.
 | Excel | Row cloning copies height, fill, border, number format and merges; formulas are re-verified after write |
 | Delivery | `DocumentTransaction` stages, validates and atomically publishes; a failure never leaves a half-written deliverable |
 | QA | Four-state status (`PASSED` / `FAILED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED`); unverifiable checks become `coverage_gaps` |
-| Routing | Role-aware: template + data + generate intent stays `GENERATE`; unimplemented modes return `CAPABILITY_NOT_AVAILABLE` |
+| Routing | Role-aware: template + data + generate intent stays `GENERATE`; unknown or disabled modes return `CAPABILITY_NOT_AVAILABLE` |
 | Template gate | No valid `CONFIRMED` Gate Record means `TEMPLATE_GATE_REQUIRED` / `TEMPLATE_GATE_STALE`; the check runs inside `execute_fill_plan` / `execute_repair_plan` / `execute_review_plan` / `execute_reformat_plan` |
 | Content | Numeric conflicts, subtotal closure and name drift are checked; every SSOT fact needs a `source` |
 | Images by role | `find_images(role=...)` / `replace_image_by_role()` target logo / stamp / qr / illustration with stated evidence |
 | OCR | Optional backend; without one the run reports `OCR_UNAVAILABLE` instead of claiming image text was read |
 | Figures | `render_chart_image()` renders table/bar/pie from payload data; missing matplotlib or CJK font returns an explicit status |
+| POLISH | officecli `set` targets one run when possible; a span crossing differently formatted runs is refused instead of being rebuilt |
+| MERGE | first input is the base package; later inputs replay through officecli `dump`/`batch`, with story/object gaps reported as `limitations` |
 
 ## Standard End-to-End Execution Workflow
 
@@ -177,7 +181,7 @@ Also read `routing.capability` from Step 1 before executing anything:
 | field | Meaning |
 |---|---|
 | `enabled: true` | The mode has a real handler (`capability.handler`); continue. |
-| `enabled: false`, `reason: CAPABILITY_NOT_AVAILABLE` | The mode is routed but not implemented (`POLISH` / `MERGE`). Stop and tell the user the capability is missing — do not substitute another script. |
+| `enabled: false`, `reason: CAPABILITY_NOT_AVAILABLE` | The mode has no handler (or is unknown). Stop and tell the user the capability is missing — do not substitute another script. |
 | `OCR_UNAVAILABLE` in `coverage_gaps` | Image-internal text was requested (`--ocr`) but no OCR backend is installed. Tell the user the check did not run; never claim it passed. |
 | `RENDER_BACKEND_UNAVAILABLE` / `CJK_FONT_UNAVAILABLE` | Figure rendering cannot run here (no matplotlib, or no CJK font). Report it and keep the placeholder as `NEEDS_REDRAW`; do not ship a garbled image. |
 | `task_mode: UNSUPPORTED_INPUT` | At least one input is `.pdf` / `.doc` / `.wps` / `.et` or another unsupported container. Report `unsupported_files` plus `supported_formats` and stop; `inspect_document.py` exits with code 2 for this verdict. |
@@ -287,7 +291,28 @@ Every entrypoint ends with a `transaction` object:
   - Optional backend switch: `--writer officecli` applies the whole FillPlan as one atomic `officecli` batch on the staging copy, then restores the template fingerprint before QA. It falls back to `python-docx` for the whole document when an operation, story or token is not faithfully expressible, and records the reason in `data.writer_fallback`. The default remains `python-docx`.
   - The executor writes only to a staging path, emits a per-operation fill ledger, and rejects protected/unauthorized/overflow targets before mutation.
   - Legacy token mode `--data payload.json` (no `--plan`) remains available as a **compatibility path** for simple token maps; it is not the v4 chain and must be labeled as legacy if used.
-- **For `POLISH` / `MERGE`**: these modes have no handler. Report `CAPABILITY_NOT_AVAILABLE` and stop — never substitute `generate_document.py` or any other script.
+- **For `POLISH` (single document, wording/terminology, layout preserved)**:
+  ```powershell
+  python scripts/polish_document.py --target "$TARGET_DOCX" --edits "$TEMP/edits.json" `
+      --out "$OUTPUT_DOCX" [--plan-out "$TEMP/polish_plan.json"] [--report "$TEMP/polish_report.json"] [--strip-red]
+  ```
+  `edits.json` is a list of `{"old_text","new_text","reason","location_id","occurrence"}`; `--terms terms.json`
+  applies a `{old: new}` glossary. Every edit runs as an officecli `set` on a run or paragraph path. The
+  command exits 2 with `POLISH_CROSS_RUN_FORMATTING` when a replacement would merge differently formatted
+  runs, and with `POLISH_EDIT_AMBIGUOUS` when the text matches more than one paragraph and no location is
+  given. Never loosen those refusals by rewriting the paragraph.
+- **For `MERGE` (2+ same-format sources, no template)**:
+  ```powershell
+  python scripts/merge_documents.py --inputs "$DOC1" "$DOC2" "$DOC3" --out "$OUTPUT_FILE" `
+      [--separator page|none] [--plan-out "$TEMP/merge_plan.json"] [--report "$TEMP/merge_report.json"]
+  ```
+  DOCX and XLSX are both accepted; all inputs must share one family. The first input is the base package and
+  every later input is replayed as an officecli `dump`/`batch`, so base styles, theme, headers and media stay
+  intact while appended bodies keep runs, tables, pictures and hyperlinks. Styles whose id already exists
+  in the base keep the base definition; only missing styles are imported. Read `limitations` in the report:
+  appended headers/footers, footnotes, endnotes, comments and each source's final section page setup are
+  not carried, and XLSX named ranges/charts/pivots/macros are not merged. `--plan-only` shows the replay
+  plan without writing.
 - **For `REFORMAT` (align formatting to a template, content preserved)**:
   ```powershell
   # Step 1 — plan only: prints the semantic diff list, writes nothing

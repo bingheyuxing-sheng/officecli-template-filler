@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-OfficeCLI + Python Document Intelligence Engine (v4.2.2).
+OfficeCLI + Python Document Intelligence Engine (v4.3.0).
 
 Exports the Word (.docx) / Excel (.xlsx) engine: template understanding, SSOT Decimal math,
 non-destructive cross-run replacement, safe image replacement, complex cell protection,
@@ -175,6 +175,25 @@ from .workflow import (
     toc_degradation_chain,
 )
 from .logic_qa import audit_logic
+from .polish_engine import (
+    PolishExecutionError,
+    PolishPlanningError,
+    build_polish_plan,
+    execute_polish_plan,
+    load_polish_inputs,
+    normalize_edits,
+    normalize_terms,
+)
+from .merge_engine import (
+    MergeExecutionError,
+    MergePlanningError,
+    container_family,
+    execute_merge,
+    normalize_inputs,
+    plan_docx_merge,
+    plan_xlsx_merge,
+    verify_merge,
+)
 from .research import (
     RESEARCH_POLICY_ON_DEMAND,
     RESEARCH_POLICY_DISABLED,
@@ -184,7 +203,7 @@ from .research import (
     validate_research_facts,
 )
 
-__version__ = "4.2.2"
+__version__ = "4.3.0"
 
 __all__ = [
     "__version__",
@@ -333,6 +352,21 @@ __all__ = [
     "run_visual_qa_rounds",
     "toc_degradation_chain",
     "audit_logic",
+    "PolishExecutionError",
+    "PolishPlanningError",
+    "build_polish_plan",
+    "execute_polish_plan",
+    "load_polish_inputs",
+    "normalize_edits",
+    "normalize_terms",
+    "MergeExecutionError",
+    "MergePlanningError",
+    "container_family",
+    "execute_merge",
+    "normalize_inputs",
+    "plan_docx_merge",
+    "plan_xlsx_merge",
+    "verify_merge",
     "RESEARCH_POLICY_ON_DEMAND",
     "RESEARCH_POLICY_DISABLED",
     "RESEARCH_ENABLED_MODES",

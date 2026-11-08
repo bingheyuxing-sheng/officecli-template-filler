@@ -21,8 +21,8 @@ TASK_CAPABILITIES: Dict[str, Dict[str, Any]] = {
     "REPAIR": {"handler": "scripts/repair_document.py", "enabled": True},
     "REVIEW": {"handler": "scripts/review_document.py", "enabled": True},
     "REFORMAT": {"handler": "scripts/reformat_document.py", "enabled": True},
-    "POLISH": {"handler": "scripts/polish_document.py", "enabled": False},
-    "MERGE": {"handler": "scripts/merge_documents.py", "enabled": False},
+    "POLISH": {"handler": "scripts/polish_document.py", "enabled": True},
+    "MERGE": {"handler": "scripts/merge_documents.py", "enabled": True},
     "PROOFREAD": {"handler": "scripts/proofread_document.py", "enabled": True},
 }
 

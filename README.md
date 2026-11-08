@@ -49,7 +49,7 @@ code compares iterables with `zip(..., strict=True)` in six places, which raises
 | `jsonschema` | >= 4.20 — validation of the versioned JSON artifacts |
 | `PyMuPDF` | optional (`>= 1.24`) — page rendering and page-level visual comparison; page counts fall back to WPS `pdfinfo` or poppler |
 | WPS Office or LibreOffice | optional — PDF conversion for visual QA; without it `RENDER_PDF_NOT_PRODUCED` |
-| OfficeCLI | optional — only for `--writer officecli` |
+| OfficeCLI | required for `POLISH` / `MERGE`; optional for `--writer officecli` on the FillPlan path |
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -64,12 +64,17 @@ python -m pip install -r requirements.txt
 | `REFORMAT` | `scripts/reformat_document.py` | Align typography to a reference template, written as `w:*PrChange` | **CONFIRMED required** |
 | `REVIEW` | `scripts/review_document.py` | Review one document against a reference, or attach external `--findings` as comments | **CONFIRMED required** |
 | `PROOFREAD` | `scripts/proofread_document.py` | Apply tracked text corrections to a single document | not required |
+| `POLISH` | `scripts/polish_document.py` | Refine wording/terminology in place with OfficeCLI run/paragraph edits | not required |
+| `MERGE` | `scripts/merge_documents.py` | Consolidate 2+ DOCX or XLSX files with OfficeCLI dump/replay | not required |
 
 Excel templates are a separate routed path: `EXCEL_GENERATE` → `scripts/generate_excel.py`
 (`--template`, `--data`, `--out`), which fills cells and keeps existing formulas.
 
-`POLISH` and `MERGE` are **not implemented**. The router returns `CAPABILITY_NOT_AVAILABLE` for both;
-they must not be simulated with another mode.
+`POLISH` and `MERGE` run on the OfficeCLI backend. `POLISH` refuses a span that crosses
+differently formatted runs instead of letting OfficeCLI rebuild the paragraph; `MERGE` uses the
+first input as the base package and replays every later input as an OfficeCLI batch, reporting
+story/object limitations instead of silently dropping them. When an appended document defines a
+style id the base already has, the base definition wins; only missing styles are imported.
 
 ## Shortest usable path
 
@@ -114,6 +119,8 @@ python scripts/proofread_document.py --target draft.docx --revisions revisions.j
 python scripts/reformat_document.py  --reference template.docx --target draft.docx --out reformatted.docx
 python scripts/repair_document.py    --reference template.docx --broken broken.docx --out repaired.docx
 python scripts/generate_excel.py     --template budget.xlsx --data values.json --out budget-filled.xlsx
+python scripts/polish_document.py    --target draft.docx --edits edits.json --out polished.docx
+python scripts/merge_documents.py    --inputs part1.docx part2.docx --out merged.docx
 ```
 
 All of these accept `--output` as an alias of `--out`, and `generate_document.py` / `generate_excel.py`
@@ -177,7 +184,7 @@ by design; a failed check aborts the transaction rather than degrading the outpu
 
 ## Version and releases
 
-Current version: **4.2.2** (`engine/__init__.py`, `SKILL.md`).
+Current version: **4.3.0** (`engine/__init__.py`, `SKILL.md`).
 
 - `dist/` is ignored by git. It is build output produced by the release flow, never committed.
 - A release consists of `officecli-template-filler-<version>.zip` plus a matching
@@ -189,7 +196,13 @@ Current version: **4.2.2** (`engine/__init__.py`, `SKILL.md`).
 
 - **No automated tests, no CI.** This is the single largest risk in the repository; see the notice at the
   top. Engine changes require a manual run of the full chain on a representative template.
-- `POLISH` and `MERGE` have no handler.
+- `POLISH` / `MERGE` require OfficeCLI; without the binary they exit 2 with `OFFICECLI_UNAVAILABLE`.
+- `POLISH` cannot isolate one of several matches inside a single run, or a replacement that spans
+  differently formatted runs; it returns a planning error instead of changing run formatting.
+- `MERGE` consolidates document bodies into the first input's package. Appended headers/footers,
+  footnotes, endnotes, comments and each source's final section page setup are not carried;
+  XLSX named ranges, charts, pivots and macros are not merged. These are reported as
+  `limitations` in the merge report.
 - The OfficeCLI writer covers body paragraphs and tables only and falls back for the whole document when a
   target lives elsewhere; its behavior is not re-verified for every OfficeCLI release.
 - Visual QA needs WPS/LibreOffice for PDF conversion and PyMuPDF for page rendering; when either is

@@ -24,6 +24,7 @@ Verified against officecli 1.0.160:
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -162,6 +163,35 @@ def build_set_command(path: str, find: str, replace: str) -> Dict[str, Any]:
     }
 
 
+def dump(file_path: str, path: str = "/", timeout: int = DEFAULT_TIMEOUT) -> List[Dict[str, Any]]:
+    """Return a replayable batch command list for one subtree.
+
+    ``officecli dump --json`` wraps the command array in an envelope whose
+    ``data`` is the array itself. The resident is closed afterwards so a read
+    never leaves the file locked for the next batch or for python-docx.
+    """
+    binary = find_officecli()
+    if binary is None:
+        raise OfficecliUnavailable("officecli is not installed")
+    try:
+        run = _run([binary, "dump", file_path, path, "--json"], timeout=timeout)
+    finally:
+        close(file_path)
+    payload = _parse_json(run.stdout)
+    if run.returncode != 0 or not payload.get("success"):
+        raise OfficecliError(
+            "officecli dump {} {} failed: {}".format(
+                file_path, path, _failure_message(payload, run)
+            )
+        )
+    data = payload.get("data")
+    if not isinstance(data, list):
+        raise OfficecliError(
+            "officecli dump {} {} returned no command list".format(file_path, path)
+        )
+    return [item for item in data if isinstance(item, dict)]
+
+
 def run_batch(file_path: str, commands: List[Dict[str, Any]], timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
     """Apply ``commands`` atomically; raise :class:`OfficecliError` on failure.
 
@@ -295,6 +325,7 @@ def restore_paragraph_identity(
     template_path: str,
     staged_path: str,
     strip_red_runs: Optional[Sequence[Tuple[str, int]]] = None,
+    allow_appended: bool = False,
 ) -> None:
     """Undo officecli's ``w14:paraId`` / ``w14:textId`` stamping in every part.
 
@@ -324,10 +355,14 @@ def restore_paragraph_identity(
         original = list(source_root.iter(qn("w:p")))
         staged = list(target_root.iter(qn("w:p")))
         if len(original) != len(staged):
-            raise OfficecliError(
-                "officecli changed the paragraph count in {} ({} -> {}); "
-                "refusing to normalise".format(partname, len(original), len(staged))
-            )
+            if not (allow_appended and len(staged) > len(original)):
+                raise OfficecliError(
+                    "officecli changed the paragraph count in {} ({} -> {}); "
+                    "refusing to normalise".format(partname, len(original), len(staged))
+                )
+            # MERGE appends paragraphs. The base paragraphs keep their identity;
+            # appended ones are new and legitimately carry officecli's fresh ids.
+            staged = staged[:len(original)]
         for before, after in zip(original, staged, strict=False):
             for attribute in _W14_ATTRIBUTES:
                 value = before.get(attribute)
@@ -339,6 +374,54 @@ def restore_paragraph_identity(
 
     if strip_red_runs:
         _strip_red_on_runs(target, strip_red_runs)
+    target.save(staged_path)
+
+
+def restore_table_look(template_path: str, staged_path: str) -> None:
+    """Restore the template's ``w:tblLook`` representation after a raw-set save.
+
+    officecli collapses ``w:tblLook`` to its legacy ``w:val`` form when a batch
+    contains ``raw-set``, which is a visible attribute delta even though the
+    flags are equivalent. The template's exact attributes are restored on the
+    first N tables (base tables precede appended ones).
+    """
+    import docx
+    from docx.oxml.ns import qn
+
+    source = docx.Document(template_path)
+    target = docx.Document(staged_path)
+    source_tables = list(source.element.body.iter(qn("w:tbl")))
+    target_tables = list(target.element.body.iter(qn("w:tbl")))
+    if len(target_tables) < len(source_tables):
+        raise OfficecliError(
+            "officecli removed tables ({} -> {}); refusing to restore tblLook".format(
+                len(source_tables), len(target_tables)
+            )
+        )
+
+    for before, after in zip(source_tables, target_tables):
+        before_pr = before.find(qn("w:tblPr"))
+        after_pr = after.find(qn("w:tblPr"))
+        if after_pr is None:
+            continue
+        before_look = before_pr.find(qn("w:tblLook")) if before_pr is not None else None
+        after_look = after_pr.find(qn("w:tblLook"))
+        if before_look is None:
+            if after_look is not None:
+                after_pr.remove(after_look)
+            continue
+        if after_look is None:
+            after_look = copy.deepcopy(before_look)
+            insert_at = len(after_pr)
+            for index, child in enumerate(list(after_pr)):
+                if child.tag in (qn("w:tblCaption"), qn("w:tblDescription")):
+                    insert_at = index
+                    break
+            after_pr.insert(insert_at, after_look)
+        else:
+            after_look.attrib.clear()
+            after_look.attrib.update(before_look.attrib)
+
     target.save(staged_path)
 
 
@@ -397,11 +480,13 @@ __all__ = [
     "UnsupportedLocation",
     "build_set_command",
     "close",
+    "dump",
     "find_officecli",
     "get_text",
     "is_available",
     "location_to_path",
     "restore_paragraph_identity",
+    "restore_table_look",
     "run_batch",
     "validate",
     "version",
