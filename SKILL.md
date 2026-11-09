@@ -1,9 +1,9 @@
 ---
 name: officecli-template-filler
-description: Template-driven Word and Excel document engine with FillPlan execution, native tracked changes, OfficeCLI-backed polish/merge, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, polish, merge, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订, 润色措辞, 文档合并 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
+description: Template-driven Word and Excel document engine with OfficeCLI-first FillPlan execution, native tracked changes, OfficeCLI-backed polish/merge, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, polish, merge, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订, 润色措辞, 文档合并 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.3.0)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.3.1)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -16,6 +16,7 @@ Use this skill only when a **template** drives the work. Start with four checks:
 
 - **Router first**: eight modes; web search enabled by default only for `GENERATE` / `EXCEL_GENERATE`.
 - **Template gate**: `GENERATE` / `REPAIR` / `REFORMAT` / `REVIEW` require a `CONFIRMED` Gate Record. No record, no execution.
+- **OfficeCLI first**: every document mutation is an `officecli` command issued through `engine/officecli_runtime.py`. A plan OfficeCLI cannot express blocks with `WRITER_UNSUPPORTED`; `--allow-writer-fallback` is the only opt-in to the legacy `python-docx` writer.
 - **Strict content truth**: never invent people, IDs, dates, budgets or sources; every SSOT fact needs a `source`.
 - **Zero unintended formatting delta**: preserve unmapped styles, `w:proofErr`, complex cells, shared image `rId`, and Excel formulas. Never shrink fonts or change margins to fit content.
 - **Profiles**: `FAST` / `STANDARD` / `FULL` change scope, never safety.
@@ -30,6 +31,7 @@ Use this skill only when a **template** drives the work. Start with four checks:
 | Engine internals (OOXML, SSOT, images, tables, Excel, process guard) | module docstrings under `engine/` |
 | Transaction, checkpoints, rendering, TOC details | `engine/transaction.py`, `engine/workflow.py`, `engine/pdf_backend.py` |
 | Python API and QA comparison mechanics | `engine/__init__.py`, `engine/qa_engine.py` |
+| OfficeCLI runtime, path model and migration ledger | `engine/officecli_runtime.py`, `docs/officecli-first.md` |
 | JSON Schemas | `schemas/` |
 
 ---
@@ -41,12 +43,12 @@ Run `python scripts/inspect_document.py --inputs <file1> [<file2> ...] --intent 
 | Task Mode | Trigger Condition | Primary Engine Pipeline | Web Search Policy | Default Confirmation Tier |
 |---|---|---|---|---|
 | **`GENERATE`** | 1 `.docx` template + user topic/data to populate; an accompanying `.xlsx` is recorded as `data_sources` when the intent is generation | `analyze_template.py --spec-version 4` → validate DocumentSpec → ContentPlan + FillPlan → `generate_document.py --spec/--plan/--content-plan` → QAReport + commit gate | **ENABLED** (Standards + Official Institution Site) | `FULL_CONFIRM` (if unsearchable internal slots exist) or `LIGHT_CONFIRM` |
-| **`REPAIR`** | exactly 2 `.docx` files (`reference_template.docx` + `broken_target.docx`) | `repair_document.py` (`build_repair_plan` → `repair_plan.json` → `execute_repair_plan`) → `run_qa.py` | **DISABLED BY DEFAULT** (Strict content preservation from broken doc) | `SKIP` (or `HOLD_AND_ASK` if `L4` structural mismatch) |
-| **`REVIEW`** | 2 `.docx` files + intent containing 审核/审阅/修订/留痕/review/track changes/按模板修正 | `review_document.py` (`build_review_plan` → `execute_review_plan`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** (No external rewriting during audit) | `LIGHT_CONFIRM` for the revision list; `HOLD_AND_ASK` if `L4` regions need manual edits |
+| **`REPAIR`** | exactly 2 `.docx` files (`reference_template.docx` + `broken_target.docx`) | `repair_document.py` (`build_repair_plan` → `repair_plan.json` → `execute_repair_plan` via OfficeCLI batch) → `run_qa.py` | **DISABLED BY DEFAULT** (Strict content preservation from broken doc) | `SKIP` (or `HOLD_AND_ASK` if `L4` structural mismatch) |
+| **`REVIEW`** | 2 `.docx` files + intent containing 审核/审阅/修订/留痕/review/track changes/按模板修正 | `review_document.py` (`build_review_plan` → `execute_review_plan` via OfficeCLI tracked replace/comment batch) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** (No external rewriting during audit) | `LIGHT_CONFIRM` for the revision list; `HOLD_AND_ASK` if `L4` regions need manual edits |
 | **`POLISH`** | 1 `.docx` draft + request to refine wording/terminology while keeping layout | `polish_document.py` (`build_polish_plan` → officecli `set` run/paragraph batch → read-back → `run_qa.py`) | **DISABLED BY DEFAULT** (On-demand only if user asks to verify standards) | `LIGHT_CONFIRM` |
 | **`MERGE`** | Explicit merge/summarize intent (合并/汇总/整合/merge), 2+ same-format sources without a template, or a multi-source input with no intent signal | `merge_documents.py` (`plan_*_merge` → officecli `dump`/`batch` replay → `verify_merge` → `run_qa.py`) | **DISABLED BY DEFAULT** | `LIGHT_CONFIRM` |
-| **`REFORMAT`** | 1 or 2 `.docx` + typographic intent (统一字体/统一字号/重新排版/格式统一/按模板修改格式/改格式/对齐格式/修复格式) | `reformat_document.py` (`build_reformat_plan` → `format_plan.json` → `execute_reformat_plan` writes `w:*PrChange`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** | `SKIP` (plan-only) / `LIGHT_CONFIRM` (apply: show the diff summary first) |
-| **`EXCEL_GENERATE`** | exactly 1 `.xlsx`/`.xlsm` template + data/topic to populate; extra workbooks become `data_sources` | `analyze_excel_template.py` → `ssot_engine` (`Decimal`) → `generate_excel.py` → `run_qa.py` | **CONDITIONAL** (Enabled if external standards/rates needed) | `FULL_CONFIRM` or `LIGHT_CONFIRM` |
+| **`REFORMAT`** | 1 or 2 `.docx` + typographic intent (统一字体/统一字号/重新排版/格式统一/按模板修改格式/改格式/对齐格式/修复格式) | `reformat_document.py` (`build_reformat_plan` → `format_plan.json` → `execute_reformat_plan` via OfficeCLI `revision.author` writes `w:*PrChange`) → `audit_review_integrity` + `run_qa.py` | **DISABLED BY DEFAULT** | `SKIP` (plan-only) / `LIGHT_CONFIRM` (apply: show the diff summary first) |
+| **`EXCEL_GENERATE`** | exactly 1 `.xlsx`/`.xlsm` template + data/topic to populate; extra workbooks become `data_sources` | `analyze_excel_template.py` → `ssot_engine` (`Decimal`) → `generate_excel.py` (OfficeCLI cell batch; `.xlsm` needs explicit fallback) → `run_qa.py` | **CONDITIONAL** (Enabled if external standards/rates needed) | `FULL_CONFIRM` or `LIGHT_CONFIRM` |
 
 Routing notes that prevent the common misroutes:
 
@@ -71,7 +73,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.3.0)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.3.1)
 
 ```
 officecli-template-filler/
@@ -82,7 +84,7 @@ officecli-template-filler/
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
-├── engine/                               # importable Python engine package (v4.3.0)
+├── engine/                               # importable Python engine package (v4.3.1)
 └── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ```
 
@@ -95,18 +97,37 @@ CLI surface an agent orchestrates through (`scripts/`):
 | `template_gate.py` | W4 gate: analyze evidence, report, resolve, confirm, reject, status |
 | `analyze_excel_template.py` | Emit Excel template spec (`.xlsx`/`.xlsm`) |
 | `generate_document.py` | v4 plan chain executor + legacy `--data` token path |
-| `generate_excel.py` | EXCEL_GENERATE (fills `.xlsx`, keeps formulas) |
-| `repair_document.py` | Dual-document REPAIR (emit & execute repair_plan.json) |
-| `review_document.py` | REVIEW (tracked changes + comments + review_report.json) |
-| `proofread_document.py` | PROOFREAD (single-document tracked fixes) |
+| `generate_excel.py` | EXCEL_GENERATE (OfficeCLI cell batch, keeps formulas; `.xlsm` fallback is explicit) |
+| `repair_document.py` | Dual-document REPAIR (emit `repair_plan.json`, execute via OfficeCLI) |
+| `review_document.py` | REVIEW (OfficeCLI tracked changes + comments + review_report.json) |
+| `proofread_document.py` | PROOFREAD (single-document OfficeCLI tracked fixes) |
 | `polish_document.py` | POLISH (OfficeCLI run/paragraph wording edits, layout preserved) |
 | `merge_documents.py` | MERGE (OfficeCLI dump/replay consolidation of DOCX or XLSX inputs) |
-| `reformat_document.py` | REFORMAT (semantic format diff + tracked `w:*PrChange` apply) |
+| `reformat_document.py` | REFORMAT (semantic format diff + OfficeCLI tracked `w:*PrChange` apply) |
 | `render_document.py` | DOCX visual QA; PDF via WPS word2pdf / LibreOffice, else `RENDER_PDF_NOT_PRODUCED` |
 | `run_qa.py` | Package / Format / Content / Image-text / Excel Formula / Visual QA |
 | `cleanup_editor_sdk.py` | Manual diagnostic only — auto cleanup runs inside every entrypoint |
 
 Per-module internals live in the module docstrings under `engine/` — read them before editing `engine/`. Transaction/checkpoint/rendering behaviour lives in `engine/transaction.py`, `engine/workflow.py` and `engine/pdf_backend.py`; QA comparison mechanics live in `engine/qa_engine.py`.
+
+---
+
+## Core Architecture Rule 4 — OfficeCLI-first Write Path
+
+OfficeCLI is the execution substrate, not an optional backend. The boundary is one module:
+
+```
+scripts/ → engine/* → engine/officecli_runtime.py → officecli.exe (>= 1.0.130, verified 1.0.160)
+```
+
+- **Mutation**: the FillPlan is translated into one atomic `officecli batch` of `set` / `add` / `remove` commands on the staging copy. Batch failure rolls the whole batch back, so the staged file is unchanged.
+- **Addressing**: `location_to_path()` maps DocumentSpec locations to OfficeCLI DOM paths for body, tables, headers, footers, footnotes, endnotes and comments. Section stories are resolved through `get /section[N]` (`headerRef.default|first|even` / `footerRef.*`), never guessed.
+- **Resident lifecycle**: every read or write that starts a resident must end with `close`; otherwise QA or the atomic commit hits the file lock.
+- **Strict fallback**: `execute_fill_plan(..., writer="officecli")` is the default. Unsupported plans return `BLOCKED` + `WRITER_UNSUPPORTED`. `allow_writer_fallback=True` (CLI: `--allow-writer-fallback`) switches the whole document to `python-docx` and records the reason in `data.writer_fallback`.
+- **QA evidence**: `officecli validate` is part of the `PACKAGE` check. Unavailable or unrunnable validation is a `coverage_gap` / `UNVERIFIED`, never a pass.
+- **Read-only Python**: `python-docx` / `openpyxl` / `lxml` remain for analysis, fingerprints and QA. They must not mutate the staged document on the OfficeCLI path.
+
+The per-workflow migration state is maintained in `docs/officecli-first.md`. Do not add a new write path outside `engine/officecli_runtime.py`.
 
 ---
 
@@ -145,13 +166,15 @@ python scripts/inspect_document.py --inputs "$INPUT_1" --intent "$USER_PROMPT" -
 `GENERATE`, `REPAIR`, `REFORMAT` and `REVIEW` MUST pass the Template Understanding Gate before any ContentPlan, FillPlan or document mutation. The gate is enforced by the execution entrypoints, not only by this document; an unconfirmed template returns `TEMPLATE_GATE_REQUIRED`, `TEMPLATE_GATE_BLOCKED`, `TEMPLATE_GATE_STALE` or `TEMPLATE_GATE_CONFIRMATION_REQUIRED`.
 
 ```powershell
-# 1. Collect evidence (reuses DocumentSpec 4.0 + engine probes)
-python scripts/template_gate.py analyze --template "$INPUT_1" --task-type GENERATE --out "$TEMP/template_analysis.json"
+# 1. Collect evidence, DocumentSpec and the review report in one cached pass.
+python scripts/template_gate.py analyze --template "$INPUT_1" --task-type GENERATE `
+  --out "$TEMP/template_analysis.json" --spec-out "$TEMP/document_spec.json" `
+  --report-out "$TEMP/template_report.md"
 
-# 2. Show the user the blocking questions and the analysis report
+# 2. If the combined command above was not used, render it separately:
 python scripts/template_gate.py report --analysis "$TEMP/template_analysis.json" --out "$TEMP/template_report.md"
 
-# 3. After the user explicitly confirms, persist the record (review token comes from step 2)
+# 3. After the user explicitly confirms, persist the record (review token is printed by analyze/report)
 python scripts/template_gate.py confirm --analysis "$TEMP/template_analysis.json" `
   --review-token "<token>" --user-statement "<the user's exact confirmation>" --out-record "$TEMP/template_gate.json"
 ```
@@ -168,12 +191,14 @@ Rules:
 ### Step 2: Analyze Template & Emit `DocumentSpec`
 Pick the analyzer by container type — never run the Word analyzer on a workbook:
 ```powershell
-# .docx / .docm — GENERATE must use the v4 spec
+# .docx / .docm — GENERATE must use the v4 spec.
+# If Step 1.5 used --spec-out, this file already exists: skip this command.
 python scripts/analyze_template.py --input "$INPUT_1" --spec-version 4 --output "$TEMP/document_spec.json"
 
 # .xlsx / .xlsm
 python scripts/analyze_excel_template.py --input "$INPUT_1" --output "$TEMP/document_spec.json"
 ```
+The v4 spec is cached by template SHA-256 + engine version, so a repeated call is a cache hit and returns the same JSON without re-scanning the document. Set `OFFICECLI_DISABLE_CACHE=1` only for debugging/reproducibility.
 For `GENERATE`, **always pass `--spec-version 4`**. The default (`3`) is the legacy CLI summary kept for the old `--data` token path and non-generation modes; it is never the v4 plan chain. Inspect the v4 artifact's `slots`, `protected_regions`, `unsupported_features` and `warnings` — not `candidate_hits` (`L1`–`L4` still appears under `template.compatibility`). A body-level `w:sdt` is discovered as PROTECTED (`kind: "sdt"` region); `sdt_edit` stays false.
 
 Also read `routing.capability` from Step 1 before executing anything:
@@ -263,7 +288,7 @@ else:
 
 1. `Preflight` — source exists, extension is supported, output directory is writable, container family matches (Word → Word, Excel → Excel).
 2. `Execute` — the document is saved to a sibling `.<name>.tmp-<transaction_id>.<ext>` staged file.
-3. `QA` — each entrypoint runs the checks its deliverable contract requires against that staged file: `GENERATE` → package integrity + format; `REPAIR` → package integrity + format against the reference; `REVIEW` / `PROOFREAD` → package integrity + revision/comment integrity; `EXCEL_GENERATE` → formula + style; `RENDER` → visual. The full package/format/formula/visual suite still runs separately through `run_qa.py` (Step 5).
+3. `QA` — each entrypoint runs the checks its deliverable contract requires against that staged file: `GENERATE` → package integrity + format; `REPAIR` → package integrity + format against the reference; `REVIEW` / `PROOFREAD` → package integrity + revision/comment integrity; `EXCEL_GENERATE` → formula + style; `RENDER` → visual. For v4 `GENERATE`, pass `--qa-report "$TEMP/qa_report.json"` to persist the already-computed full QAReport; Step 5 can then reuse it instead of running the same suite twice.
 4. `Commit` — two atomic `os.replace` calls, but only when the deliverable's contract allows it. **v4 `GENERATE` plan path**: commit only on `PASSED`, or on `UNVERIFIED` when `--allow-unverified` was passed and `missing_checks` is disclosed; `PENDING_HUMAN_REVIEW` and `FAILED` never commit. Legacy entrypoints (`REPAIR`, `REVIEW`, `PROOFREAD`, `RENDER`, Excel) keep their existing commit rules (`PASSED` / `PENDING_HUMAN_REVIEW` / `UNVERIFIED`).
 
 Every entrypoint ends with a `transaction` object:
@@ -285,12 +310,14 @@ Every entrypoint ends with a `transaction` object:
   ```powershell
   python scripts/generate_document.py --template "$INPUT_1" --spec "$TEMP/document_spec.json" `
       --content-plan "$TEMP/content_plan.json" --plan "$TEMP/fill_plan.json" `
-      --output "$OUTPUT_FILE" --mode STANDARD --allow-unverified
+      --output "$OUTPUT_FILE" --mode STANDARD --allow-unverified `
+      --qa-report "$TEMP/qa_report.json"
   ```
   - `STRICT` commits only a `PASSED` QAReport; `STANDARD` may commit `UNVERIFIED` only with `--allow-unverified` and the missing checks disclosed.
-  - Optional backend switch: `--writer officecli` applies the whole FillPlan as one atomic `officecli` batch on the staging copy, then restores the template fingerprint before QA. It falls back to `python-docx` for the whole document when an operation, story or token is not faithfully expressible, and records the reason in `data.writer_fallback`. The default remains `python-docx`.
+  - `--qa-report` persists the executor's full QAReport plus the final output SHA-256 on the v4 `--plan` path only. Step 5 can reuse it with `run_qa.py --reuse-report` instead of recomputing the same suite; the sidecar is ignored automatically if the output changes.
+  - **OfficeCLI is the default writer.** The whole FillPlan is one atomic `officecli batch` on the staging copy, then the template fingerprint is restored before QA. An operation, story or token that OfficeCLI cannot express faithfully blocks the run with `WRITER_UNSUPPORTED`; pass `--allow-writer-fallback` to switch the whole document to `python-docx` and record the reason in `data.writer_fallback`. `--writer python-docx` remains as an explicit legacy/CI switch, never an automatic fallback.
   - The executor writes only to a staging path, emits a per-operation fill ledger, and rejects protected/unauthorized/overflow targets before mutation.
-  - Legacy token mode `--data payload.json` (no `--plan`) remains available as a **compatibility path** for simple token maps; it is not the v4 chain and must be labeled as legacy if used.
+  - Legacy token mode `--data payload.json` (no `--plan`) remains available as a **compatibility path** for simple token maps. It now runs through OfficeCLI by default as one atomic batch; text boxes, SDTs and individual footnote/endnote paragraphs block with `WRITER_LOCATION_UNSUPPORTED` unless `--writer python-docx` or `--allow-writer-fallback` is explicit. It is not the v4 chain and must be labeled as legacy if used.
 - **For `POLISH` (single document, wording/terminology, layout preserved)**:
   ```powershell
   python scripts/polish_document.py --target "$TARGET_DOCX" --edits "$TEMP/edits.json" `
@@ -395,6 +422,11 @@ Use this flow when the user asks for a **review draft** rather than a review rep
 
 ### Step 5: Mandatory Package, Format, Formula & Visual QA
 ```powershell
+# Fast path for v4 GENERATE: reuse the QAReport already computed by the executor.
+# Reuse is refused automatically when the output hash or report contract changed.
+python scripts/run_qa.py --output "$OUTPUT_FILE" --reuse-report "$TEMP/qa_report.json"
+
+# Full run: use when the sidecar is absent/stale, or an extra check is requested.
 # GENERATE / EXCEL_GENERATE: template is a style guide; content volume may change
 python scripts/run_qa.py --output "$OUTPUT_FILE" --reference "$INPUT_1" `
   --profile style-guide --task-mode GENERATE --report "$TEMP/qa_report.json"
@@ -404,6 +436,8 @@ python scripts/run_qa.py --output "$OUTPUT_FILE" --reference "$REF_DOCX" `
   --profile replica --task-mode REPAIR --report "$TEMP/qa_report.json"
 ```
 `--profile auto` (default) chooses `REPLICA` for `--task-mode REPAIR/REVIEW`, otherwise `STYLE_GUIDE` when `--reference` is present. The selected profile is echoed as `comparison_profile`.
+
+The `PACKAGE` check runs `officecli validate` in addition to the ZIP/relationship audit. If OfficeCLI is unavailable or the validator cannot run, the report records `OFFICECLI_VALIDATION_UNAVAILABLE` in `coverage_gaps` and stays `UNVERIFIED`; a schema-invalid package is a blocking `PACKAGE_SCHEMA_INVALID`.
 
 Read `status` in `qa_report.json` — it is one of four values, never a bare boolean:
 

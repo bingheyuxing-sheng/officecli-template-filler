@@ -12,6 +12,11 @@
       "probe": "writable_temp_dir_and_python_docx",
       "description": "a writable temp directory and python-docx are available for staged output"
     },
+    "officecli": {
+      "required": true,
+      "probe": "engine.officecli_runtime.preflight",
+      "description": "OfficeCLI >= 1.0.130 is installed and executable for mutation and package QA"
+    },
     "wps_pdf_render": {
       "required": true,
       "probe": "engine.pdf_backend.find_pdf_backend",

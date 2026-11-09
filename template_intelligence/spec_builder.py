@@ -8,6 +8,7 @@ generates content, never mutates the document and never uses capacity to shrink 
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -42,6 +43,8 @@ from .slot_id import (
     normalize_text,
     resolve_slot_id_collisions,
 )
+
+SPEC_BUILDER_CACHE_VERSION = "1"
 
 _HF_NAMES = (
     "header", "first_page_header", "even_page_header",
@@ -1071,9 +1074,17 @@ def _scan_body_sdt(doc) -> Dict[str, Any]:
     return scan
 
 
-def build_document_spec(doc, file_path: str = "") -> Dict[str, Any]:
+def build_document_spec(
+    doc,
+    file_path: str = "",
+    template_sha256: Optional[str] = None,
+) -> Dict[str, Any]:
     """Build the complete DocumentSpec 4.0 object for a parsed `docx.Document`."""
-    template_sha256, sha_source = _template_sha256(doc, file_path)
+    if template_sha256:
+        sha_source = "file" if file_path and os.path.isfile(file_path) else "package"
+        template_sha256 = str(template_sha256)
+    else:
+        template_sha256, sha_source = _template_sha256(doc, file_path)
     compatibility = assess_template_compatibility_level(doc, file_path=file_path or "")
 
     sdt_scan = _scan_body_sdt(doc)
@@ -1332,9 +1343,33 @@ def _error_spec(file_path: str, exc: Exception) -> Dict[str, Any]:
 
 def build_document_spec_from_path(path: str) -> Dict[str, Any]:
     """Build DocumentSpec 4.0 from a `.docx` path, returning an error spec when unreadable."""
+    from engine import __version__ as engine_version
+    from engine.analysis_cache import key_from_parts, read_json, write_json
     from engine.package_guard import check_package, load_limits
 
-    verdict = check_package(path, load_limits())
+    limits = load_limits()
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        file_sha256 = digest.hexdigest()
+    except OSError as exc:
+        return _error_spec(path, exc)
+
+    cache_key = key_from_parts(
+        "spec",
+        file_sha256,
+        engine_version,
+        "4.0",
+        SPEC_BUILDER_CACHE_VERSION,
+        limits,
+    )
+    cached = read_json("spec", cache_key)
+    if cached is not None and str((cached.get("template") or {}).get("template_sha256") or "") == file_sha256:
+        return copy.deepcopy(cached)
+
+    verdict = check_package(path, limits)
     if not verdict["ok"]:
         # W3-7: hostile/oversized packages are rejected BEFORE any parser touches them.
         return _error_spec(
@@ -1345,4 +1380,10 @@ def build_document_spec_from_path(path: str) -> Dict[str, Any]:
         document = docx.Document(path)
     except Exception as exc:  # corrupt zip, missing file, not a Word package
         return _error_spec(path, exc)
-    return build_document_spec(document, file_path=path)
+    spec = build_document_spec(document, file_path=path, template_sha256=file_sha256)
+    if spec.get("schema_version") == "4.0" and not spec.get("errors"):
+        try:
+            write_json("spec", cache_key, spec)
+        except OSError:
+            pass
+    return spec

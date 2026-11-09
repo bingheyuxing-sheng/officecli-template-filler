@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-OfficeCLI + Python Document Intelligence Engine (v4.3.0).
+OfficeCLI + Python Document Intelligence Engine (v4.3.1).
 
 Exports the Word (.docx) / Excel (.xlsx) engine: template understanding, SSOT Decimal math,
 non-destructive cross-run replacement, safe image replacement, complex cell protection,
@@ -8,6 +8,15 @@ structural Excel row cloning, REPAIR planning, REVIEW/PROOFREAD revisions, trans
 delivery, capability routing, and full package + format + visual QA.
 """
 
+from .officecli_runtime import (
+    OfficecliRuntime,
+    OfficecliUnavailable,
+    OfficecliVersionError,
+    UnsupportedLocation,
+    build_story_map,
+    location_to_path,
+    validation_report,
+)
 from .process_guard import (
     TaskResourceGuard,
     release_office_file_locks,
@@ -72,6 +81,11 @@ from .excel_engine import (
     clone_excel_template_row,
     recalculate_and_verify_excel_formulas,
     audit_excel_formula_and_style_qa,
+)
+from .excel_writer import (
+    ExcelWriterError,
+    fill_excel_template,
+    replacement_map,
 )
 from .excel_objects import inspect_excel_objects
 from .docx_parser import (
@@ -203,7 +217,7 @@ from .research import (
     validate_research_facts,
 )
 
-__version__ = "4.3.0"
+__version__ = "4.3.1"
 
 __all__ = [
     "__version__",
@@ -373,4 +387,14 @@ __all__ = [
     "build_research_plan",
     "research_policy",
     "validate_research_facts",
+    "OfficecliRuntime",
+    "OfficecliUnavailable",
+    "OfficecliVersionError",
+    "UnsupportedLocation",
+    "build_story_map",
+    "location_to_path",
+    "validation_report",
+    "ExcelWriterError",
+    "fill_excel_template",
+    "replacement_map",
 ]

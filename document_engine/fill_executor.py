@@ -23,13 +23,15 @@ Status semantics follow Contract 05:
 
 from __future__ import annotations
 
+import copy
+import datetime
 import hashlib
 import json
 import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import docx
 
@@ -580,12 +582,14 @@ def _officecli_operation_plan(
     slots: Dict[str, Any],
     paragraphs: Dict[str, Any],
     cells: Dict[str, Any],
+    story_map: Optional[Mapping[str, str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[str]]:
     """Translate operations into one atomic officecli batch.
 
     Returns ``(commands, plan_by_op, fallback_reason)``. A non-None
-    ``fallback_reason`` means officecli cannot express this document faithfully
-    and the caller must keep the python-docx writer for the whole document.
+    ``fallback_reason`` means officecli cannot express this document faithfully.
+    The executor blocks with ``WRITER_UNSUPPORTED`` unless the caller explicitly
+    allowed a whole-document python-docx fallback.
 
     officecli replaces text by rebuilding the target node. A paragraph-scoped
     ``set`` merges the paragraph's runs, which changes the structural tree; a
@@ -616,7 +620,7 @@ def _officecli_operation_plan(
         target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
         location_id = target.get("location_id")
         try:
-            path = location_to_path(location_id)
+            path = location_to_path(location_id, story_map=story_map)
         except UnsupportedLocation as exc:
             return [], {}, str(exc)
 
@@ -1121,6 +1125,59 @@ def _normalize_qa_report(report: Any) -> Dict[str, Any]:
     return normalized
 
 
+def _rebase_artifact_paths(value: Any, staged_path: str, final_path: str) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in ("artifact_path", "staged_path") and isinstance(item, str):
+                try:
+                    if os.path.normcase(os.path.abspath(item)) == os.path.normcase(
+                        os.path.abspath(staged_path)
+                    ):
+                        value[key] = final_path
+                        continue
+                except OSError:
+                    pass
+            _rebase_artifact_paths(item, staged_path, final_path)
+    elif isinstance(value, list):
+        for item in value:
+            _rebase_artifact_paths(item, staged_path, final_path)
+
+
+def _write_qa_report_sidecar(
+    path: str,
+    qa_report: Any,
+    staged_path: str,
+    final_path: str,
+    output_sha256: str,
+    task_id: str,
+    gate_mode: str,
+    task_mode: str,
+    protected_paths: Optional[List[str]] = None,
+) -> None:
+    protected = [final_path] + list(protected_paths or [])
+    target = os.path.abspath(path)
+    for item in protected:
+        if os.path.normcase(target) == os.path.normcase(os.path.abspath(item)):
+            raise ValueError("qa_report_path must not overwrite %s" % item)
+    report = copy.deepcopy(qa_report)
+    _rebase_artifact_paths(report, staged_path, final_path)
+    payload = {
+        "schema_version": "1.0",
+        "written_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "task_mode": task_mode,
+        "gate_mode": gate_mode,
+        "task_id": task_id,
+        "artifact_path": final_path,
+        "output_sha256": output_sha256,
+        "qa_report": report,
+    }
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    temp_path = target + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    os.replace(temp_path, target)
+
+
 def _qa_error_records(normalized: Dict[str, Any]) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     registry = _registry()
@@ -1159,15 +1216,20 @@ def execute_fill_plan(
     qa_runner=None,
     allow_unverified: bool = False,
     gate_record=None,
-    writer: str = "python-docx",
+    writer: str = "officecli",
+    allow_writer_fallback: bool = False,
+    qa_report_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute a FillPlan 4.0 deterministically and return a ToolEnvelope 4.0 dict.
 
-    ``writer`` selects the mutation backend. ``python-docx`` (default) keeps the
-    v4 behaviour unchanged. ``officecli`` delegates the writes to the officecli
-    binary and silently falls back to python-docx for any operation, location or
-    token pattern it cannot express faithfully; ``data.writer_fallback`` records
-    why. The default is deliberately not flipped until conformance is proven.
+    ``writer`` selects the mutation backend. ``officecli`` is the default and
+    the required substrate: every fill is one atomic ``officecli batch`` on the
+    staging copy. A plan that OfficeCLI cannot express faithfully blocks the
+    run with ``WRITER_UNSUPPORTED`` unless the caller explicitly opts into a
+    python-docx fallback with ``allow_writer_fallback``; a fallback is always
+    recorded in ``data.writer_fallback``. ``python-docx`` remains available for
+    legacy callers and CI environments without the binary, but it is no longer
+    the default and must be requested explicitly.
     """
     if writer not in ("python-docx", "officecli"):
         raise ValueError("unknown writer backend {!r}".format(writer))
@@ -1191,6 +1253,8 @@ def execute_fill_plan(
         "region_warnings": region_warnings,
         "writer_backend": None,
         "writer_fallback": None,
+        "qa_report_path": None,
+        "qa_report_error": None,
     }
 
     tx: Optional[DocumentTransaction] = None
@@ -1532,15 +1596,108 @@ def execute_fill_plan(
         officecli_plan: Dict[str, Dict[str, Any]] = {}
 
         if writer == "officecli" and pending:
+            from engine.officecli_runtime import OfficecliError
+            from engine import officecli_writer  # noqa: PLC0415 - optional backend
+
+            try:
+                officecli_writer.preflight()
+            except OfficecliError as exc:
+                code = getattr(exc, "code", "OFFICECLI_UNAVAILABLE")
+                message = "OfficeCLI is required for this writer: {}".format(exc)
+                data["writer_backend"] = "officecli"
+                data["writer_fallback"] = None
+                for operation in pending:
+                    target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+                    ledger.record(
+                        operation.get("op_id"),
+                        operation.get("slot_id"),
+                        target.get("location_id"),
+                        operation.get("source_ref"),
+                        operation.get("value"),
+                        {"status": "FAILED", "error_code": code, "detail": message},
+                    )
+                    results_by_id[operation.get("op_id")].update(
+                        {"status": "FAILED", "error_code": code, "detail": message}
+                    )
+                errors.append(
+                    _error_record(
+                        code,
+                        message,
+                        details={
+                            "writer": "officecli",
+                            "hint": "install OfficeCLI {} or set OFFICECLI_BINARY".format(
+                                "1.0.160"
+                            ),
+                        },
+                        rollback_required=False,
+                    )
+                )
+                tx.abort("OFFICECLI_UNAVAILABLE")
+                return envelope("BLOCKED", "STOP")
+
+            story_map: Dict[str, str] = {}
+            needs_story_map = False
+            for operation in pending:
+                target = operation.get("target")
+                location = target.get("location_id") if isinstance(target, dict) else None
+                if isinstance(location, str) and location.startswith("sec["):
+                    needs_story_map = True
+                    break
+            if needs_story_map:
+                story_map = officecli_writer.build_story_map(template_path)
+
             commands, plan_by_op, fallback = _officecli_operation_plan(
-                pending, slots, paragraphs, cells
+                pending, slots, paragraphs, cells, story_map=story_map
             )
             if fallback is None:
                 backend = "officecli"
                 officecli_commands = commands
                 officecli_plan = plan_by_op
-            else:
+            elif allow_writer_fallback:
                 backend_fallback = fallback
+            else:
+                message = (
+                    "OfficeCLI cannot express this fill plan faithfully: {}. "
+                    "Pass --allow-writer-fallback to opt into python-docx for "
+                    "the whole document, or adjust the plan.".format(fallback)
+                )
+                for operation in pending:
+                    target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+                    ledger.record(
+                        operation.get("op_id"),
+                        operation.get("slot_id"),
+                        target.get("location_id"),
+                        operation.get("source_ref"),
+                        operation.get("value"),
+                        {
+                            "status": "FAILED",
+                            "error_code": "WRITER_UNSUPPORTED",
+                            "detail": message,
+                        },
+                    )
+                    results_by_id[operation.get("op_id")].update(
+                        {
+                            "status": "FAILED",
+                            "error_code": "WRITER_UNSUPPORTED",
+                            "detail": message,
+                        }
+                    )
+                errors.append(
+                    _error_record(
+                        "WRITER_UNSUPPORTED",
+                        message,
+                        details={
+                            "writer": "officecli",
+                            "reason": fallback,
+                            "allow_writer_fallback": False,
+                        },
+                        rollback_required=False,
+                    )
+                )
+                data["writer_backend"] = "officecli"
+                data["writer_fallback"] = fallback
+                tx.abort("WRITER_UNSUPPORTED")
+                return envelope("BLOCKED", "STOP")
         data["writer_backend"] = backend
         data["writer_fallback"] = backend_fallback
 
@@ -1743,6 +1900,22 @@ def execute_fill_plan(
                 )
             )
             return envelope("FAILED", "STOP")
+
+        if qa_report_path:
+            try:
+                _write_qa_report_sidecar(
+                    qa_report_path, qa_report, tx.temp_path, tx.output_path,
+                    tx.output_sha256, task_id, mode, TASK_MODE,
+                    protected_paths=[str(template_path)],
+                )
+                data["qa_report_path"] = os.path.abspath(qa_report_path)
+            except Exception as exc:
+                data["qa_report_error"] = "%s: %s" % (type(exc).__name__, exc)
+                warnings.append({
+                    "code": "QA_REPORT_SIDECAR_FAILED",
+                    "message": data["qa_report_error"],
+                    "severity": "warning",
+                })
 
         # -- 8. publish the envelope ----------------------------------------
         final_status = "SUCCESS" if qa_status == QA_PASSED else "UNVERIFIED"

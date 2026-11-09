@@ -23,6 +23,7 @@ from engine import (
     audit_review_integrity,
     iter_all_document_paragraphs_with_Wait_context,
     run_visual_layout_qa,
+    validation_report,
 )
 from engine.ooxml_utils import TOKEN_PATTERN, is_red_run
 
@@ -459,8 +460,17 @@ def run_full_qa(
 
         if check_id == "PACKAGE":
             package = audit_docx_package_integrity(staged, baseline_path=template)
-            status = "PASSED" if package.get("passed") else "FAILED"
-            detail = "%d package parts inspected" % int(package.get("inspected_parts_count") or 0)
+            officecli_validation = validation_report(staged)
+            if not package.get("passed") or officecli_validation.get("status") == "FAILED":
+                status = "FAILED"
+            elif officecli_validation.get("status") == "UNVERIFIED":
+                status = "UNVERIFIED"
+            else:
+                status = "PASSED"
+            detail = "%d package parts inspected; OfficeCLI: %s" % (
+                int(package.get("inspected_parts_count") or 0),
+                officecli_validation.get("status"),
+            )
             checks.append(
                 check_record(
                     "PACKAGE",
@@ -471,6 +481,7 @@ def run_full_qa(
                 )
             )
             _absorb(package, "PACKAGE", issues, warnings, coverage_gaps)
+            _absorb(officecli_validation, "PACKAGE", issues, warnings, coverage_gaps)
             _ensure_failure_issue("PACKAGE", status, issues, detail)
 
         elif check_id == "FORMAT":

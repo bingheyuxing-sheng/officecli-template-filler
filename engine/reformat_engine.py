@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import shutil
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
@@ -23,12 +24,19 @@ from .layout_qa import _paragraph_fingerprint
 from .qa_engine import _table_dominant_font, _table_dominant_size
 from .repair_engine import _extract_paragraph_format_profile
 from .style_engine import resolve_run_effective_font, resolve_run_effective_sz
-from .review_engine import (
-    apply_paragraph_profile_tracked,
-    create_revision_id_allocator,
-    enable_track_changes,
-    restore_table_style_tracked,
+from .officecli_commands import (
+    paragraph_format_commands,
+    set_command,
+    table_format_commands,
 )
+from .officecli_runtime import OfficecliError, location_to_path
+from .officecli_writer import (
+    close as officecli_close,
+    restore_paragraph_identity,
+    restore_table_look,
+    run_batch,
+)
+from .review_engine import list_revisions
 from .table_engine import compare_table_style, table_style_signature
 
 _SAFE_PARAGRAPH_MARKERS = ("normal", "body text", "bodytext", "正文", "默认")
@@ -386,6 +394,7 @@ def execute_reformat_plan(
     date: Optional[str] = None,
     gate_record=None,
 ) -> Dict[str, Any]:
+    """Apply tracked format revisions as one atomic OfficeCLI batch."""
     from template_gate.validator import require_confirmed_gate
 
     require_confirmed_gate(plan["reference_docx"], "REFORMAT", gate_record=gate_record)
@@ -393,11 +402,9 @@ def execute_reformat_plan(
     tgt_doc = docx.Document(plan["target_docx"])
     author = author or plan.get("author") or "OfficeCLI REFORMAT"
     date = date or _now_iso()
-    enable_track_changes(tgt_doc, True)
-    ids = create_revision_id_allocator(tgt_doc)
 
+    commands: List[Dict[str, Any]] = []
     applied = 0
-    format_marks = 0
     unresolved: List[str] = []
     results: List[Dict[str, Any]] = []
 
@@ -409,22 +416,23 @@ def execute_reformat_plan(
                 unresolved.append(action.get("action_id") or "paragraph")
                 results.append({"action_id": action.get("action_id"), "status": "UNRESOLVED"})
                 continue
-            first_id = ids._next
-            marks = apply_paragraph_profile_tracked(
+            path = location_to_path(f"body.p[{index}]")
+            action_commands = paragraph_format_commands(
+                path,
                 tgt_doc.paragraphs[index],
                 action.get("target_profile") or {},
-                strip_red=bool(action.get("strip_red", False)),
                 author=author,
                 date=date,
-                ids=ids,
+                strip_red=bool(action.get("strip_red", False)),
             )
-            applied += 1
-            format_marks += marks
+            commands.extend(action_commands)
+            if action_commands:
+                applied += 1
             results.append({
                 "action_id": action.get("action_id"),
-                "status": "APPLIED",
+                "status": "APPLIED" if action_commands else "NO_CHANGE",
                 "target": f"body.p[{index}]",
-                "format_revision_ids": list(range(first_id, first_id + marks)),
+                "format_revision_ids": [],
             })
         elif action_type == "RESTORE_TABLE_STYLE":
             table_index = action.get("table_index")
@@ -438,32 +446,58 @@ def execute_reformat_plan(
                 unresolved.append(action.get("action_id") or "table")
                 results.append({"action_id": action.get("action_id"), "status": "UNRESOLVED"})
                 continue
-            first_id = ids._next
-            ok, marks = restore_table_style_tracked(
+            path = location_to_path(f"body.tbl[{table_index}]")
+            action_commands = table_format_commands(
+                path,
                 tgt_doc.tables[table_index],
                 ref_doc.tables[ref_index],
                 author=author,
                 date=date,
-                ids=ids,
             )
-            if ok:
+            commands.extend(action_commands)
+            if action_commands:
                 applied += 1
-                format_marks += marks
-                results.append({
-                    "action_id": action.get("action_id"),
-                    "status": "APPLIED",
-                    "target": f"body.tbl[{table_index}]",
-                    "format_revision_ids": list(range(first_id, first_id + marks)),
-                })
-            else:
-                unresolved.append(action.get("action_id") or "table")
-                results.append({"action_id": action.get("action_id"), "status": "UNRESOLVED"})
+            results.append({
+                "action_id": action.get("action_id"),
+                "status": "APPLIED" if action_commands else "NO_CHANGE",
+                "target": f"body.tbl[{table_index}]",
+                "format_revision_ids": [],
+            })
 
-    tgt_doc.save(output_docx_path)
+    # Track mode itself is a document setting, so it belongs in the same batch.
+    commands.append(set_command("/settings", {"trackChanges": True}))
+    os.makedirs(os.path.dirname(os.path.abspath(output_docx_path)) or ".", exist_ok=True)
+    shutil.copyfile(plan["target_docx"], output_docx_path)
+    before_ids = {
+        str(item.get("revision_id"))
+        for item in list_revisions(plan["target_docx"], include_format=True)
+        if item.get("revision_id") is not None
+    }
+    try:
+        run_batch(output_docx_path, commands)
+    except OfficecliError:
+        officecli_close(output_docx_path)
+        raise
+    finally:
+        officecli_close(output_docx_path)
+    restore_paragraph_identity(plan["target_docx"], output_docx_path)
+    restore_table_look(plan["target_docx"], output_docx_path)
+
+    new_format_ids = [
+        str(item["revision_id"])
+        for item in list_revisions(output_docx_path, include_format=True)
+        if item.get("kind") == "format"
+        and item.get("revision_id") is not None
+        and str(item.get("revision_id")) not in before_ids
+    ]
+    if len(results) == 1 and new_format_ids:
+        results[0]["format_revision_ids"] = new_format_ids
+
     return {
         "output_docx": os.path.abspath(output_docx_path),
+        "writer_backend": "officecli",
         "applied_actions": applied,
         "unresolved_actions": unresolved,
-        "format_revision_count": format_marks,
+        "format_revision_count": len(new_format_ids),
         "action_results": results,
     }

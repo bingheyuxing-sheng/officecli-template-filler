@@ -43,6 +43,8 @@ from .models import (
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config" / "template-gate-policy.json"
 
+ANALYSIS_CACHE_VERSION = "1"
+
 _HEADING_RE = re.compile(r"^(?:heading|标题)\s*([1-9])$", re.IGNORECASE)
 _PRESERVABLE_OBJECT_TYPES = frozenset({"chart", "smartart", "ole_object"})
 _PARAGRAPH_TASK_TYPES = frozenset({"REPAIR", "REFORMAT", "REVIEW"})
@@ -894,6 +896,37 @@ def build_analysis(
         raise ValueError("task type does not require a template gate: %s" % task)
 
     spec = spec or build_document_spec_from_path(template_path)
+    template_sha = _template_sha(template_path, spec)
+    spec_digest = _spec_digest(spec)
+    policy_digest = sha256_text(canonical_json(policy))
+    cache_key = None
+    if not supplements and not previous and os.path.isfile(template_path):
+        from engine.analysis_cache import key_from_parts, read_json
+
+        cache_key = key_from_parts(
+            "analysis",
+            template_sha,
+            os.path.basename(str(template_path)),
+            task,
+            spec_digest,
+            ANALYSIS_VERSION,
+            ENGINE_VERSION,
+            policy_digest,
+            ANALYSIS_CACHE_VERSION,
+        )
+        cached = read_json("analysis", cache_key)
+        if (
+            cached is not None
+            and cached.get("analysis_id")
+            and cached.get("evidence_digest")
+            and str(cached.get("template_sha256")) == template_sha
+            and str(cached.get("task_type")) == task
+            and str(cached.get("spec_digest")) == spec_digest
+            and str(cached.get("analysis_version")) == ANALYSIS_VERSION
+            and str(cached.get("policy_version")) == str(policy.get("version") or "1.0")
+        ):
+            return copy.deepcopy(cached)
+
     doc = docx.Document(template_path)
     required = _required_properties(policy, task)
     slot_locations = [
@@ -922,19 +955,18 @@ def build_analysis(
 
     summary = registry.summary()
     evidence_digest = registry.digest()
-    template_sha = _template_sha(template_path, spec)
     analysis_id = "analysis_" + sha256_text(
         "%s|%s|%s|%s"
         % (evidence_digest, template_sha, task, ANALYSIS_VERSION)
     )[:12]
 
-    return {
+    analysis = {
         "schema_version": SCHEMA_VERSION,
         "analysis_id": analysis_id,
         "template_sha256": template_sha,
         "template_name": os.path.basename(str(template_path)),
         "spec_schema_version": str((spec.get("schema_version") or "4.0")),
-        "spec_digest": _spec_digest(spec),
+        "spec_digest": spec_digest,
         "fingerprint_ref": dict(spec.get("fingerprint_ref") or {}),
         "analysis_version": ANALYSIS_VERSION,
         "parser_version": ENGINE_VERSION,
@@ -945,6 +977,14 @@ def build_analysis(
         "evidence_digest": evidence_digest,
         "supplements": supplement_meta,
     }
+    if cache_key is not None:
+        from engine.analysis_cache import write_json
+
+        try:
+            write_json("analysis", cache_key, analysis)
+        except OSError:
+            pass
+    return analysis
 
 
 __all__ = [

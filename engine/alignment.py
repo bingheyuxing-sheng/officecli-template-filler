@@ -20,7 +20,7 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 _WHITESPACE_RE = re.compile(r"\s+")
-_PUNCT_RE = re.compile(r"[，。；：、！？（）()《》〈〉“”\"'·,.;:!?\\-—_]+")
+_PUNCT_RE = re.compile(r"[，。；：、！？（）()《》〈〉“”\"'·,.;:!?\-—_]+")
 _HEADING_STYLE_RE = re.compile(r"(heading|标题)\s*([1-9])?", re.IGNORECASE)
 
 _STYLE_SYNONYMS = {

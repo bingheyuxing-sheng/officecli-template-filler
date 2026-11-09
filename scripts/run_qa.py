@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -29,11 +30,21 @@ from engine import (
     install_auto_cleanup,
     resolve_comparison_profile,
     split_issues,
+    validation_report,
 )
 from engine.package_guard import reject_first_package
 
 
-SECTION_KEYS = ("package_integrity", "format_and_text_qa", "content_qa", "image_text_qa", "visual_qa", "review_qa", "excel_qa")
+SECTION_KEYS = (
+    "package_integrity",
+    "format_and_text_qa",
+    "content_qa",
+    "image_text_qa",
+    "visual_qa",
+    "review_qa",
+    "excel_qa",
+    "officecli_validation",
+)
 
 # Placeholder residue is intentional in REVIEW mode: it waits for a human decision.
 PENDING_HUMAN_REVIEW_CODES = {"TEMPLATE_TEXT_RESIDUAL"}
@@ -66,6 +77,44 @@ def resolve_report_status(issues: list, coverage_gaps: list, unverified_count: i
     if pending:
         return "PENDING_HUMAN_REVIEW", blocking, pending
     return "PASSED", blocking, pending
+
+
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_reuse_candidate(path: str, fpath: str, args) -> tuple:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        return None, "cannot read sidecar: %s: %s" % (type(exc).__name__, exc)
+    if not isinstance(payload, dict):
+        return None, "sidecar is not an object"
+    report = payload.get("qa_report") if isinstance(payload.get("qa_report"), dict) else payload
+    expected_sha = str(payload.get("output_sha256") or report.get("output_sha256") or "")
+    if not expected_sha:
+        return None, "sidecar has no output_sha256"
+    if expected_sha != _file_sha256(fpath):
+        return None, "output file hash differs from the sidecar"
+    if args.task_mode and str(report.get("task_mode")) != args.task_mode.strip().upper():
+        return None, "task mode differs from the sidecar"
+    if args.reference:
+        return None, "an explicit reference requires a fresh QA run"
+    if args.profile != "auto":
+        return None, "an explicit profile requires a fresh QA run"
+    if args.review or args.ocr or args.no_content_qa:
+        return None, "extra or disabled checks require a fresh QA run"
+    from qa.gate import validate_qa_report
+
+    validation = validate_qa_report(report)
+    if not validation.get("passed"):
+        return None, "stored QA report is invalid: %s" % "; ".join(validation.get("errors") or [])[:400]
+    return report, ""
 
 
 def main() -> int:
@@ -102,6 +151,11 @@ def main() -> int:
         action="store_true",
         help="Exit 0 even when required checks could not run (status UNVERIFIED is disclosed in the report)",
     )
+    parser.add_argument(
+        "--reuse-report",
+        default="",
+        help="Reuse a hash-matched QAReport sidecar written by generate_document.py --qa-report",
+    )
     args = parser.parse_args()
 
     fpath = args.output_alias or args.file_path
@@ -113,6 +167,40 @@ def main() -> int:
         print(json.dumps(rejected, ensure_ascii=False))
         return 2
 
+    reuse_skipped = ""
+    if args.reuse_report:
+        reused_report, reuse_reason = _load_reuse_candidate(args.reuse_report, fpath, args)
+        if reused_report is not None:
+            status = str(reused_report.get("status") or "UNVERIFIED")
+            issues = list(reused_report.get("issues") or [])
+            warnings = list(reused_report.get("warnings") or [])
+            coverage_gaps = list(reused_report.get("coverage_gaps") or [])
+            exit_ok = status in ("PASSED", "PENDING_HUMAN_REVIEW") or (
+                status == "UNVERIFIED" and args.allow_unverified
+            )
+            payload = {
+                "reused": True,
+                "reused_from": os.path.abspath(args.reuse_report),
+                "output_sha256": _file_sha256(fpath),
+                "status": status,
+                "passed": status == "PASSED",
+                "passed_or_pending": status in ("PASSED", "PENDING_HUMAN_REVIEW", "UNVERIFIED"),
+                "exit_ok": exit_ok,
+                "issues": issues,
+                "warnings": warnings,
+                "coverage_gaps": coverage_gaps,
+                "unverified_count": len(coverage_gaps),
+                "qa_report": reused_report,
+            }
+            text = json.dumps(payload, ensure_ascii=False, indent=2)
+            if args.out:
+                os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+                with open(args.out, "w", encoding="utf-8") as handle:
+                    handle.write(text)
+            print(text)
+            return 0 if exit_ok else 1
+        reuse_skipped = reuse_reason
+
     comparison_profile = resolve_comparison_profile(
         args.profile,
         task_mode=args.task_mode,
@@ -121,7 +209,10 @@ def main() -> int:
 
     if fpath.lower().endswith((".xlsx", ".xlsm")):
         excel_qa = audit_excel_formula_and_style_qa(fpath)
-        report = {"excel_qa": excel_qa}
+        report = {
+            "excel_qa": excel_qa,
+            "officecli_validation": validation_report(fpath),
+        }
     else:
         doc = docx.Document(fpath)
         pkg_qa = audit_docx_package_integrity(fpath)
@@ -142,6 +233,7 @@ def main() -> int:
             "package_integrity": pkg_qa,
             "format_and_text_qa": fmt_qa,
             "visual_qa": vis_qa,
+            "officecli_validation": validation_report(fpath),
         }
         if not args.no_content_qa:
             # Content truth: numeric conflicts, subtotal closure, term drift. A high
@@ -180,6 +272,8 @@ def main() -> int:
         "hard_failure_count": len(strict_failures),
         "pending_human_review_count": len(pending),
     })
+    if reuse_skipped:
+        report["reuse_skipped"] = reuse_skipped
 
     payload = json.dumps(report, ensure_ascii=False, indent=2)
     if args.out:

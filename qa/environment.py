@@ -38,6 +38,11 @@ _DEFAULT_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "probe": "writable_temp_dir_and_python_docx",
         "description": "a writable temp directory and python-docx are available for staged output",
     },
+    "officecli": {
+        "required": True,
+        "probe": "engine.officecli_runtime.preflight",
+        "description": "OfficeCLI >= 1.0.130 is installed and executable for mutation and package QA",
+    },
     "wps_pdf_render": {
         "required": True,
         "probe": "engine.pdf_backend.find_pdf_backend",
@@ -122,6 +127,24 @@ def _probe_docx_write() -> Dict[str, Any]:
             "temp directory writable but python-docx import failed: %s: %s" % (type(exc).__name__, exc),
         )
     return _available(probe, "temp directory writable; python-docx import ok")
+
+
+def _probe_officecli() -> Dict[str, Any]:
+    probe = "engine.officecli_runtime.preflight"
+    try:
+        from engine.officecli_runtime import OfficecliError, OfficecliRuntime
+    except Exception as exc:
+        return _unverified(
+            probe,
+            "officecli runtime unavailable: %s: %s" % (type(exc).__name__, exc),
+        )
+    try:
+        version = OfficecliRuntime().preflight()
+    except OfficecliError as exc:
+        return _unavailable(probe, "%s: %s" % (exc.code, exc.message))
+    except Exception as exc:
+        return _unverified(probe, "officecli probe crashed: %s: %s" % (type(exc).__name__, exc))
+    return _available(probe, "officecli %s preflight ok" % version)
 
 
 def _probe_wps_pdf_render() -> Dict[str, Any]:
@@ -225,6 +248,7 @@ def _probe_chart_render() -> Dict[str, Any]:
 _PROBES: Dict[str, Callable[[], Dict[str, Any]]] = {
     "docx_parse": _probe_docx_parse,
     "docx_write": _probe_docx_write,
+    "officecli": _probe_officecli,
     "wps_pdf_render": _probe_wps_pdf_render,
     "pdf_page_analysis": _probe_pdf_page_analysis,
     "pixel_visual_diff": _probe_pixel_visual_diff,

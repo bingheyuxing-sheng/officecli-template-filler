@@ -186,6 +186,9 @@ def validate_gate(
         )
     )
 
+    resolved_spec: Optional[Dict[str, Any]] = None
+    actual_spec_digest: Optional[str] = None
+    spec_sha = ""
     try:
         resolved_spec = spec or build_document_spec_from_path(template_path)
     except Exception as exc:
@@ -214,15 +217,61 @@ def validate_gate(
                 TEMPLATE_GATE_STALE,
             )
         )
+        actual_spec_digest = _spec_digest(resolved_spec)
         checks.append(
             _check(
                 "spec_digest",
-                _spec_digest(resolved_spec) == record.get("spec_digest"),
+                actual_spec_digest == record.get("spec_digest"),
                 "spec digest differs from the confirmed record",
                 TEMPLATE_GATE_STALE,
             )
         )
 
+    policy_version = str(load_policy().get("version") or "1.0")
+    fast_path = bool(
+        resolved_spec is not None
+        and str(resolved_spec.get("schema_version")) == "4.0"
+        and spec_sha == actual_sha
+        and actual_spec_digest == record.get("spec_digest")
+        and record.get("analysis_version") == ANALYSIS_VERSION
+        and record.get("parser_version") == ENGINE_VERSION
+        and record.get("policy_version") == policy_version
+        and record.get("task_type") == task
+        and not record.get("supplements")
+        and not record.get("resolved_evidence")
+        and bool(record.get("evidence_digest"))
+        and isinstance(record.get("fingerprint_ref"), dict)
+        and int(record.get("blocking_count") or 0) == 0
+        and status == GateState.CONFIRMED.value
+        and bool(record.get("user_confirmed"))
+    )
+
+    if fast_path:
+        checks.append(
+            _check(
+                "execution_fast_path",
+                True,
+                "template SHA + spec digest + parser/policy versions unchanged; "
+                "evidence and fingerprint rebuild skipped",
+            )
+        )
+        checks.append(
+            _check(
+                "fingerprint_ref",
+                True,
+                "skipped: identical template bytes and spec digest bind the confirmed fingerprints",
+            )
+        )
+    elif resolved_spec is None:
+        checks.append(
+            _check(
+                "fingerprint_ref",
+                False,
+                "spec unavailable; cannot bind fingerprints",
+                TEMPLATE_GATE_STALE,
+            )
+        )
+    else:
         try:
             document = docx.Document(template_path)
             hashes = compute_four_hashes(document, protected_texts=_protected_texts(document, resolved_spec))
@@ -262,8 +311,8 @@ def validate_gate(
     checks.append(
         _check(
             "policy_version",
-            record.get("policy_version") == str(load_policy().get("version") or "1.0"),
-            "record=%s current=%s" % (record.get("policy_version"), load_policy().get("version")),
+            record.get("policy_version") == policy_version,
+            "record=%s current=%s" % (record.get("policy_version"), policy_version),
             TEMPLATE_GATE_STALE,
         )
     )
@@ -284,6 +333,14 @@ def validate_gate(
                 "evidence_digest",
                 bool(record.get("evidence_digest")),
                 "supplemented analysis is bound by the confirmed evidence digest",
+            )
+        )
+    elif fast_path:
+        checks.append(
+            _check(
+                "evidence_digest",
+                True,
+                "skipped: identical template bytes and spec digest bind the confirmed evidence",
             )
         )
     elif resolved_spec is not None:
@@ -358,8 +415,9 @@ def validate_gate(
             )
         )
     else:
-        checks.append(_check("fresh_blocking_count", True, "supplemented record"))
-        checks.append(_check("evidence_conflict", True, "supplemented record"))
+        skipped_detail = "supplemented record" if supplemented else "fast-path record"
+        checks.append(_check("fresh_blocking_count", True, skipped_detail))
+        checks.append(_check("evidence_conflict", True, skipped_detail))
 
     failure = next((item for item in checks if not item["ok"]), None)
     return {

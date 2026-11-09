@@ -14,6 +14,10 @@ Thumbs.db
 _c_*.docx
 _c_*.xlsx
 _c_*.json
+.pytest_cache/
+.ruff_cache/
+.pytest-*/
+.tmp/
 
 # Build output — release zips are produced by the release flow and are not versioned
 dist/

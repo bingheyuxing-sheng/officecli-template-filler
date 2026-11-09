@@ -19,6 +19,7 @@ import difflib
 import json
 import os
 import re
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -33,6 +34,27 @@ from docx.oxml.parser import parse_xml
 from lxml import etree
 
 from .ooxml_utils import TOKEN_PATTERN, is_red_run, iter_all_document_paragraphs_with_Wait_context
+from .officecli_commands import (
+    add_comment_command,
+    paragraph_format_commands,
+    revision_action_command,
+    set_command,
+    table_format_commands,
+    tracked_replace_command,
+)
+from .officecli_runtime import (
+    OfficecliError,
+    UnsupportedLocation,
+    build_story_map,
+    get_runtime,
+    location_to_path,
+)
+from .officecli_writer import (
+    close as officecli_close,
+    restore_paragraph_identity,
+    restore_table_look,
+    run_batch,
+)
 from .repair_engine import (
     _apply_paragraph_profile,
     _classify_paragraph_role,
@@ -51,7 +73,9 @@ from .transaction import DocumentTransaction, TransactionAborted, TransactionPre
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 REVIEW_AUTHOR_DEFAULT = "OfficeCLI Reviewer"
 PLACEHOLDER_PATTERN = re.compile(r"(\{\{[^{}]+\}\}|【[^【】]+】|\*{3,}|_{3,})")
-ISO_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+ISO_DATE_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
+)
 
 _MINIMAL_COMMENTS_XML = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -112,26 +136,40 @@ _SETTINGS_BEFORE_TRACK_CHANGES = (
 
 
 def enable_track_changes(doc, enabled: bool = True) -> bool:
-    """Add or remove `<w:trackChanges/>` so the delivered file opens in revision mode."""
+    """Add or remove ``<w:trackRevisions/>`` so the file opens in revision mode.
+
+    Word's actual OOXML element is ``w:trackRevisions``. Older code wrote a
+    non-schema ``w:trackChanges`` node, which Word ignored; both are recognised on
+    read so files produced by that version still report the intent.
+    """
     settings = doc.settings.element
-    existing = settings.find(qn("w:trackChanges"))
+    existing = settings.find(qn("w:trackRevisions"))
+    legacy = settings.find(qn("w:trackChanges"))
     if enabled:
         if existing is None:
-            node = OxmlElement("w:trackChanges")
+            node = OxmlElement("w:trackRevisions")
             # `w:settings` is a schema sequence; insert after the last element that must precede it.
             insert_at = 0
             for idx, child in enumerate(settings):
                 if child.tag.rsplit("}", 1)[-1] in _SETTINGS_BEFORE_TRACK_CHANGES:
                     insert_at = idx + 1
             settings.insert(insert_at, node)
+        if legacy is not None:
+            settings.remove(legacy)
         return True
     if existing is not None:
         settings.remove(existing)
+    if legacy is not None:
+        settings.remove(legacy)
     return False
 
 
 def is_track_changes_enabled(doc) -> bool:
-    return doc.settings.element.find(qn("w:trackChanges")) is not None
+    settings = doc.settings.element
+    return (
+        settings.find(qn("w:trackRevisions")) is not None
+        or settings.find(qn("w:trackChanges")) is not None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +419,8 @@ _RPR_BASE_TAGS = (
 )
 
 _FORMAT_CHANGE_TAGS = (
-    "rPrChange", "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange",
+    "rPrChange", "pPrChange", "tblPrChange", "tblPrExChange",
+    "trPrChange", "tcPrChange", "sectPrChange",
 )
 
 # OOXML requires every *PrChange mark to wrap the pre-change properties in a
@@ -390,6 +429,7 @@ _FORMAT_CHANGE_WRAPPERS = {
     "rPrChange": "rPr",
     "pPrChange": "pPr",
     "tblPrChange": "tblPr",
+    "tblPrExChange": "tblPrEx",
     "trPrChange": "trPr",
     "tcPrChange": "tcPr",
     "sectPrChange": "sectPr",
@@ -410,6 +450,8 @@ def _format_change_base_tags(change_tag: str):
     if change_tag == "pPrChange":
         return _PPR_BASE_TAGS
     if change_tag == "tblPrChange":
+        return TBLPR_ORDER
+    if change_tag == "tblPrExChange":
         return TBLPR_ORDER
     if change_tag == "trPrChange":
         return _TRPR_FORMAT_TAGS
@@ -1236,6 +1278,160 @@ def _merge_diff_kind(target_tbl, reference_tbl) -> List[str]:
     return sorted(set(kinds))
 
 
+def _officecli_story_map(path: str) -> Dict[str, str]:
+    try:
+        return build_story_map(path)
+    except OfficecliError:
+        return {}
+
+
+def _review_location_path(
+    location_id: str,
+    story_map: Dict[str, str],
+) -> str:
+    if location_id.startswith("sec[") and not story_map:
+        raise UnsupportedLocation(
+            "section story %r needs an OfficeCLI header/footer reference" % location_id
+        )
+    return location_to_path(location_id, story_map)
+
+
+def _resolve_paragraph_with_location(doc, location_id: str):
+    """Return ``(paragraph, concrete_location)`` for a preview location.
+
+    The read-only walker is still the source of truth for *which* paragraph a QA
+    location means; the mutation itself is built as an OfficeCLI path. A table
+    location such as ``body.tbl[0].r[0].c[0]`` resolves to its first paragraph and
+    the walker's ``...c[0].p[0]`` address.
+    """
+    contexts = list(iter_all_document_paragraphs_with_Wait_context(doc))
+    for context in contexts:
+        if context["location_id"] == location_id:
+            return context["paragraph"], context["location_id"]
+    if ".p[" not in location_id:
+        prefix = location_id + ".p["
+        for context in contexts:
+            if context["location_id"].startswith(prefix):
+                return context["paragraph"], context["location_id"]
+    for context in contexts:
+        if context["location_id"].startswith(location_id):
+            return context["paragraph"], context["location_id"]
+    return None, location_id
+
+
+def _single_run_index(paragraph, old_text: str, occurrence: int) -> Optional[int]:
+    """Index of one direct run containing exactly one isolated match, or None.
+
+    OfficeCLI's ``find`` replaces every match in the addressed path. A run path is
+    therefore only safe when the run contains the chosen match exactly once; a
+    paragraph path is used otherwise only when the paragraph has one match.
+    """
+    if occurrence < 1:
+        return None
+    seen = 0
+    for index, run in enumerate(paragraph.runs, start=1):
+        text = run.text or ""
+        if not text:
+            continue
+        matches = text.count(old_text)
+        if not matches:
+            continue
+        if seen + matches < occurrence:
+            seen += matches
+            continue
+        if seen + matches > occurrence:
+            # The chosen match shares a run with another match: replacing the run
+            # would change both, so decline instead of guessing.
+            return None
+        return index if matches == 1 else None
+    return None
+
+
+def _resolve_text_target(doc, action: Dict[str, Any]):
+    """Resolve a text revision to ``(paragraph, location, run_index, reason)``."""
+    old_text = str(action.get("old_text") or "")
+    if not old_text:
+        return None, None, None, "EMPTY_OLD_TEXT"
+    occurrence = action.get("occurrence")
+    try:
+        occurrence = int(occurrence) if occurrence is not None else None
+    except (TypeError, ValueError):
+        return None, None, None, "INVALID_OCCURRENCE"
+
+    location_id = str(action.get("location_id") or "")
+    if location_id:
+        paragraph, actual = _resolve_paragraph_with_location(doc, location_id)
+        if paragraph is None:
+            return None, location_id, None, "LOCATION_NOT_FOUND"
+        matches = (paragraph.text or "").count(old_text)
+        if matches == 0:
+            return None, actual, None, "TEXT_NOT_FOUND"
+        if matches == 1 and occurrence in (None, 1):
+            return paragraph, actual, None, None
+        # Multiple matches inside the addressed paragraph: isolate the chosen one
+        # to a single run, otherwise OfficeCLI would replace every match.
+        chosen = occurrence or 1
+        run_index = _single_run_index(paragraph, old_text, chosen)
+        if run_index is None:
+            return None, actual, None, "AMBIGUOUS_MULTIPLE_MATCHES"
+        return paragraph, actual, run_index, None
+
+    contexts = list(iter_all_document_paragraphs_with_Wait_context(doc))
+    total = sum((context["paragraph"].text or "").count(old_text) for context in contexts)
+    if total == 0:
+        return None, None, None, "TEXT_NOT_FOUND"
+    if occurrence is None:
+        if total > 1:
+            return None, None, None, "AMBIGUOUS_MULTIPLE_MATCHES"
+        for context in contexts:
+            if (context["paragraph"].text or "").count(old_text) == 1:
+                return context["paragraph"], context["location_id"], None, None
+        return None, None, None, "AMBIGUOUS_MULTIPLE_MATCHES"
+
+    seen = 0
+    for context in contexts:
+        paragraph = context["paragraph"]
+        matches = (paragraph.text or "").count(old_text)
+        if not matches:
+            continue
+        if seen + matches < occurrence:
+            seen += matches
+            continue
+        chosen = occurrence - seen
+        if matches == 1 and chosen == 1:
+            return paragraph, context["location_id"], None, None
+        run_index = _single_run_index(paragraph, old_text, chosen)
+        if run_index is None:
+            return None, context["location_id"], None, "AMBIGUOUS_MULTIPLE_MATCHES"
+        return paragraph, context["location_id"], run_index, None
+    return None, None, None, "OCCURRENCE_OUT_OF_RANGE"
+
+
+def _query_revision_records(path: str) -> List[Dict[str, Any]]:
+    runtime = get_runtime()
+    try:
+        nodes = runtime.query(path, "revision")
+    except OfficecliError:
+        return []
+    finally:
+        runtime.close(path)
+    records: List[Dict[str, Any]] = []
+    for node in nodes:
+        fmt = node.get("format") or {}
+        revision_id = fmt.get("revision.id")
+        if revision_id in (None, ""):
+            continue
+        records.append({
+            "id": str(revision_id),
+            "type": str(fmt.get("revision.type") or ""),
+            "author": str(fmt.get("revision.author") or ""),
+            "date": str(fmt.get("revision.date") or ""),
+            "text": str(node.get("text") or ""),
+            "native_path": str(fmt.get("revision.nativePath") or ""),
+        })
+    return records
+
+
 def execute_review_plan(
     review_plan: Dict[str, Any],
     output_docx_path: str,
@@ -1243,221 +1439,360 @@ def execute_review_plan(
     *,
     gate_record=None,
 ) -> Dict[str, Any]:
-    """
-    Apply the review plan: restore formatting, write tracked text revisions, anchor comments,
-    turn on track changes, and save the reviewable document.
+    """Apply a review/proofread plan through OfficeCLI.
 
-    A revision snapshot is written next to the output (pass `snapshot_path=""` to skip it,
-    e.g. when a caller publishes the document through a transaction first).
+    The plan itself is computed read-only (alignment, style profiles, proofreading
+    evidence). Every mutation -- tracked replacements, comments, tracked format
+    restoration and the track-changes flag -- is one atomic OfficeCLI batch.
     """
     if str(review_plan.get("task_mode") or "").upper() == "REVIEW":
         from template_gate.validator import require_confirmed_gate
 
         require_confirmed_gate(review_plan["reference_docx"], "REVIEW", gate_record=gate_record)
-    ref_doc = docx.Document(review_plan["reference_docx"])
-    tgt_doc = docx.Document(review_plan["target_docx"])
+
+    target_path = review_plan["target_docx"]
+    reference_path = review_plan["reference_docx"]
+    ref_doc = docx.Document(reference_path)
+    tgt_doc = docx.Document(target_path)
     author = review_plan.get("author") or REVIEW_AUTHOR_DEFAULT
     date = _now_iso()
+    story_map = _officecli_story_map(target_path)
 
-    revision_ids = _RevisionIdAllocator(_scan_existing_revision_ids(tgt_doc))
-    comments: Optional[_CommentsStore] = None
+    commands: List[Dict[str, Any]] = []
+    action_results: List[Dict[str, Any]] = []
+    unresolved: List[str] = []
     applied_format = 0
     tracked = 0
-    tracked_format = 0
     added_comments = 0
-    unresolved: List[str] = []
-    action_results: List[Dict[str, Any]] = []
+    used_table_commands = False
 
     for action in review_plan.get("actions", []):
         action_type = action.get("action_type")
+        action_id = action.get("action_id")
 
         if action_type == "RESTORE_PARAGRAPH_FORMAT":
             p_idx = action.get("paragraph_index")
-            if p_idx is not None and p_idx < len(tgt_doc.paragraphs):
-                first_id = revision_ids._next
-                marks = _apply_paragraph_profile_tracked(
+            target = f"body.p[{p_idx}]" if p_idx is not None else ""
+            if p_idx is None or p_idx >= len(tgt_doc.paragraphs):
+                unresolved.append(f"format_restore:{p_idx}")
+                action_results.append({
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": target,
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+                continue
+            try:
+                path = _review_location_path(target, story_map)
+                action_commands = paragraph_format_commands(
+                    path,
                     tgt_doc.paragraphs[p_idx],
-                    action.get("target_profile", {}),
-                    strip_red=bool(action.get("strip_red", False)),
+                    action.get("target_profile") or {},
                     author=author,
                     date=date,
-                    ids=revision_ids,
+                    strip_red=bool(action.get("strip_red", False)),
                 )
-                applied_format += 1
-                tracked_format += marks
+            except (OfficecliError, UnsupportedLocation) as exc:
+                unresolved.append(f"format_restore:{p_idx}")
                 action_results.append({
-                    "action_id": action.get("action_id"),
-                    "status": "APPLIED",
-                    "target": f"body.p[{p_idx}]",
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": target,
+                    "reason": str(exc),
                     "revision_ids": [],
-                    "format_revision_ids": list(range(first_id, first_id + marks)),
+                    "format_revision_ids": [],
                 })
+                continue
+            commands.extend(action_commands)
+            if action_commands:
+                applied_format += 1
+            action_results.append({
+                "action_id": action_id,
+                "status": "APPLIED" if action_commands else "NO_CHANGE",
+                "target": target,
+                "revision_ids": [],
+                "format_revision_ids": [],
+                "_format_action": bool(action_commands),
+            })
 
         elif action_type == "RESTORE_TABLE_STYLE":
             t_idx = action.get("table_index")
-            if t_idx is not None and t_idx < len(tgt_doc.tables) and t_idx < len(ref_doc.tables):
-                first_id = revision_ids._next
-                ok, marks = _restore_table_style_tracked(
-                    tgt_doc.tables[t_idx], ref_doc.tables[t_idx],
-                    author=author, date=date, ids=revision_ids,
-                )
-                if ok:
-                    applied_format += 1
-                    tracked_format += marks
-                    # Merge topology (gridSpan/hMerge/vMerge) is deliberately not
-                    # rewritten — a merge change can destroy business content. If it
-                    # still differs from the template, the action must NOT claim
-                    # full success.
-                    unresolved_kinds = _merge_diff_kind(tgt_doc.tables[t_idx], ref_doc.tables[t_idx])
-                    status = "PARTIALLY_APPLIED" if unresolved_kinds else "APPLIED"
-                    action_results.append({
-                        "action_id": action.get("action_id"),
-                        "status": status,
-                        "target": f"body.tbl[{t_idx}]",
-                        "revision_ids": [],
-                        "format_revision_ids": list(range(first_id, first_id + marks)),
-                        "restored_properties": ["tblPr", "trPr", "tcW", "tcMar", "shd", "vAlign", "trHeight", "fonts"],
-                        "unresolved_properties": unresolved_kinds,
-                        "requires_human_review": bool(unresolved_kinds),
-                    })
-                else:
-                    unresolved.append(f"table_style:{t_idx}")
-                    action_results.append({
-                        "action_id": action.get("action_id"),
-                        "status": "UNRESOLVED",
-                        "revision_ids": [],
-                        "format_revision_ids": [],
-                    })
-
-        elif action_type == "TRACK_TEXT_REVISION":
-            old_text = action.get("old_text", "")
-            new_text = action.get("new_text", "")
-            location_id = action.get("location_id") or ""
-            occurrence = action.get("occurrence")
-            located = False
-            ambiguous = False
-
-            # Safety rule: never guess when the text is ambiguous. With no explicit
-            # location and multiple matches, hand the decision to a human comment
-            # instead of silently editing the first hit.
-            if not location_id and not isinstance(occurrence, int) and _count_occurrences(tgt_doc, old_text) > 1:
-                ambiguous = True
-            else:
-                candidates = []
-                resolved_location = location_id
-                if location_id:
-                    p = _find_paragraph_by_location(tgt_doc, location_id)
-                    if p is not None:
-                        candidates = [(p, location_id)]
-                else:
-                    contexts = list(iter_all_document_paragraphs_with_Wait_context(tgt_doc))
-                    if isinstance(occurrence, int) and occurrence >= 1:
-                        seen = 0
-                        for context in contexts:
-                            hits = (context["paragraph"].text or "").count(old_text)
-                            if hits:
-                                seen += hits
-                                if seen >= occurrence:
-                                    candidates = [(context["paragraph"], context["location_id"])]
-                                    break
-                    else:
-                        candidates = [(context["paragraph"], context["location_id"]) for context in contexts]
-
-                for p, context_location in candidates:
-                    result = apply_tracked_replacement(
-                        p, old_text, new_text, author=author, date=date, revision_ids=revision_ids
-                    )
-                    if result is not None:
-                        tracked += 1
-                        located = True
-                        action_results.append({
-                            "action_id": action.get("action_id"),
-                            "status": "APPLIED",
-                            "target": resolved_location if location_id else context_location,
-                            "revision_ids": result["revision_ids"],
-                            "format_revision_ids": [],
-                        })
-                        break
-
-            if not located:
-                unresolved.append(f"text_revision:{old_text[:30]}")
+            target = f"body.tbl[{t_idx}]" if t_idx is not None else ""
+            if (
+                t_idx is None
+                or t_idx >= len(tgt_doc.tables)
+                or t_idx >= len(ref_doc.tables)
+            ):
+                unresolved.append(f"table_style:{t_idx}")
                 action_results.append({
-                    "action_id": action.get("action_id"),
+                    "action_id": action_id,
                     "status": "UNRESOLVED",
+                    "target": target,
                     "revision_ids": [],
                     "format_revision_ids": [],
-                    **({"reason": "AMBIGUOUS_MULTIPLE_MATCHES"} if ambiguous else {}),
                 })
-                # Never drop an intended edit silently: show it as a comment the reviewer can act on.
-                anchor_context = next((c for c in iter_all_document_paragraphs_with_Wait_context(tgt_doc) if (c["paragraph"].text or "").strip()), None)
-                if anchor_context is not None:
-                    comments = comments or _CommentsStore(tgt_doc)
-                    if ambiguous:
+                continue
+            try:
+                path = _review_location_path(target, story_map)
+                action_commands = table_format_commands(
+                    path,
+                    tgt_doc.tables[t_idx],
+                    ref_doc.tables[t_idx],
+                    author=author,
+                    date=date,
+                )
+            except (OfficecliError, UnsupportedLocation) as exc:
+                unresolved.append(f"table_style:{t_idx}")
+                action_results.append({
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": target,
+                    "reason": str(exc),
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+                continue
+            commands.extend(action_commands)
+            used_table_commands = used_table_commands or bool(action_commands)
+            if action_commands:
+                applied_format += 1
+            unresolved_kinds = _merge_diff_kind(
+                tgt_doc.tables[t_idx], ref_doc.tables[t_idx]
+            )
+            status = (
+                "PARTIALLY_APPLIED"
+                if unresolved_kinds
+                else ("APPLIED" if action_commands else "NO_CHANGE")
+            )
+            action_results.append({
+                "action_id": action_id,
+                "status": status,
+                "target": target,
+                "revision_ids": [],
+                "format_revision_ids": [],
+                "restored_properties": [
+                    "tblPr", "trPr", "tcW", "tcMar", "shd", "vAlign",
+                    "trHeight", "fonts", "borders",
+                ],
+                "unresolved_properties": unresolved_kinds,
+                "requires_human_review": bool(unresolved_kinds),
+                "_format_action": bool(action_commands),
+            })
+
+        elif action_type == "TRACK_TEXT_REVISION":
+            old_text = str(action.get("old_text") or "")
+            new_text = str(action.get("new_text") or "")
+            paragraph, location, run_index, reason = _resolve_text_target(tgt_doc, action)
+            if paragraph is None:
+                ambiguous = reason == "AMBIGUOUS_MULTIPLE_MATCHES"
+                unresolved.append(f"text_revision:{old_text[:30]}")
+                action_results.append({
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": action.get("location_id") or location or "auto_locate",
+                    "reason": reason,
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+                anchor = next(
+                    (
+                        context
+                        for context in iter_all_document_paragraphs_with_Wait_context(tgt_doc)
+                        if (context["paragraph"].text or "").strip()
+                    ),
+                    None,
+                )
+                if anchor is not None:
+                    try:
+                        anchor_path = _review_location_path(
+                            anchor["location_id"], story_map
+                        )
                         message = (
                             f"原文“{old_text}”在文档中出现多处，未指定位置，"
                             "为避免改错位置已停止自动修改，请人工确认应修改哪一处。"
+                            if ambiguous
+                            else (
+                                f"未能自动定位该修订：原文“{old_text}”未在文档中找到。"
+                                f"建议改为“{new_text}”，请人工确认应修改的位置。"
+                            )
                         )
-                    else:
-                        message = (
-                            f"未能自动定位该修订：原文“{old_text}”未在文档中找到。"
-                            f"建议改为“{new_text}”，请人工确认应修改的位置。"
+                        commands.append(
+                            add_comment_command(
+                                anchor_path,
+                                message,
+                                author=author,
+                                date=date,
+                            )
                         )
-                    add_paragraph_comment(
-                        anchor_context["paragraph"],
-                        message,
+                        added_comments += 1
+                    except (OfficecliError, UnsupportedLocation):
+                        pass
+                continue
+            try:
+                paragraph_path = _review_location_path(location, story_map)
+                path = (
+                    "%s/r[%d]" % (paragraph_path, run_index)
+                    if run_index is not None
+                    else paragraph_path
+                )
+                commands.append(
+                    tracked_replace_command(
+                        path,
+                        old_text,
+                        new_text,
                         author=author,
                         date=date,
-                        comments=comments,
                     )
-                    added_comments += 1
+                )
+            except (OfficecliError, UnsupportedLocation) as exc:
+                unresolved.append(f"text_revision:{old_text[:30]}")
+                action_results.append({
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": location,
+                    "reason": str(exc),
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+                continue
+            tracked += 1
+            action_results.append({
+                "action_id": action_id,
+                "status": "APPLIED",
+                "target": location,
+                "revision_ids": [],
+                "format_revision_ids": [],
+                "_text_action": (old_text, new_text),
+            })
 
         elif action_type == "ADD_REVIEW_COMMENT":
-            paragraph = None
             comment_location = str(action.get("location_id") or "")
+            paragraph = None
+            concrete_location = comment_location
             if comment_location:
-                paragraph = _resolve_comment_paragraph(tgt_doc, comment_location)
+                paragraph, concrete_location = _resolve_paragraph_with_location(
+                    tgt_doc, comment_location
+                )
             p_idx = action.get("paragraph_index")
             if paragraph is None and p_idx is not None and p_idx < len(tgt_doc.paragraphs):
                 paragraph = tgt_doc.paragraphs[p_idx]
-            if paragraph is not None:
-                comments = comments or _CommentsStore(tgt_doc)
-                add_paragraph_comment(
-                    paragraph,
-                    action.get("comment", ""),
-                    author=author,
-                    date=date,
-                    comments=comments,
-                )
-                added_comments += 1
+                concrete_location = f"body.p[{p_idx}]"
+            if paragraph is None:
+                unresolved.append(f"comment:{comment_location or p_idx}")
                 action_results.append({
-                    "action_id": action.get("action_id"),
-                    "status": "APPLIED",
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
                     "target": comment_location or f"body.p[{p_idx}]",
                     "revision_ids": [],
                     "format_revision_ids": [],
                 })
-
-    if comments is not None:
-        comments.flush()
+                continue
+            try:
+                path = _review_location_path(concrete_location, story_map)
+                commands.append(
+                    add_comment_command(
+                        path,
+                        str(action.get("comment") or ""),
+                        author=author,
+                        date=date,
+                    )
+                )
+            except (OfficecliError, UnsupportedLocation) as exc:
+                unresolved.append(f"comment:{concrete_location}")
+                action_results.append({
+                    "action_id": action_id,
+                    "status": "UNRESOLVED",
+                    "target": concrete_location,
+                    "reason": str(exc),
+                    "revision_ids": [],
+                    "format_revision_ids": [],
+                })
+                continue
+            added_comments += 1
+            action_results.append({
+                "action_id": action_id,
+                "status": "APPLIED",
+                "target": concrete_location,
+                "revision_ids": [],
+                "format_revision_ids": [],
+            })
 
     if review_plan.get("track_changes", True):
-        enable_track_changes(tgt_doc, True)
+        commands.append(set_command("/settings", {"trackChanges": True}))
 
-    tgt_doc.save(output_docx_path)
+    os.makedirs(os.path.dirname(os.path.abspath(output_docx_path)) or ".", exist_ok=True)
+    if os.path.abspath(output_docx_path) != os.path.abspath(target_path):
+        shutil.copyfile(target_path, output_docx_path)
+
+    before_ids = {
+        str(item.get("revision_id"))
+        for item in list_revisions(target_path, include_format=True)
+        if item.get("revision_id") is not None
+    }
+    if commands:
+        try:
+            run_batch(output_docx_path, commands)
+        except OfficecliError:
+            officecli_close(output_docx_path)
+            raise
+        finally:
+            officecli_close(output_docx_path)
+
+        # OfficeCLI stamps fresh w14 identity attributes on save; restore the
+        # target's own values so the only structural delta is the authorised
+        # revision/comment work.
+        restore_paragraph_identity(target_path, output_docx_path)
+        if used_table_commands:
+            restore_table_look(target_path, output_docx_path)
+
+    records = _query_revision_records(output_docx_path)
+    new_records = [record for record in records if record["id"] not in before_ids]
+    text_ids = [
+        record["id"]
+        for record in new_records
+        if record["type"] in ("ins", "del") and record["author"] == author
+    ]
+    format_ids = [
+        record["id"]
+        for record in new_records
+        if record["type"] not in ("ins", "del") and record["author"] == author
+    ]
+
+    for result in action_results:
+        text_match = result.pop("_text_action", None)
+        is_format = result.pop("_format_action", False)
+        if text_match is not None:
+            old_text, new_text = text_match
+            result["revision_ids"] = [
+                record["id"]
+                for record in new_records
+                if record["type"] in ("ins", "del")
+                and record["author"] == author
+                and record["text"] in (old_text, new_text)
+            ]
+        if is_format and len(format_ids) == 1:
+            result["format_revision_ids"] = list(format_ids)
 
     snapshot_report = None
     if snapshot_path != "":
-        snapshot_report = write_review_snapshot(output_docx_path, snapshot_path=snapshot_path or None)
+        snapshot_report = write_review_snapshot(
+            output_docx_path, snapshot_path=snapshot_path or None
+        )
 
     return {
         "output_docx": output_docx_path,
+        "writer_backend": "officecli",
+        "commands": len(commands),
         "format_restored": applied_format,
-        "tracked_format_changes": tracked_format,
+        "tracked_format_changes": len(format_ids),
         "tracked_text_revisions": tracked,
         "comments_added": added_comments,
         "unresolved_actions": unresolved,
         "action_results": action_results,
-        "revision_count": tracked,
+        "revision_ids": text_ids,
+        "format_revision_ids": format_ids,
+        "revision_count": len(text_ids),
         "track_changes_enabled": bool(review_plan.get("track_changes", True)),
         "review_mode": "TRACKED_CHANGES",
         "snapshot_path": (snapshot_report or {}).get("snapshot_path"),
@@ -1520,6 +1855,39 @@ def _find_by_path(root, path):
         except (IndexError, TypeError, ValueError):
             return None
     return node
+
+
+def _officecli_part_path(part_name: str) -> Optional[str]:
+    """Map a Word part name to the part argument OfficeCLI raw-set expects."""
+    name = str(part_name or "").replace("\\", "/")
+    if name == "word/document.xml":
+        return "/document"
+    for prefix, suffix in (
+        ("word/header", "header"),
+        ("word/footer", "footer"),
+    ):
+        if name.startswith(prefix) and name.endswith(".xml"):
+            index = name[len(prefix) : -len(".xml")]
+            if index.isdigit():
+                return "/%s%s" % (suffix, index)
+    for name_part, cli_part in (
+        ("word/footnotes.xml", "/footnotes"),
+        ("word/endnotes.xml", "/endnotes"),
+        ("word/comments.xml", "/comments"),
+        ("word/styles.xml", "/styles"),
+        ("word/numbering.xml", "/numbering"),
+    ):
+        if name == name_part:
+            return cli_part
+    return None
+
+
+def _xpath_for_index_path(path) -> str:
+    """Absolute, namespace-agnostic XPath for a child-index path."""
+    xpath = "/*[1]"
+    for index in path or []:
+        xpath += "/*[%d]" % (int(index) + 1)
+    return xpath
 
 
 def _paragraph_anchor_text(node) -> str:
@@ -1685,7 +2053,12 @@ def _restore_revision_from_snapshot(
     revision_id: str,
     snapshot_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Rebuild one revision mark from `review_snapshot.json`, verifying the location."""
+    """Rebuild one revision mark from ``review_snapshot.json`` via ``raw-set``.
+
+    The snapshot records the mark's parent child-index path, so the mark can be
+    reinserted by OfficeCLI without rewriting the package from Python. This keeps
+    the snapshot/accept/reject/restore loop on one mutation substrate.
+    """
     snapshot_file = snapshot_path or review_snapshot_path(docx_path)
     result: Dict[str, Any] = {
         "output_docx": None,
@@ -1713,35 +2086,58 @@ def _restore_revision_from_snapshot(
     result["kind"] = entry.get("kind")
     result["type"] = entry.get("type")
 
-    with zipfile.ZipFile(docx_path) as source:
-        payloads = {name: source.read(name) for name in source.namelist()}
-        infos = {name: source.getinfo(name) for name in source.namelist()}
     part = entry.get("part")
-    if part not in payloads:
+    part_path = _officecli_part_path(part)
+    if part_path is None:
         result["status"] = "LOCATION_LOST"
         return result
+
     try:
-        root = etree.fromstring(payloads[part])
-        mark = etree.fromstring(entry["mark_xml"].encode("utf-8"))
-    except (etree.XMLSyntaxError, KeyError):
+        with zipfile.ZipFile(docx_path) as source:
+            payload = source.read(part)
+            root = etree.fromstring(payload)
+            mark = etree.fromstring(entry["mark_xml"].encode("utf-8"))
+    except (KeyError, etree.XMLSyntaxError):
         result["status"] = "SNAPSHOT_INVALID"
         return result
 
-    parent = _find_by_path(root, entry.get("parent_path") or [])
+    parent_path = entry.get("parent_path") or []
+    parent = _find_by_path(root, parent_path)
     if parent is None or _local_name(parent.tag) != entry.get("parent_tag"):
         result["status"] = "LOCATION_LOST"
         return result
     index = int(entry.get("index_in_parent") or 0)
-    parent.insert(min(max(index, 0), len(parent)), mark)
-    payloads[part] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    if 0 <= index < len(parent):
+        xpath = _xpath_for_index_path(parent_path + [index])
+        action = "insertbefore"
+    else:
+        xpath = _xpath_for_index_path(parent_path)
+        action = "append"
 
     tx = DocumentTransaction(docx_path, output_docx_path, task_mode="REVISION_RESTORE")
     audit: Dict[str, Any] = {}
     try:
         with tx:
-            with zipfile.ZipFile(tx.stage(), "w") as target:
-                for name, payload in payloads.items():
-                    target.writestr(infos[name], payload)
+            shutil.copyfile(docx_path, tx.stage())
+            runtime = get_runtime()
+            try:
+                runtime.raw_set(
+                    tx.temp_path,
+                    part_path,
+                    xpath=xpath,
+                    action=action,
+                    xml=etree.tostring(mark, encoding="unicode"),
+                )
+            finally:
+                runtime.close(tx.temp_path)
+            try:
+                restore_paragraph_identity(docx_path, tx.temp_path)
+            except Exception as exc:
+                tx.abort("RESTORE_NORMALIZE_FAILED")
+                result["status"] = "RESTORE_FAILED"
+                result["error"] = "%s: %s" % (type(exc).__name__, exc)
+                result["transaction"] = tx.record()
+                return result
             restored_ids = {
                 str(item["revision_id"])
                 for item in list_revisions(tx.temp_path, include_format=True)
@@ -1754,7 +2150,7 @@ def _restore_revision_from_snapshot(
             audit = audit_review_integrity(tx.temp_path)
             tx.record_qa(audit)
             tx.commit()
-    except (TransactionPreflightError, TransactionAborted) as exc:
+    except (TransactionPreflightError, TransactionAborted, OfficecliError) as exc:
         result["status"] = "RESTORE_FAILED"
         result["error"] = str(exc)
         result["issues"] = [item["detail"] for item in audit.get("issues", [])]
@@ -1846,57 +2242,74 @@ def _apply_format_revision(node, action: str) -> bool:
 
 
 def _rewrite_revision(docx_path: str, output_docx_path: str, revision_id: str, action: str) -> Dict[str, Any]:
-    changed = 0
-    matched_kind: Optional[str] = None
-    matched_type: Optional[str] = None
-    format_unsupported = 0
-    with zipfile.ZipFile(docx_path) as source:
-        payloads = {name: source.read(name) for name in source.namelist()}
-        infos = {name: source.getinfo(name) for name in source.namelist()}
-    for name, payload in payloads.items():
-        if not name.startswith("word/") or not name.endswith(".xml"):
-            continue
-        try:
-            root = etree.fromstring(payload)
-        except etree.XMLSyntaxError:
-            continue
-        for node, kind in list(iter_revision_marks(root)):
-            if node.get(qn("w:id")) != str(revision_id):
-                continue
-            matched_kind = kind
-            matched_type = _local_name(node.tag)
-            if kind == "format":
-                if _apply_format_revision(node, action):
-                    changed += 1
-                else:
-                    format_unsupported += 1
-                continue
-            _apply_text_revision(node, action)
-            changed += 1
-        if changed:
-            payloads[name] = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    if changed == 0:
-        # Nothing was rewritten, so no output file is produced: a copy at the requested
-        # path would be indistinguishable from a successful revision action.
+    """Accept/reject/restore one revision through OfficeCLI's revision verb."""
+    if action not in ("accept", "reject", "restore"):
+        raise ValueError(f"Unsupported revision action: {action}")
+    matches = [
+        item
+        for item in list_revisions(docx_path, include_format=True)
+        if str(item.get("revision_id")) == str(revision_id)
+    ]
+    if not matches:
+        # Nothing to act on: do not publish a copy that looks like a successful edit.
+        return {
+            "output_docx": None,
+            "revision_id": str(revision_id),
+            "action": action,
+            "kind": None,
+            "type": None,
+            "status": "NOT_FOUND",
+            "changed": 0,
+            "transaction": None,
+        }
+    matched = matches[0]
+    matched_kind = matched.get("kind")
+    matched_type = matched.get("type")
+    verb = "reject" if action in ("reject", "restore") else "accept"
+
+    tx = DocumentTransaction(docx_path, output_docx_path, task_mode=f"REVISION_{action.upper()}")
+    try:
+        with tx:
+            shutil.copyfile(docx_path, tx.stage())
+            try:
+                run_batch(
+                    tx.temp_path,
+                    [revision_action_command(revision_id, verb)],
+                )
+            finally:
+                officecli_close(tx.temp_path)
+            restore_paragraph_identity(docx_path, tx.temp_path)
+            present = {
+                str(item["revision_id"])
+                for item in list_revisions(tx.temp_path, include_format=True)
+            }
+            if str(revision_id) in present:
+                tx.abort("REVISION_ACTION_FAILED")
+                return {
+                    "output_docx": None,
+                    "revision_id": str(revision_id),
+                    "action": action,
+                    "kind": matched_kind,
+                    "type": matched_type,
+                    "status": "REVISION_ACTION_FAILED",
+                    "changed": 0,
+                    "transaction": tx.record(),
+                }
+            tx.record_qa(audit_review_integrity(tx.temp_path))
+            tx.commit()
+    except OfficecliError as exc:
+        unsupported = "unsupported" in exc.message.lower()
         return {
             "output_docx": None,
             "revision_id": str(revision_id),
             "action": action,
             "kind": matched_kind,
             "type": matched_type,
-            "status": "UNSUPPORTED_REVISION_TYPE" if format_unsupported else "NOT_FOUND",
+            "status": "UNSUPPORTED_REVISION_TYPE" if unsupported else "ACTION_FAILED",
             "changed": 0,
-            "transaction": None,
+            "error": str(exc),
+            "transaction": tx.record(),
         }
-
-    tx = DocumentTransaction(docx_path, output_docx_path, task_mode=f"REVISION_{action.upper()}")
-    try:
-        with tx:
-            with zipfile.ZipFile(tx.stage(), "w") as target:
-                for name, payload in payloads.items():
-                    target.writestr(infos[name], payload)
-            tx.record_qa(audit_review_integrity(tx.temp_path))
-            tx.commit()
     except TransactionPreflightError as exc:
         return {
             "output_docx": None,
@@ -1929,7 +2342,7 @@ def _rewrite_revision(docx_path: str, output_docx_path: str, revision_id: str, a
         "kind": matched_kind,
         "type": matched_type,
         "status": "APPLIED",
-        "changed": changed,
+        "changed": 1,
         "transaction": tx.record(),
     }
 
@@ -1977,7 +2390,9 @@ def audit_review_integrity(docx_path: str) -> Dict[str, Any]:
     root = etree.fromstring(document_xml)
 
     settings_xml = _part_xml_bytes(docx_path, "word/settings.xml")
-    track_changes = settings_xml is not None and b"trackChanges" in settings_xml
+    track_changes = settings_xml is not None and (
+        b"trackRevisions" in settings_xml or b"trackChanges" in settings_xml
+    )
 
     seen_ids: Dict[str, int] = {}
     revision_count = 0

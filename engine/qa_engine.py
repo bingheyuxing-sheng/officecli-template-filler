@@ -22,6 +22,7 @@ Core improvements:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import posixpath
 import re
@@ -1023,6 +1024,38 @@ def _convert_docx_to_pdf(soffice_bin: str, docx_path: str, out_dir: str) -> Tupl
         return None, f"{type(exc).__name__}: {exc}"
 
 
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _pdf_backend_fingerprint(backend: Dict[str, Any]) -> str:
+    name = str(backend.get("name") or "none")
+    executable = str(backend.get("executable") or "")
+    if executable and os.path.isfile(executable):
+        stat = os.stat(executable)
+        return "%s|%s|%d|%d" % (
+            name,
+            os.path.abspath(executable),
+            int(stat.st_size),
+            int(stat.st_mtime_ns),
+        )
+    return "%s|%s" % (name, executable)
+
+
+def _cached_pdf_usable(path: str) -> bool:
+    try:
+        if os.path.getsize(path) < 5:
+            return False
+        with open(path, "rb") as handle:
+            return handle.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
 def run_visual_layout_qa(
     docx_path: str,
     reference_docx_path: Optional[str] = None,
@@ -1117,6 +1150,7 @@ def run_visual_layout_qa(
     pdf_generated = False
     pdf_path = None
     ref_pdf_path = None
+    reference_pdf_cached = False
     pdf_conversion_errors: Dict[str, str] = {}
     page_diff_available = False
     page_count_available = False
@@ -1143,18 +1177,43 @@ def run_visual_layout_qa(
             pdf_conversion_errors["output"] = conversion_error
         pdf_generated = pdf_path is not None
         if reference_docx_path and os.path.isfile(reference_docx_path) and pdf_generated:
-            if pdf_backend_name == "libreoffice":
-                ref_pdf_path, conversion_error = _convert_docx_to_pdf(
-                    backend.get("executable"), reference_docx_path, reference_pdf_dir
+            from . import analysis_cache
+
+            cache_key = None
+            if analysis_cache.cache_enabled():
+                cache_key = analysis_cache.key_from_parts(
+                    "pdf",
+                    _file_sha256(reference_docx_path),
+                    _pdf_backend_fingerprint(backend),
+                    analysis_cache.CACHE_FORMAT_VERSION,
                 )
-                used_backend = "libreoffice"
-            else:
-                ref_pdf_path, conversion_error, used_backend = convert_docx_to_pdf(
-                    reference_docx_path, reference_pdf_dir, backend
-                )
-            pdf_backend_name = used_backend or pdf_backend_name
-            if conversion_error:
-                pdf_conversion_errors["reference"] = conversion_error
+                cached_path = analysis_cache.cache_path("pdf", cache_key, ".pdf")
+                if os.path.isfile(cached_path):
+                    if _cached_pdf_usable(cached_path):
+                        ref_pdf_path = cached_path
+                        reference_pdf_cached = True
+                    else:
+                        analysis_cache.delete("pdf", cache_key, ".pdf")
+
+            if ref_pdf_path is None:
+                if pdf_backend_name == "libreoffice":
+                    ref_pdf_path, conversion_error = _convert_docx_to_pdf(
+                        backend.get("executable"), reference_docx_path, reference_pdf_dir
+                    )
+                    used_backend = "libreoffice"
+                else:
+                    ref_pdf_path, conversion_error, used_backend = convert_docx_to_pdf(
+                        reference_docx_path, reference_pdf_dir, backend
+                    )
+                pdf_backend_name = used_backend or pdf_backend_name
+                if conversion_error:
+                    pdf_conversion_errors["reference"] = conversion_error
+                if ref_pdf_path is not None and cache_key:
+                    try:
+                        with open(ref_pdf_path, "rb") as handle:
+                            analysis_cache.write_bytes("pdf", cache_key, handle.read(), ".pdf")
+                    except OSError:
+                        pass
             if ref_pdf_path is not None:
                 try:
                     import fitz  # PyMuPDF, optional rendering dependency
@@ -1275,6 +1334,7 @@ def run_visual_layout_qa(
         "pdf_backend": pdf_backend_name,
         "pdf_path": pdf_path,
         "reference_pdf_path": ref_pdf_path,
+        "reference_pdf_cached": reference_pdf_cached,
         "pdf_conversion_errors": pdf_conversion_errors,
         "page_diff_available": page_diff_available,
         "page_diff_error": page_diff_error,

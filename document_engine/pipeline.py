@@ -23,7 +23,9 @@ def generate_document_v4(
     qa_runner=None,
     allow_unverified: bool = False,
     gate_record=None,
-    writer: str = "python-docx",
+    writer: str = "officecli",
+    allow_writer_fallback: bool = False,
+    qa_report_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute ``fill_plan`` over ``template_path`` and return a ToolEnvelope 4.0 dict."""
     return execute_fill_plan(
@@ -36,6 +38,8 @@ def generate_document_v4(
         allow_unverified=allow_unverified,
         gate_record=gate_record,
         writer=writer,
+        allow_writer_fallback=allow_writer_fallback,
+        qa_report_path=qa_report_path,
     )
 
 

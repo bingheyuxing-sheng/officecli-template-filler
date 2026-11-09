@@ -5,11 +5,10 @@ English | [简体中文](README.zh-CN.md)
 Template-driven Word and Excel document engine for AI agents: route a request, confirm the template,
 plan the content, execute the fill as a transaction, and report QA in four states.
 
-> **Current status: no automated tests and no CI.**
-> This repository ships only the files that implement the workflows. There is no `tests/`, no `.github/`
-> and no regression gate, so any change to the engine can only be validated by running the full chain
-> manually on a real template. Treat every release as unverified beyond the packaging checks recorded in
-> its manifest.
+> **Current status: core regression tests and Windows CI.**
+> `tests/` covers transaction, QA-state, template-gate and cache invariants. GitHub Actions runs `pytest`
+> and Ruff on Windows for Python 3.10 and 3.13. This suite does not replace end-to-end validation on
+> representative templates before a release.
 
 ## What this is
 
@@ -25,14 +24,20 @@ It edits documents in two ways:
 
 ### Relationship to OfficeCLI
 
-[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) is an **optional write backend**, not a dependency.
-The default is `python-docx`; pass `--writer officecli` to fill through the OfficeCLI CLI instead.
+[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) is the **execution substrate** for mutation, not an
+optional add-on. The FillPlan path applies every operation as one atomic `officecli batch` on the staging
+copy; headers, footers, tables and body paragraphs are addressed through OfficeCLI's own DOM paths.
 
-- If OfficeCLI cannot express a location (headers, footers, content controls, text boxes), the engine
-  abandons the OfficeCLI path for the whole document and falls back to `python-docx`, recording the reason
-  in `writer_fallback`.
-- The default is never flipped automatically. There is no shared code, no vendored binary and no version
-  handshake; OfficeCLI is discovered via `OFFICECLI_BINARY`, then `PATH`, then its default install path.
+- OfficeCLI is discovered via `OFFICECLI_BINARY`, then `PATH`, then its default install path, and must
+  meet the capability floor checked by `engine/officecli_runtime.py`.
+- A plan OfficeCLI cannot express faithfully **blocks** with `WRITER_UNSUPPORTED` instead of silently
+  switching backends. `--allow-writer-fallback` is the explicit opt-in, and the reason is recorded in
+  `writer_fallback`.
+- Every default document mutation path (GENERATE FillPlan / GENERATE legacy `--data` /
+  REPAIR / REFORMAT / REVIEW / PROOFREAD / POLISH / MERGE / EXCEL_GENERATE) executes through
+  OfficeCLI; Python OOXML is read-only for analysis, fingerprints and QA. The legacy
+  `--writer python-docx` switch is an explicit compatibility backend, never an automatic
+  fallback.
 
 ## Requirements
 
@@ -42,14 +47,14 @@ code compares iterables with `zip(..., strict=True)` in six places, which raises
 | Component | Requirement |
 |---|---|
 | Python | >= 3.10 (uses `zip(strict=)`; see `engine/table_engine.py`, `engine/review_engine.py`, `engine/ssot_engine.py`, `engine/consistency_qa.py`, `template_intelligence/spec_builder.py`) |
-| `python-docx` | >= 1.1.0 — DOCX read/write, tracked revisions |
-| `openpyxl` | >= 3.1.2 — XLSX read/write, formula preservation |
+| `python-docx` | >= 1.1.0 — DOCX analysis/fingerprints and the explicit legacy writer fallback |
+| `openpyxl` | >= 3.1.2 — XLSX template analysis and the explicit `.xlsm` fallback |
 | `lxml` | >= 5.0.0 — OOXML namespace handling |
 | `Pillow` | >= 10.0.0 — image inspection |
 | `jsonschema` | >= 4.20 — validation of the versioned JSON artifacts |
 | `PyMuPDF` | optional (`>= 1.24`) — page rendering and page-level visual comparison; page counts fall back to WPS `pdfinfo` or poppler |
 | WPS Office or LibreOffice | optional — PDF conversion for visual QA; without it `RENDER_PDF_NOT_PRODUCED` |
-| OfficeCLI | required for `POLISH` / `MERGE`; optional for `--writer officecli` on the FillPlan path |
+| OfficeCLI | >= 1.0.130 (verified on 1.0.160) — required for every mutation workflow and the package QA check |
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -59,16 +64,17 @@ python -m pip install -r requirements.txt
 
 | Mode | Entrypoint | Purpose | Template gate |
 |---|---|---|---|
-| `GENERATE` | `scripts/generate_document.py` | Fill a `.docx` template from a ContentPlan/FillPlan, or from a legacy token map via `--data` | **CONFIRMED required** |
-| `REPAIR` | `scripts/repair_document.py` | Rebuild a broken `.docx` against a reference template, preserving its content | **CONFIRMED required** |
-| `REFORMAT` | `scripts/reformat_document.py` | Align typography to a reference template, written as `w:*PrChange` | **CONFIRMED required** |
-| `REVIEW` | `scripts/review_document.py` | Review one document against a reference, or attach external `--findings` as comments | **CONFIRMED required** |
-| `PROOFREAD` | `scripts/proofread_document.py` | Apply tracked text corrections to a single document | not required |
+| `GENERATE` | `scripts/generate_document.py` | Fill a `.docx` template from a ContentPlan/FillPlan, or from a legacy token map via `--data` (both OfficeCLI by default) | **CONFIRMED required** |
+| `REPAIR` | `scripts/repair_document.py` | Rebuild a broken `.docx` against a reference template through OfficeCLI, preserving its content | **CONFIRMED required** |
+| `REFORMAT` | `scripts/reformat_document.py` | Align typography to a reference template through OfficeCLI, written as `w:*PrChange` | **CONFIRMED required** |
+| `REVIEW` | `scripts/review_document.py` | Review one document against a reference through OfficeCLI, or attach external `--findings` as comments | **CONFIRMED required** |
+| `PROOFREAD` | `scripts/proofread_document.py` | Apply tracked text corrections to a single document through OfficeCLI | not required |
 | `POLISH` | `scripts/polish_document.py` | Refine wording/terminology in place with OfficeCLI run/paragraph edits | not required |
 | `MERGE` | `scripts/merge_documents.py` | Consolidate 2+ DOCX or XLSX files with OfficeCLI dump/replay | not required |
 
 Excel templates are a separate routed path: `EXCEL_GENERATE` → `scripts/generate_excel.py`
-(`--template`, `--data`, `--out`), which fills cells and keeps existing formulas.
+(`--template`, `--data`, `--out`), which fills cells through OfficeCLI and keeps existing
+formulas; macro-enabled `.xlsm` files require an explicit `--allow-writer-fallback`.
 
 `POLISH` and `MERGE` run on the OfficeCLI backend. `POLISH` refuses a span that crosses
 differently formatted runs instead of letting OfficeCLI rebuild the paragraph; `MERGE` uses the
@@ -85,11 +91,11 @@ refuses to run without a `CONFIRMED` one.
 # 1. Route the request
 python scripts/inspect_document.py --inputs template.docx --intent "generate a project proposal" --out routing.json
 
-# 2. Analyze the template and review the evidence
-python scripts/template_gate.py analyze --template template.docx --task-type GENERATE --out gate-analysis.json
-python scripts/template_gate.py report --analysis gate-analysis.json
+# 2. Analyze the template, emit the spec and render the report in one cached pass
+python scripts/template_gate.py analyze --template template.docx --task-type GENERATE `
+  --out gate-analysis.json --spec-out spec.json --report-out template-report.md
 
-# 3. Confirm with the token printed by `report`, which persists the Gate Record
+# 3. Confirm with the token printed by `analyze` / `report`, which persists the Gate Record
 python scripts/template_gate.py confirm --analysis gate-analysis.json --review-token <token> --user-statement "confirmed" --out-record gate.json
 ```
 
@@ -103,13 +109,41 @@ python scripts/run_qa.py out.docx --reference template.docx --task-mode GENERATE
 The versioned plan chain is the same entrypoint with explicit artifacts:
 
 ```powershell
-python scripts/analyze_template.py template.docx --spec-version 4 --out spec.json
+# spec.json already exists when step 2 used --spec-out; otherwise run analyze_template.py.
 python scripts/generate_document.py --template template.docx --spec spec.json `
-    --content-plan content.json --plan fill.json --out out.docx --mode STANDARD
+    --content-plan content.json --plan fill.json --out out.docx --mode STANDARD `
+    --qa-report qa.json
+
+# Reuse the executor's full QAReport instead of running the same suite twice.
+python scripts/run_qa.py out.docx --reuse-report qa.json
 ```
 
 There is no CLI that produces `content.json` / `fill.json`: build them with the `content_intelligence`
 API (`build_content_plan`, `build_fill_plan`) and validate them before execution.
+
+## Performance and caching
+
+- The v4 DocumentSpec and Gate Analysis are cached under `%USERPROFILE%\.officecli-template-filler\cache`,
+  keyed by template SHA-256, engine version, schema version, policy digest and package limits.
+- Gate validation skips evidence/fingerprint rebuilds when the template SHA and spec digest still match
+  the confirmed record; any change falls back to the full validation path.
+- The reference PDF used by visual QA is cached by template SHA and PDF-backend fingerprint; the output
+  PDF is always regenerated.
+- `generate_document.py --qa-report` writes the executor QAReport sidecar on the v4 `--plan` path only;
+  `run_qa.py --reuse-report`
+  returns it only when the output SHA-256 matches and the report validates. Otherwise it runs full QA.
+- Override the cache location with `OFFICECLI_CACHE_HOME`; disable all caches with
+  `OFFICECLI_DISABLE_CACHE=1`.
+
+## Tests and CI
+
+```powershell
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q
+python -m ruff check .
+```
+
+GitHub Actions runs the same commands on `windows-latest` for Python 3.10 and 3.13.
 
 One document, three review-shaped runs:
 
@@ -155,7 +189,11 @@ These are invariants, not conventions.
 
 ```
 officecli-template-filler/
+├── .github/workflows/ci.yml  # Windows CI: pytest + Ruff
 ├── SKILL.md                  # Agent-facing workflow contract (authoritative)
+├── tests/                    # Core invariant regression suite
+├── pyproject.toml            # pytest and Ruff configuration
+├── requirements-dev.txt      # Test and lint dependencies
 ├── config/                   # Package quotas, QA policy, error codes, gate policy, environment probes
 ├── schemas/                  # JSON Schemas for DocumentSpec, ContentPlan, FillPlan, QAReport (schema 4.0)
 ├── template_gate/            # Evidence analysis, state machine, Gate Record storage and validation
@@ -184,9 +222,11 @@ by design; a failed check aborts the transaction rather than degrading the outpu
 
 ## Version and releases
 
-Current version: **4.3.0** (`engine/__init__.py`, `SKILL.md`).
+Current version: **4.3.1** (`engine/__init__.py`, `SKILL.md`).
 
 - `dist/` is ignored by git. It is build output produced by the release flow, never committed.
+- `python scripts/package_skill.py` builds a working-tree skill zip and manifest under `dist/`; the
+  manifest sets `source_dirty` when the checkout contains uncommitted files.
 - A release consists of `officecli-template-filler-<version>.zip` plus a matching
   `officecli-template-filler-<version>.manifest.json`.
 - The manifest records the source commit, build time, archive SHA-256, entry counts, and the path,
@@ -194,17 +234,24 @@ Current version: **4.3.0** (`engine/__init__.py`, `SKILL.md`).
 
 ## Known limitations
 
-- **No automated tests, no CI.** This is the single largest risk in the repository; see the notice at the
-  top. Engine changes require a manual run of the full chain on a representative template.
-- `POLISH` / `MERGE` require OfficeCLI; without the binary they exit 2 with `OFFICECLI_UNAVAILABLE`.
+- **Regression coverage is intentionally narrow.** Tests cover core invariants, not every document
+  workflow; validate generated deliverables on representative templates before release.
+- `GENERATE`, `POLISH` / `MERGE` require OfficeCLI; without the binary they exit 2 with
+  `OFFICECLI_UNAVAILABLE`.
 - `POLISH` cannot isolate one of several matches inside a single run, or a replacement that spans
   differently formatted runs; it returns a planning error instead of changing run formatting.
 - `MERGE` consolidates document bodies into the first input's package. Appended headers/footers,
   footnotes, endnotes, comments and each source's final section page setup are not carried;
   XLSX named ranges, charts, pivots and macros are not merged. These are reported as
   `limitations` in the merge report.
-- The OfficeCLI writer covers body paragraphs and tables only and falls back for the whole document when a
-  target lives elsewhere; its behavior is not re-verified for every OfficeCLI release.
+- The GENERATE FillPlan writer covers body paragraphs, tables, headers and footers. Footnotes, endnotes,
+  content controls and text boxes still block with `WRITER_LOCATION_UNSUPPORTED` unless the caller passes
+  `--allow-writer-fallback`. `REPAIR`, `REFORMAT`, `REVIEW`, `PROOFREAD` and Excel fills now execute
+  through OfficeCLI; `docs/officecli-first.md` is the migration ledger.
+- The legacy `--data` token map executes through OfficeCLI by default. Text boxes, SDTs and
+  individual footnote/endnote paragraphs are not addressable; they block with
+  `WRITER_LOCATION_UNSUPPORTED` unless `--writer python-docx` or `--allow-writer-fallback` is
+  explicit. The python-docx backend is never selected automatically.
 - Visual QA needs WPS/LibreOffice for PDF conversion and PyMuPDF for page rendering; when either is
   missing the corresponding checks stay `UNVERIFIED` instead of passing.
 - XLSX handling cannot guarantee preservation of shapes, charts or other objects that `openpyxl` does not

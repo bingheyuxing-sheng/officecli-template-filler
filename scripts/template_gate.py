@@ -23,6 +23,7 @@ from template_gate import build_analysis  # noqa: E402
 from template_gate.report import build_report, render_markdown  # noqa: E402
 from template_gate.store import GateStore  # noqa: E402
 from template_gate.supplements import resolve_evidence
+from template_intelligence import build_document_spec_from_path  # noqa: E402
 from engine.package_guard import reject_first_package  # noqa: E402
 
 
@@ -46,32 +47,51 @@ def _load_json(path: str) -> dict:
     return payload
 
 
+def _render_report(analysis: dict, gate_home: str, fmt: str) -> tuple:
+    report = build_report(analysis)
+    store = GateStore(gate_home)
+    token = store.review_token(str(report.get("analysis_id")), str(report.get("report_digest")))
+    report.setdefault("confirmation", {})["review_token"] = token
+    if fmt == "json":
+        text = json.dumps(report, ensure_ascii=False, indent=2)
+    else:
+        text = render_markdown(report) + "\n确认令牌（用于 confirm）：`%s`\n" % token
+    return report, text
+
+
 def _cmd_analyze(args) -> int:
     rejected = reject_first_package({"template": args.template})
     if rejected:
         print(json.dumps(rejected, ensure_ascii=False))
         return 2
 
-    analysis = build_analysis(args.template, args.task_type, supplements=args.supplement or None)
+    spec = build_document_spec_from_path(args.template)
+    analysis = build_analysis(
+        args.template,
+        args.task_type,
+        spec=spec,
+        supplements=args.supplement or None,
+    )
     text = json.dumps(analysis, ensure_ascii=False, indent=2)
     if args.out:
         _write_text(args.out, text)
         print("Saved template analysis to: %s" % args.out)
     else:
         print(text)
+    if args.spec_out:
+        _write_json(args.spec_out, spec)
+        print("Saved document spec to: %s" % args.spec_out)
+    if args.report_out:
+        report, report_text = _render_report(analysis, args.gate_home, args.report_format)
+        _write_text(args.report_out, report_text)
+        print("Saved template analysis report to: %s" % args.report_out)
+        print("review_token: %s" % report["confirmation"]["review_token"])
     return 2 if analysis.get("summary", {}).get("blocking") else 0
 
 
 def _cmd_report(args) -> int:
     analysis = _load_json(args.analysis)
-    report = build_report(analysis)
-    store = GateStore(args.gate_home)
-    token = store.review_token(str(report.get("analysis_id")), str(report.get("report_digest")))
-    report.setdefault("confirmation", {})["review_token"] = token
-    if args.format == "json":
-        text = json.dumps(report, ensure_ascii=False, indent=2)
-    else:
-        text = render_markdown(report) + "\n确认令牌（用于 confirm）：`%s`\n" % token
+    report, text = _render_report(analysis, args.gate_home, args.format)
     if args.out:
         _write_text(args.out, text)
         print("Saved template analysis report to: %s" % args.out)
@@ -183,6 +203,10 @@ def main() -> int:
     analyze.add_argument("--template", required=True, help="Template .docx path")
     analyze.add_argument("--task-type", required=True, help="GENERATE / REPAIR / REFORMAT / REVIEW")
     analyze.add_argument("--out", default="", help="Optional analysis JSON output path")
+    analyze.add_argument("--spec-out", default="", help="Optional DocumentSpec 4.0 output path")
+    analyze.add_argument("--report-out", default="", help="Optional rendered report output path")
+    analyze.add_argument("--report-format", choices=("markdown", "json"), default="markdown")
+    analyze.add_argument("--gate-home", default="", help="Optional gate store directory")
     analyze.add_argument("--supplement", action="append", default=[], help="Reference material path (repeatable)")
     analyze.set_defaults(func=_cmd_analyze)
 

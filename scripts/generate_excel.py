@@ -23,8 +23,6 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-import openpyxl
-
 from engine import (
     DocumentTransaction,
     TransactionAborted,
@@ -33,27 +31,8 @@ from engine import (
     inspect_excel_objects,
     install_auto_cleanup,
 )
-
-
-def _replacement_map(payload: dict) -> dict:
-    nested = payload.get("replacements")
-    if isinstance(nested, dict):
-        return {str(k): str(v) for k, v in nested.items()}
-    return {str(k): str(v) for k, v in payload.items() if not isinstance(v, (dict, list))}
-
-
-def _apply(cell, replacements: dict) -> bool:
-    value = cell.value
-    if not isinstance(value, str) or value.startswith("="):
-        return False
-    updated = value
-    for key, replacement in replacements.items():
-        updated = updated.replace("{{" + key + "}}", replacement)
-        updated = updated.replace("【" + key + "】", replacement)
-    if updated == value:
-        return False
-    cell.value = updated
-    return True
+from engine.excel_writer import ExcelWriterError, fill_excel_template, replacement_map
+from engine.officecli_runtime import OfficecliError
 
 
 def main() -> int:
@@ -66,6 +45,11 @@ def main() -> int:
         "--allow-object-loss",
         action="store_true",
         help="Proceed even when the template contains parts openpyxl cannot preserve (ActiveX, pivots, slicers, ...)",
+    )
+    parser.add_argument(
+        "--allow-writer-fallback",
+        action="store_true",
+        help="Explicitly allow the openpyxl writer when OfficeCLI cannot handle the workbook",
     )
     args = parser.parse_args()
 
@@ -80,7 +64,7 @@ def main() -> int:
 
     with open(args.data, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
-    replacements = _replacement_map(payload)
+    replacements = replacement_map(payload)
 
     is_xlsm = args.template.lower().endswith(".xlsm")
     if is_xlsm and not args.out.lower().endswith(".xlsm"):
@@ -100,27 +84,18 @@ def main() -> int:
         }, ensure_ascii=False, indent=2))
         return 3
 
-    replaced = 0
+    execution = {}
     qa_report = None
     tx = DocumentTransaction(args.template, args.out, task_mode="EXCEL_GENERATE")
 
     try:
         with tx:
-            workbook = openpyxl.load_workbook(
+            execution = fill_excel_template(
                 args.template,
-                keep_vba=is_xlsm,
-                keep_links=True,
-                data_only=False,
+                tx.stage(),
+                replacements,
+                allow_writer_fallback=args.allow_writer_fallback,
             )
-            for sheet in workbook.worksheets:
-                for row in sheet.iter_rows():
-                    for cell in row:
-                        if _apply(cell, replacements):
-                            replaced += 1
-
-            workbook.save(tx.stage())
-            workbook.close()
-
             # QA must compare the OUTPUT against the ORIGINAL TEMPLATE — comparing the
             # output with itself proves nothing about formula or style preservation.
             qa_report = audit_excel_formula_and_style_qa(
@@ -142,10 +117,31 @@ def main() -> int:
             "output": args.out,
             "template": args.template,
             "keep_vba": is_xlsm,
-            "replaced_cells": replaced,
+            "execution": execution,
             "error": str(exc),
             "qa_status": tx.qa_status,
             "qa": qa_report or {},
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 1
+    except ExcelWriterError as exc:
+        print(json.dumps({
+            "output": args.out,
+            "template": args.template,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
+            "next_action": "INSTALL_OFFICECLI_OR_PASS_ALLOW_WRITER_FALLBACK",
+            "transaction": tx.record(),
+        }, ensure_ascii=False, indent=2))
+        return 3
+    except OfficecliError as exc:
+        print(json.dumps({
+            "output": args.out,
+            "template": args.template,
+            "error": exc.code,
+            "message": exc.message,
+            "details": exc.details,
             "transaction": tx.record(),
         }, ensure_ascii=False, indent=2))
         return 1
@@ -154,7 +150,9 @@ def main() -> int:
         "output": args.out,
         "template": args.template,
         "keep_vba": is_xlsm,
-        "replaced_cells": replaced,
+        "execution": execution,
+        "replaced_cells": execution.get("replaced_cells", 0),
+        "writer_backend": execution.get("writer_backend"),
         "object_preflight": object_preflight,
         "qa_passed": tx.qa_status == "PASSED",
         "qa_status": tx.qa_status,

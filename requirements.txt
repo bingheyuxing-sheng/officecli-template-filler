@@ -8,3 +8,7 @@ jsonschema>=4.20
 
 # 可选：PDF 页面级差异比对（缺失时相关检查标记为 UNVERIFIED）
 # pymupdf>=1.24.0
+
+# 必需：OfficeCLI >= 1.0.130（GENERATE / POLISH / MERGE 与包级 QA）
+# 它不是 Python 包；从 https://github.com/iOfficeAI/OfficeCLI 安装，
+# 或用 OFFICECLI_BINARY 指向可执行文件。
