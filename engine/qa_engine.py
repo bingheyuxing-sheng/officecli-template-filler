@@ -400,15 +400,23 @@ def _is_heading_like(paragraph) -> bool:
 
 
 def _iter_unique_table_cells(doc):
-    """Yield each physical table cell once (merged cells are reported repeatedly by python-docx)."""
+    """Yield each physical table cell once (merged cells are reported repeatedly by python-docx).
+
+    ``id()`` is only stable while the lxml proxy is alive; losing the reference lets
+    CPython reuse the address and silently skips a real cell. Keep every ``tc`` until
+    the traversal ends.
+    """
     seen = set()
+    keep_alive = []
     for tbl in doc.tables:
         for row in tbl.rows:
             for cell in row.cells:
-                key = id(cell._tc)
+                tc = cell._tc
+                key = id(tc)
                 if key in seen:
                     continue
                 seen.add(key)
+                keep_alive.append(tc)
                 yield cell
 
 
@@ -663,6 +671,11 @@ def audit_format_and_text_qa(
 
         heading_like = _is_heading_like(p)
         plain_body = _is_plain_body_style(p)
+        matched_reference_paragraph = None
+        if profile == "REPLICA" and ref_doc is not None:
+            ref_index = paragraph_matches.get(i)
+            if ref_index is not None:
+                matched_reference_paragraph = ref_doc.paragraphs[ref_index]
         if profile == "STYLE_GUIDE" and ref_doc is not None:
             ref_index = paragraph_matches.get(i)
             if ref_index is None:
@@ -680,6 +693,22 @@ def audit_format_and_text_qa(
                 font_anomalies.append(("body_p", i, out_font, sorted(ref_fonts), txt[:30]))
             continue
 
+        if matched_reference_paragraph is not None and not heading_like:
+            # A template may use direct formatting on Normal paragraphs (titles, labels).
+            # The global body baseline is only right for paragraphs the template does not
+            # contain; matched paragraphs must be compared with their own counterpart.
+            unexpected_sizes = _paragraph_size_set(p) - _paragraph_size_set(matched_reference_paragraph)
+            if unexpected_sizes:
+                size_anomalies.append(
+                    (
+                        "body_p",
+                        i,
+                        sorted(unexpected_sizes),
+                        sorted(_paragraph_size_set(matched_reference_paragraph)),
+                        txt[:30],
+                    )
+                )
+
         for r in p.runs:
             run_text = (r.text or "").strip()
             if not run_text:
@@ -689,7 +718,13 @@ def audit_format_and_text_qa(
                 continue
             if reference_inventory and run_sz not in reference_inventory:
                 size_anomalies.append(("body_p_not_in_template", i, run_sz, run_text[:30]))
-            elif not heading_like and plain_body and baseline_sz and run_sz != baseline_sz:
+            elif (
+                matched_reference_paragraph is None
+                and not heading_like
+                and plain_body
+                and baseline_sz
+                and run_sz != baseline_sz
+            ):
                 size_anomalies.append(("body_p", i, run_sz, baseline_sz, run_text[:30]))
 
             if reference_font_inventory and not heading_like:

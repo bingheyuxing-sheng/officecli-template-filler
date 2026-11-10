@@ -32,6 +32,7 @@ from engine import (
     split_issues,
     validation_report,
 )
+from engine.cli_io import configure_stdio
 from engine.package_guard import reject_first_package
 
 
@@ -118,6 +119,7 @@ def _load_reuse_candidate(path: str, fpath: str, args) -> tuple:
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Run full QA suite on a .docx or .xlsx output file.")
     parser.add_argument("file_path", nargs="?", default="", help="Path to .docx or .xlsx file")

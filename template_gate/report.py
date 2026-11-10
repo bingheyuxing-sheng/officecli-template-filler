@@ -10,18 +10,26 @@ from .models import canonical_json, sha256_text
 
 _REPORT_SCHEMA_VERSION = "1.0"
 _COVERAGE_NOTE = "覆盖率只说明有多少属性有证据，不等于模板理解正确。"
-_CONFIRMATION_PROMPT = (
+_CONFIRMATION_PROMPT_READY = (
     "模板解析已经完成。\n\n"
-    "当前所有影响本次任务正确性的阻断性问题均已解决。\n"
+    "当前没有影响本次任务正确性的阻断性问题。\n"
     "请检查以上模板结构和格式规则。\n"
     "确认后，我将按照该模板开始正式生成。"
+)
+_CONFIRMATION_PROMPT_BLOCKED = (
+    "模板解析尚未通过。\n\n"
+    "当前仍有 %d 个阻断性问题未解决，不能确认或开始生成。\n"
+    "请先按第6节补充证据或明确处理方式，然后重新分析。"
 )
 
 _POSSIBLE_ERRORS = {
     "table.purpose": "表格可能被错误填充，或固定内容被误改。",
     "font_family": "填充后字体与模板不一致。",
     "font_size": "填充后字号与模板不一致。",
+    "font_rule": "标签与占位符的混排字号规则未被确认，填充可能破坏模板版式。",
     "red_text.semantic": "红色说明文字可能被当作占位符删除或填错。",
+    "field": "字段指令、结果或可编辑状态与模板不一致。",
+    "sdt": "内容控件被误改，或含字段控件丢失字段。",
     "textbox.position": "文本框位置或版式发生漂移。",
     "paragraph.style": "段落样式对齐错误。",
     "paragraph.spacing": "段落间距/行距对齐错误。",
@@ -159,6 +167,16 @@ def _structure_block(spec: Dict[str, Any], records: List[Dict[str, Any]]) -> Dic
         if item.get("property") == "slot.location" and item.get("task_relevant")
     ]
     tables = _values(records, "table.structure")
+    fields = [
+        item.get("value")
+        for item in records
+        if item.get("property") == "field" and isinstance(item.get("value"), dict)
+    ]
+    sdts = [
+        item.get("value")
+        for item in records
+        if item.get("property") == "sdt" and isinstance(item.get("value"), dict)
+    ]
     return {
         "fixed_content": [
             {"kind": item.get("kind"), "location_id": item.get("location_id")}
@@ -172,6 +190,10 @@ def _structure_block(spec: Dict[str, Any], records: List[Dict[str, Any]]) -> Dic
             if isinstance(item, dict)
         ],
         "tables": tables,
+        "controls": {
+            "fields": fields,
+            "sdts": sdts,
+        },
     }
 
 
@@ -242,7 +264,11 @@ def build_report(
         "blocking_items": blocking,
         "non_blocking_risks": risks,
         "confirmation": {
-            "prompt": _CONFIRMATION_PROMPT,
+            "prompt": (
+                _CONFIRMATION_PROMPT_BLOCKED % len(blocking)
+                if blocking
+                else _CONFIRMATION_PROMPT_READY
+            ),
             "required": True,
             "confirmed": False,
             "review_token": None,
@@ -281,6 +307,9 @@ def render_markdown(report: Dict[str, Any]) -> str:
     quality = report.get("quality") or {}
     blocking = report.get("blocking_items") or []
     risks = report.get("non_blocking_risks") or []
+    controls = structure.get("controls") or {}
+    fields = controls.get("fields") or []
+    sdts = controls.get("sdts") or []
     confirmation = report.get("confirmation") or {}
 
     lines: List[str] = [
@@ -320,23 +349,61 @@ def render_markdown(report: Dict[str, Any]) -> str:
         "- 保护区：%s" % _format_value(structure.get("protected_areas")),
         "- 表格结构：%s" % _format_value(structure.get("tables")),
         "",
-        "## 4. 解析质量",
+        "## 4. 字段与内容控件",
         "",
-        "| 状态 | 数量 |",
-        "|---|---|",
-        "| VERIFIED | %s |" % quality.get("verified"),
-        "| UNVERIFIED | %s |" % quality.get("unverified"),
-        "| AMBIGUOUS | %s |" % quality.get("ambiguous"),
-        "| CONFLICT | %s |" % quality.get("conflict"),
-        "| 已解决 | %s |" % quality.get("resolved"),
-        "| 未解决阻断项 | %s |" % quality.get("unresolved_blocking"),
-        "| 覆盖率 | %s |" % quality.get("coverage"),
-        "",
-        "> %s" % quality.get("coverage_note"),
-        "",
-        "## 5. 阻断性问题",
-        "",
+        "| 类型 | 位置 | 可编辑 | 说明 |",
+        "|---|---|---|---|",
     ]
+    for field in fields:
+        lines.append(
+            "| 字段 %s | `%s` | %s | `%s`；缓存结果 `%s`；锁 `%s` |"
+            % (
+                field.get("field_type"),
+                field.get("officecli_path"),
+                "是" if field.get("editable") else "否",
+                field.get("instruction"),
+                field.get("cached_result"),
+                field.get("lock_state"),
+            )
+        )
+    for sdt in sdts:
+        lines.append(
+            "| SDT %s | `%s` | %s | 含字段 `%s`；默认动作 `%s`；锁 `%s` |"
+            % (
+                sdt.get("type"),
+                sdt.get("officecli_path"),
+                "是" if sdt.get("editable") else "否",
+                "是" if sdt.get("contains_fields") else "否",
+                sdt.get("default_action"),
+                sdt.get("lock"),
+            )
+        )
+    if not fields and not sdts:
+        lines.append("| （无） |  |  |  |")
+    lines.extend(
+        [
+            "",
+            "> 字段与未锁定 SDT 是可控编辑项，不再一律视为保护区；"
+            "含字段 SDT 改文本必须显式确认字段丢失风险。",
+            "",
+            "## 5. 解析质量",
+            "",
+            "| 状态 | 数量 |",
+            "|---|---|",
+            "| VERIFIED | %s |" % quality.get("verified"),
+            "| UNVERIFIED | %s |" % quality.get("unverified"),
+            "| AMBIGUOUS | %s |" % quality.get("ambiguous"),
+            "| CONFLICT | %s |" % quality.get("conflict"),
+            "| 已解决 | %s |" % quality.get("resolved"),
+            "| 未解决阻断项 | %s |" % quality.get("unresolved_blocking"),
+            "| 覆盖率 | %s |" % quality.get("coverage"),
+            "",
+            "> %s" % quality.get("coverage_note"),
+            "",
+            "## 6. 阻断性问题",
+            "",
+        ]
+    )
     if blocking:
         for item in blocking:
             lines.extend(
@@ -357,7 +424,7 @@ def render_markdown(report: Dict[str, Any]) -> str:
         lines.extend(["当前没有阻断性问题。", ""])
 
     if risks:
-        lines.extend(["## 6. 非阻断性风险", ""])
+        lines.extend(["## 7. 非阻断性风险", ""])
         for risk in risks:
             lines.append(
                 "- `%s` %s（%s）：%s"
@@ -372,7 +439,7 @@ def render_markdown(report: Dict[str, Any]) -> str:
 
     lines.extend(
         [
-            "## 7. 用户确认",
+            "## 8. 用户确认",
             "",
             str(confirmation.get("prompt") or "").strip(),
             "",

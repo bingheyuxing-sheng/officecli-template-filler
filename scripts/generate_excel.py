@@ -10,7 +10,12 @@ Usage:
     python scripts/generate_excel.py --template <template.xlsx> --payload <payload.json> --out <output.xlsx>
 
 Payload shape:
-    {"replacements": {"project": "示例项目", "leader": "张三"}, ...any extra keys...}
+    {"replacements": {"project": "示例项目", "leader": "张三"},
+     "cells": [{"sheet": "教学进程表", "cell": "B2", "value": "信息安全技术应用"},
+               {"sheet": "教学进程表", "cell": "G5", "value": 3, "type": "number"}]}
+
+Use ``cells`` when the template has no ``{{...}}`` / ``【...】`` tokens. Literal
+writes only: formula cells and non-top-left cells of a merged range are refused.
 """
 from __future__ import annotations
 
@@ -31,11 +36,13 @@ from engine import (
     inspect_excel_objects,
     install_auto_cleanup,
 )
-from engine.excel_writer import ExcelWriterError, fill_excel_template, replacement_map
+from engine.cli_io import configure_stdio
+from engine.excel_writer import ExcelWriterError, fill_excel_template, payload_cells, replacement_map
 from engine.officecli_runtime import OfficecliError
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Fill an Excel template non-destructively.")
     parser.add_argument("--template", required=True, help="Input .xlsx/.xlsm template path")
@@ -65,6 +72,7 @@ def main() -> int:
     with open(args.data, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
     replacements = replacement_map(payload)
+    cell_plan = payload_cells(payload)
 
     is_xlsm = args.template.lower().endswith(".xlsm")
     if is_xlsm and not args.out.lower().endswith(".xlsm"):
@@ -95,6 +103,7 @@ def main() -> int:
                 tx.stage(),
                 replacements,
                 allow_writer_fallback=args.allow_writer_fallback,
+                cell_plan=cell_plan,
             )
             # QA must compare the OUTPUT against the ORIGINAL TEMPLATE — comparing the
             # output with itself proves nothing about formula or style preservation.
@@ -125,16 +134,20 @@ def main() -> int:
         }, ensure_ascii=False, indent=2))
         return 1
     except ExcelWriterError as exc:
+        next_action = {
+            "NO_MATCHING_PLACEHOLDERS": "PROVIDE_CELL_PLAN_OR_TOKENIZED_TEMPLATE",
+            "INVALID_CELL_PLAN": "FIX_CELL_PLAN",
+        }.get(exc.code, "INSTALL_OFFICECLI_OR_PASS_ALLOW_WRITER_FALLBACK")
         print(json.dumps({
             "output": args.out,
             "template": args.template,
             "error": exc.code,
             "message": exc.message,
             "details": exc.details,
-            "next_action": "INSTALL_OFFICECLI_OR_PASS_ALLOW_WRITER_FALLBACK",
+            "next_action": next_action,
             "transaction": tx.record(),
         }, ensure_ascii=False, indent=2))
-        return 3
+        return 2 if exc.code in ("NO_MATCHING_PLACEHOLDERS", "INVALID_CELL_PLAN") else 3
     except OfficecliError as exc:
         print(json.dumps({
             "output": args.out,

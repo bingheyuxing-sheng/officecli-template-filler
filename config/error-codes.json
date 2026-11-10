@@ -72,6 +72,26 @@
       "introduced_in": "4.0.0"
     },
     {
+      "code": "CONTENT_PLAN_APPROVAL_REQUIRED",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT02",
+      "message_template": "Final generation requires an approved ContentPlan: {reason}",
+      "introduced_in": "4.3.2"
+    },
+    {
+      "code": "PDF_TEXT_UNAVAILABLE",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "AGENT02",
+      "message_template": "PDF text could not be extracted; do not infer principle content: {reason}",
+      "introduced_in": "4.3.2"
+    },
+    {
       "code": "SOURCE_REF_MISSING",
       "severity": "blocking",
       "retryable": false,
@@ -560,6 +580,16 @@
       "owner": "AGENT03",
       "message_template": "Backend {backend} post-batch normalisation failed: {reason}",
       "introduced_in": "4.2.0"
+    },
+    {
+      "code": "SEMANTIC_SUPPLEMENT_INVALID",
+      "severity": "blocking",
+      "retryable": false,
+      "rollback_required": false,
+      "human_intervention": true,
+      "owner": "CORE",
+      "message_template": "Template semantic supplement is invalid for this template: {reason}",
+      "introduced_in": "4.3.2"
     }
   ]
 }

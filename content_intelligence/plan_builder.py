@@ -37,7 +37,9 @@ SECTION_FIELDS: tuple[str, ...] = (
 
 IMAGE_ROLES: frozenset[str] = frozenset({"logo", "stamp", "qr", "illustration", "photo"})
 IMAGE_TOKEN_TEXTS: frozenset[str] = frozenset({"***", "___"})
-PARAGRAPH_CANDIDATE_TYPES: frozenset[str] = frozenset({"red_run_clue", "internal_fact"})
+PARAGRAPH_CANDIDATE_TYPES: frozenset[str] = frozenset(
+    {"red_run_clue", "internal_fact", "empty_anchor"}
+)
 
 # Greedy ``.*`` picks the *last* ``.tbl[n].r[r].c[c]`` segment, so a slot located
 # inside a nested table targets the nested table instead of the outer one.
@@ -191,6 +193,7 @@ def build_content_plan(
     required_slots: Optional[List[str]] = None,
     optional_slots: Optional[List[str]] = None,
     allow_missing: Optional[List[Dict[str, str]]] = None,
+    approval: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build a ContentPlan 4.0 from a DocumentSpec 4.0.
 
@@ -219,7 +222,7 @@ def build_content_plan(
     else:
         required = list(required_slots)
 
-    return {
+    plan = {
         "schema_version": SCHEMA_VERSION,
         "plan_id": plan_id,
         "template_id": template_id,
@@ -231,6 +234,9 @@ def build_content_plan(
             "allow_missing": copy.deepcopy(list(allow_missing or [])),
         },
     }
+    if approval is not None:
+        plan["approval"] = copy.deepcopy(approval)
+    return plan
 
 
 def build_fill_plan(
@@ -241,6 +247,7 @@ def build_fill_plan(
     mode: str = "STRICT",
     values_by_slot: Optional[Dict[str, str]] = None,
     images_by_slot: Optional[Dict[str, str]] = None,
+    control_operations: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Build a schema-shaped FillPlan 4.0 from a DocumentSpec and ContentPlan.
 
@@ -272,6 +279,13 @@ def build_fill_plan(
     operations: List[Dict[str, Any]] = []
     allowed_slots: List[str] = []
     emitted: set[str] = set()
+    targeted_order: List[str] = []
+    targeted_seen: set[str] = set()
+    external_clear_slots = {
+        operation.get("slot_id")
+        for operation in control_operations or []
+        if isinstance(operation, dict) and operation.get("type") == "clear_red_text"
+    }
 
     for section in content_plan.get("sections", []) or []:
         if not isinstance(section, dict):
@@ -284,6 +298,17 @@ def build_fill_plan(
                 continue
             slot = slots.get(slot_id)
             if slot is None:
+                continue
+            if slot_id not in targeted_seen:
+                targeted_seen.add(slot_id)
+                targeted_order.append(slot_id)
+            red = slot.get("red_text") if isinstance(slot.get("red_text"), dict) else {}
+            if (
+                red.get("semantic") == "INSTRUCTION"
+                and red.get("action") == "REMOVE_IN_FINAL"
+            ):
+                # Fill instructions are guidance, never final content. A caller
+                # value for such a slot must not be written into the template.
                 continue
             resolved = _resolve_slot_value(
                 spec,
@@ -328,22 +353,74 @@ def build_fill_plan(
             emitted.add(slot_id)
             allowed_slots.append(slot_id)
 
+    for slot_id in targeted_order:
+        if slot_id in emitted or slot_id in external_clear_slots:
+            continue
+        slot = slots.get(slot_id)
+        if slot is None:
+            continue
+        red = slot.get("red_text") if isinstance(slot.get("red_text"), dict) else {}
+        if (
+            red.get("semantic") != "INSTRUCTION"
+            or red.get("action") != "REMOVE_IN_FINAL"
+        ):
+            continue
+        sequence = len(operations) + 1
+        operations.append(
+            {
+                "op_id": "OP_%03d" % sequence,
+                "sequence": sequence,
+                "type": "clear_red_text",
+                "slot_id": slot_id,
+                "target": {"location_id": slot["location_id"]},
+                "source_ref": "USER_INPUT",
+                "policy": "STRICT",
+                "preconditions": [
+                    "slot_exists",
+                    "not_protected",
+                    "template_sha_match",
+                ],
+            }
+        )
+        emitted.add(slot_id)
+        allowed_slots.append(slot_id)
+
+    allowed_controls: List[str] = []
+    for operation in control_operations or []:
+        if not isinstance(operation, dict):
+            raise ValueError("control_operations entries must be objects")
+        op = copy.deepcopy(operation)
+        sequence = len(operations) + 1
+        op["sequence"] = sequence
+        op.setdefault("op_id", "OP_%03d" % sequence)
+        op.setdefault("policy", "STRICT")
+        op.setdefault("preconditions", ["template_sha_match"])
+        operations.append(op)
+        control_id = op.get("field_id") or op.get("sdt_id")
+        if isinstance(control_id, str) and control_id not in allowed_controls:
+            allowed_controls.append(control_id)
+
+    baseline: Dict[str, Any] = {
+        "template_sha256": template_sha256,
+        "spec_schema_version": SCHEMA_VERSION,
+        "fingerprint_id": fingerprint["fingerprint_id"],
+        "allowed_slot_ids": allowed_slots,
+    }
+    if allowed_controls:
+        baseline["allowed_control_ids"] = allowed_controls
+
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": task_id,
         "template_id": template.get("template_id"),
         "mode": mode,
-        "baseline": {
-            "template_sha256": template_sha256,
-            "spec_schema_version": SCHEMA_VERSION,
-            "fingerprint_id": fingerprint["fingerprint_id"],
-            "allowed_slot_ids": allowed_slots,
-        },
+        "baseline": baseline,
         "operations": operations,
         "global_policy": {
             "allow_structure_change": False,
             "deny_operations": list(DENY_OPERATIONS),
             "styles": "DENY",
             "page_setup": "DENY",
+            "update_fields_on_open": True,
         },
     }

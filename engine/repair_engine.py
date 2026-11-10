@@ -449,11 +449,14 @@ def execute_repair_plan(
 
                 # Count complex cells that the formatter deliberately does not touch.
                 seen_tc = set()
+                kept_tcs = []
                 for row in brk_tbl.rows:
                     for cell in row.cells:
-                        if id(cell._tc) in seen_tc:
+                        tc = cell._tc
+                        if id(tc) in seen_tc:
                             continue
-                        seen_tc.add(id(cell._tc))
+                        seen_tc.add(id(tc))
+                        kept_tcs.append(tc)
                         c_info = classify_cell_structure(cell)
                         if c_info["cell_type"] in ("nested_table", "image_cell", "sdt_control", "field_code", "unknown_complex"):
                             protected_cells_skipped += 1

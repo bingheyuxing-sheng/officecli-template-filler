@@ -82,6 +82,7 @@
       }
     },
     "slots": { "type": "array", "items": { "$ref": "#/$defs/slot" } },
+    "controls": { "$ref": "#/$defs/controls" },
     "protected_regions": { "type": "array", "items": { "$ref": "#/$defs/protected_region" } },
     "capacity_profiles": { "type": "array", "items": { "$ref": "#/$defs/capacity_profile" } },
     "layout_constraints": { "type": "array", "items": { "$ref": "#/$defs/layout_constraint" } },
@@ -202,7 +203,7 @@
         "slot_key": { "$ref": "#/$defs/slot_key" },
         "location_id": { "$ref": "#/$defs/location_id" },
         "scope": { "enum": ["body", "table", "header_footer", "textbox", "footnote", "endnote", "comment"] },
-        "candidate_type": { "enum": ["explicit_token", "red_run_clue", "internal_fact", "control_or_field"] },
+        "candidate_type": { "enum": ["explicit_token", "red_run_clue", "internal_fact", "control_or_field", "empty_anchor"] },
         "matched_text": { "type": "string" },
         "span": {
           "type": "object",
@@ -228,12 +229,22 @@
         "protection_status": { "enum": ["FILLABLE", "CONDITIONAL", "PROTECTED"] },
         "confirmation_tier": {
           "enum": ["AUTO_DERIVE_OR_BIND", "DEFAULT_FILL_WITH_NOTICE", "MUST_ASK_USER", "PROTECTED_DO_NOT_TOUCH"]
-        }
+        },
+        "red_text": { "$ref": "#/$defs/red_text" }
       },
       "allOf": [
         {
           "if": { "properties": { "candidate_type": { "const": "internal_fact" } } },
           "then": { "properties": { "confirmation_tier": { "const": "MUST_ASK_USER" } } }
+        },
+        {
+          "if": { "properties": { "candidate_type": { "const": "empty_anchor" } } },
+          "then": {
+            "properties": {
+              "protection_status": { "const": "CONDITIONAL" },
+              "confirmation_tier": { "const": "MUST_ASK_USER" }
+            }
+          }
         },
         {
           "if": { "properties": { "candidate_type": { "const": "control_or_field" } } },
@@ -277,6 +288,126 @@
             }
           ]
         }
+      }
+    },
+    "red_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original_text", "run_ranges", "semantic", "action", "requires_confirmation"],
+      "properties": {
+        "original_text": { "type": "string" },
+        "run_ranges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_index", "start", "end"],
+            "properties": {
+              "run_index": { "type": "integer", "minimum": 0 },
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "semantic": { "enum": ["PLACEHOLDER", "INSTRUCTION", "EMPHASIS", "AMBIGUOUS"] },
+        "action": { "enum": ["FILL", "REMOVE_IN_FINAL", "PRESERVE", null] },
+        "deletion_reason": { "type": ["string", "null"] },
+        "requires_confirmation": { "type": "boolean" }
+      }
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fields", "sdts"],
+      "properties": {
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/field_control" } },
+        "sdts": { "type": "array", "items": { "$ref": "#/$defs/sdt_control" } }
+      }
+    },
+    "field_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field_id",
+        "location_id",
+        "officecli_path",
+        "instruction",
+        "field_type",
+        "cached_result",
+        "lock_state",
+        "editable",
+        "refresh_allowed",
+        "parent_sdt_id",
+        "address_status",
+        "raw_locator"
+      ],
+      "properties": {
+        "field_id": { "type": "string", "pattern": "^FLD_[0-9a-f]{12}$" },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "officecli_path": { "type": ["string", "null"] },
+        "instruction": { "type": "string" },
+        "field_type": { "type": "string", "minLength": 1 },
+        "cached_result": { "type": "string" },
+        "lock_state": { "enum": ["UNLOCKED", "LOCKED"] },
+        "editable": { "type": "boolean" },
+        "refresh_allowed": { "type": "boolean" },
+        "parent_sdt_id": { "type": ["string", "null"] },
+        "address_status": { "enum": ["RESOLVED", "UNRESOLVED"] },
+        "address_warning": { "type": ["string", "null"] },
+        "raw_locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["part", "begin_xpath", "instruction_xpaths", "result_text_xpaths"],
+          "properties": {
+            "part": { "type": "string", "minLength": 1 },
+            "begin_xpath": { "type": "string", "minLength": 1 },
+            "end_xpath": { "type": ["string", "null"] },
+            "instruction_xpaths": { "type": "array", "items": { "type": "string" } },
+            "result_text_xpaths": { "type": "array", "items": { "type": "string" } },
+            "result_insert_before_xpath": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "sdt_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sdt_id",
+        "ooxml_id",
+        "location_id",
+        "officecli_path",
+        "scope",
+        "type",
+        "tag",
+        "alias",
+        "text",
+        "lock",
+        "editable",
+        "contains_fields",
+        "field_ids",
+        "requires_confirmation",
+        "default_action"
+      ],
+      "properties": {
+        "sdt_id": { "type": "string", "pattern": "^SDT_[0-9a-f]{12}$" },
+        "ooxml_id": { "type": ["integer", "null"] },
+        "location_id": { "$ref": "#/$defs/location_id" },
+        "officecli_path": { "type": ["string", "null"] },
+        "scope": { "type": "string" },
+        "type": { "type": "string", "minLength": 1 },
+        "tag": { "type": ["string", "null"] },
+        "alias": { "type": ["string", "null"] },
+        "text": { "type": "string" },
+        "lock": {
+          "enum": ["UNLOCKED", "CONTENT_LOCKED", "SDT_LOCKED", "SDT_CONTENT_LOCKED"]
+        },
+        "editable": { "type": "boolean" },
+        "contains_fields": { "type": "boolean" },
+        "field_ids": { "type": "array", "items": { "type": "string", "pattern": "^FLD_[0-9a-f]{12}$" } },
+        "requires_confirmation": { "type": "boolean" },
+        "default_action": { "enum": ["REFRESH_FIELDS", "PRESERVE", "EDIT_TEXT"] }
       }
     },
     "protected_region": {

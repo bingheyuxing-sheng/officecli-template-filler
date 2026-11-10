@@ -19,18 +19,34 @@ if ROOT_DIR not in sys.path:
 
 import docx
 from engine import extract_document_spec, install_auto_cleanup
+from engine.cli_io import configure_stdio
 from engine.package_guard import check_package, load_limits
 
+SUPPORTED_WORD_SUFFIXES = (".docx", ".docm")
 
-def _quota_reject(path: str) -> "str | None":
+
+def _package_reject(path: str) -> "dict | None":
     """W3-7: refuse oversized/hostile containers before any parser runs."""
     verdict = check_package(path, load_limits())
     if verdict["ok"]:
         return None
-    return json.dumps({"error": verdict["code"], "package_guard": verdict}, ensure_ascii=False)
+    violations = verdict.get("violations") or []
+    detail = "; ".join(
+        str(item.get("detail") or item.get("limit"))
+        for item in violations
+        if isinstance(item, dict)
+    )
+    return {
+        "error": verdict["code"],
+        "message": "input package cannot be analyzed: {}".format(detail or verdict["code"]),
+        "input": path,
+        "next_action": "PROVIDE_VALID_DOCX_OR_DOCM",
+        "package_guard": verdict,
+    }
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Analyze a Word template and output 4-tier confirmation analysis.")
     parser.add_argument("template", nargs="?", default="", help="Path to reference .docx template")
@@ -49,28 +65,87 @@ def main() -> int:
     template_path = args.input_path or args.template
     if not template_path:
         parser.error("a template path is required (positional or --input)")
+    if not template_path.lower().endswith(SUPPORTED_WORD_SUFFIXES):
+        print(
+            json.dumps(
+                {
+                    "error": "UNSUPPORTED_CONTAINER",
+                    "message": (
+                        "analyze_template.py only accepts .docx/.docm; "
+                        "use analyze_excel_template.py for .xlsx/.xlsm"
+                    ),
+                    "input": template_path,
+                    "supported": list(SUPPORTED_WORD_SUFFIXES),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
 
-    rejected = _quota_reject(template_path)
+    rejected = _package_reject(template_path)
     if rejected:
-        print(rejected)
+        print(json.dumps(rejected, ensure_ascii=False))
         return 2
 
     if args.spec_version == 4:
         from template_intelligence import build_document_spec_from_path
 
-        payload = build_document_spec_from_path(template_path)
+        try:
+            payload = build_document_spec_from_path(template_path)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "error": "DOCUMENT_UNREADABLE",
+                        "message": "{}: {}".format(type(exc).__name__, exc),
+                        "input": template_path,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 2
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        blocked = isinstance(errors, list) and bool(errors)
         text = json.dumps(payload, ensure_ascii=False, indent=2)
         if args.out:
             os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(text)
-            print(f"Saved template analysis to: {args.out}")
-        else:
+            if not blocked:
+                print(f"Saved template analysis to: {args.out}")
+        if blocked:
+            envelope = {
+                "error": "DOCUMENT_SPEC_BLOCKED",
+                "message": "template spec contains blocking errors",
+                "input": template_path,
+                "errors": errors,
+                "next_action": "FIX_TEMPLATE_OR_PROVIDE_READABLE_DOCX",
+            }
+            if args.out:
+                envelope["output"] = args.out
+            else:
+                envelope["spec"] = payload
+            print(json.dumps(envelope, ensure_ascii=False, indent=2))
+            return 2
+        if not args.out:
             print(text)
         return 0
 
-    doc = docx.Document(template_path)
-    spec = extract_document_spec(doc, file_path=template_path)
+    try:
+        doc = docx.Document(template_path)
+        spec = extract_document_spec(doc, file_path=template_path)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "error": "DOCUMENT_UNREADABLE",
+                    "message": "{}: {}".format(type(exc).__name__, exc),
+                    "input": template_path,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
 
     summary = {
         "file_path": template_path,

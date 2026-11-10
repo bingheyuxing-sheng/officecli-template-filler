@@ -32,6 +32,7 @@ from engine import (
     process_image_name,
     process_start_ticks,
 )
+from engine.cli_io import configure_stdio
 
 
 def _default_state_path() -> str:
@@ -45,6 +46,7 @@ DEFAULT_STATE = _default_state_path()
 
 
 def main() -> int:
+    configure_stdio()
     parser = argparse.ArgumentParser(description="Inspect and release editor_sdk instances for this task.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--start", action="store_true", help="Record the pre-task SDK PID snapshot")

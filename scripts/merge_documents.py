@@ -35,6 +35,7 @@ from engine import (
     install_auto_cleanup,
 )
 from engine import officecli_writer
+from engine.cli_io import configure_stdio
 from engine.merge_engine import (
     MergeExecutionError,
     MergePlanningError,
@@ -57,6 +58,7 @@ def _write_json(path: str, payload: dict) -> None:
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Merge multiple Office files through the officecli backend.")
     parser.add_argument("files", nargs="*", default=[], help="Input .docx/.xlsx paths")

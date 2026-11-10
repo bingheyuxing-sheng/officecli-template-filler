@@ -1742,7 +1742,11 @@ def execute_review_plan(
         # OfficeCLI stamps fresh w14 identity attributes on save; restore the
         # target's own values so the only structural delta is the authorised
         # revision/comment work.
-        restore_paragraph_identity(target_path, output_docx_path)
+        restore_paragraph_identity(
+            target_path,
+            output_docx_path,
+            allow_appended_comments=bool(added_comments),
+        )
         if used_table_commands:
             restore_table_look(target_path, output_docx_path)
 

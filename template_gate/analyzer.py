@@ -43,7 +43,7 @@ from .models import (
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "config" / "template-gate-policy.json"
 
-ANALYSIS_CACHE_VERSION = "1"
+ANALYSIS_CACHE_VERSION = "2"
 
 _HEADING_RE = re.compile(r"^(?:heading|标题)\s*([1-9])$", re.IGNORECASE)
 _PRESERVABLE_OBJECT_TYPES = frozenset({"chart", "smartart", "ole_object"})
@@ -192,6 +192,65 @@ def _run_fonts(paragraph) -> List[Tuple[Optional[str], Optional[Any]]]:
     return values
 
 
+def _run_font_groups(paragraph) -> Dict[str, List[Tuple[Optional[str], Optional[float]]]]:
+    """Group run fonts into red slot runs and surrounding label runs."""
+    groups: Dict[str, List[Tuple[Optional[str], Optional[float]]]] = {
+        "label": [],
+        "slot": [],
+    }
+    if paragraph is None:
+        return groups
+    from template_intelligence.spec_builder import is_red_run
+
+    for run in paragraph.runs:
+        if not (run.text or "").strip():
+            continue
+        font_name = None
+        try:
+            font_name = run.font.name
+        except Exception:
+            font_name = None
+        r_pr = run._element.find(qn("w:rPr"))
+        if r_pr is not None:
+            r_fonts = r_pr.find(qn("w:rFonts"))
+            if r_fonts is not None:
+                font_name = r_fonts.get(qn("w:eastAsia")) or font_name
+        size_pt = None
+        try:
+            if run.font.size is not None:
+                size_pt = round(float(run.font.size.pt), 2)
+        except Exception:
+            size_pt = None
+        try:
+            red = bool(is_red_run(run, paragraph))
+        except Exception:
+            red = False
+        groups["slot" if red else "label"].append((font_name, size_pt))
+    return groups
+
+
+def _font_rule(groups: Dict[str, List[Tuple[Optional[str], Optional[float]]]]) -> Dict[str, Any]:
+    label = groups.get("label") or []
+    slot = groups.get("slot") or []
+    label_sizes = sorted({item[1] for item in label if item[1] is not None})
+    slot_sizes = sorted({item[1] for item in slot if item[1] is not None})
+    label_fonts = sorted({str(item[0]) for item in label if item[0]})
+    slot_fonts = sorted({str(item[0]) for item in slot if item[0]})
+    structured = bool(label_sizes) and bool(slot_sizes)
+    conflict = len(label_sizes) > 1 or len(slot_sizes) > 1
+    distinct = structured and label_sizes != slot_sizes
+    return {
+        "structure": "label_then_slot" if structured else "unstructured",
+        "label_size_pt": label_sizes[0] if len(label_sizes) == 1 else label_sizes or None,
+        "slot_size_pt": slot_sizes[0] if len(slot_sizes) == 1 else slot_sizes or None,
+        "label_font": label_fonts[0] if len(label_fonts) == 1 else label_fonts or None,
+        "slot_font": slot_fonts[0] if len(slot_fonts) == 1 else slot_fonts or None,
+        "intentional": bool(distinct and not conflict),
+        "requires_confirmation": bool(distinct and not conflict),
+        "conflict": bool(conflict),
+    }
+
+
 def _table_cell_texts(table) -> List[str]:
     texts: List[str] = []
     try:
@@ -304,6 +363,80 @@ def _collect_spec_evidence(
             detail="protected region: %s" % region.get("kind"),
         )
 
+    controls = spec.get("controls") if isinstance(spec.get("controls"), dict) else {}
+    for field in controls.get("fields") or []:
+        if not isinstance(field, dict):
+            continue
+        field_id = str(field.get("field_id") or field.get("location_id") or "field")
+        location = str(field.get("location_id") or "")
+        locked = field.get("lock_state") == "LOCKED"
+        _add(
+            registry,
+            object_id=field_id,
+            location=location,
+            prop="field",
+            value={
+                "officecli_path": field.get("officecli_path"),
+                "instruction": field.get("instruction"),
+                "field_type": field.get("field_type"),
+                "cached_result": field.get("cached_result"),
+                "lock_state": field.get("lock_state"),
+                "editable": bool(field.get("editable")),
+                "refresh_allowed": bool(field.get("refresh_allowed")),
+                "parent_sdt_id": field.get("parent_sdt_id"),
+                "address_status": field.get("address_status"),
+                "address_warning": field.get("address_warning"),
+            },
+            source="document_spec",
+            evidence_type=EvidenceType.XML_NODE.value,
+            status=EvidenceStatus.VERIFIED.value,
+            task_relevant=task_type == "GENERATE",
+            detail=(
+                "field inventory: instruction, type, cached result, lock and "
+                "OfficeCLI address; address unresolved fields remain non-editable"
+                + (
+                    "; field is locked"
+                    if locked
+                    else ""
+                )
+            ),
+        )
+
+    for sdt in controls.get("sdts") or []:
+        if not isinstance(sdt, dict):
+            continue
+        sdt_id = str(sdt.get("sdt_id") or sdt.get("location_id") or "sdt")
+        location = str(sdt.get("location_id") or "")
+        _add(
+            registry,
+            object_id=sdt_id,
+            location=location,
+            prop="sdt",
+            value={
+                "ooxml_id": sdt.get("ooxml_id"),
+                "officecli_path": sdt.get("officecli_path"),
+                "type": sdt.get("type"),
+                "tag": sdt.get("tag"),
+                "alias": sdt.get("alias"),
+                "text": sdt.get("text"),
+                "lock": sdt.get("lock"),
+                "editable": bool(sdt.get("editable")),
+                "contains_fields": bool(sdt.get("contains_fields")),
+                "field_ids": list(sdt.get("field_ids") or []),
+                "requires_confirmation": bool(sdt.get("requires_confirmation")),
+                "default_action": sdt.get("default_action"),
+            },
+            source="document_spec",
+            evidence_type=EvidenceType.XML_NODE.value,
+            status=EvidenceStatus.VERIFIED.value,
+            task_relevant=task_type == "GENERATE",
+            detail=(
+                "SDT inventory: lock, OfficeCLI path, field membership and "
+                "default action; contains_fields requires explicit confirmation "
+                "before replacing text"
+            ),
+        )
+
     for slot in spec.get("slots") or []:
         if not isinstance(slot, dict):
             continue
@@ -352,38 +485,55 @@ def _collect_spec_evidence(
             detail="slot style reference",
             occurrence=int(slot.get("occurrence") or 1),
         )
-        if not fillable or slot.get("candidate_type") == "control_or_field":
-            _add(
-                registry,
-                object_id=slot_id,
-                location=location,
-                prop="sdt.editability",
-                value="PROTECTED",
-                source="document_spec",
-                evidence_type=EvidenceType.PARSER_RULE.value,
-                status=EvidenceStatus.VERIFIED.value,
-                task_relevant=False,
-                detail="SDT/control content is protected; sdt_edit=false",
-                occurrence=int(slot.get("occurrence") or 1),
-            )
         if slot.get("candidate_type") == "red_run_clue":
             red_relevant = task_type == "GENERATE"
+            red = slot.get("red_text") if isinstance(slot.get("red_text"), dict) else None
+            if red:
+                semantic = str(red.get("semantic") or "AMBIGUOUS")
+                requires_confirmation = bool(red.get("requires_confirmation"))
+                ambiguous = semantic == "AMBIGUOUS" or requires_confirmation
+                value = {
+                    "original_text": red.get("original_text"),
+                    "semantic": semantic,
+                    "action": red.get("action"),
+                    "deletion_reason": red.get("deletion_reason"),
+                    "run_ranges": list(red.get("run_ranges") or []),
+                    "requires_confirmation": requires_confirmation,
+                }
+                detail = (
+                    "merged red-text evidence: semantic={}, action={}, runs={}".format(
+                        semantic,
+                        red.get("action"),
+                        len(value["run_ranges"]),
+                    )
+                )
+                if red.get("deletion_reason"):
+                    detail += "; deletion_reason={}".format(red["deletion_reason"])
+            else:
+                semantic = "AMBIGUOUS"
+                value = slot.get("matched_text")
+                ambiguous = True
+                detail = "red text may be a placeholder, instruction or emphasis"
             _add(
                 registry,
                 object_id=slot_id,
                 location=location,
                 prop="red_text.semantic",
-                value=slot.get("matched_text"),
+                value=value,
                 source="parser_rule",
                 evidence_type=EvidenceType.PARSER_RULE.value,
-                status=EvidenceStatus.AMBIGUOUS.value,
+                status=EvidenceStatus.AMBIGUOUS.value
+                if ambiguous
+                else EvidenceStatus.VERIFIED.value,
                 task_relevant=red_relevant,
-                detail="red text may be a placeholder, instruction or emphasis",
+                detail=detail,
                 required_materials=[
                     "一份已填写完成的同类文档",
                     "该红色文字的填写说明",
                     "明确说明保留原样",
-                ],
+                ]
+                if ambiguous
+                else [],
                 occurrence=int(slot.get("occurrence") or 1),
             )
 
@@ -514,7 +664,9 @@ def _collect_paragraph_evidence(
                     status=EvidenceStatus.VERIFIED.value,
                     task_relevant=True,
                 )
-            if len(sizes) > 1:
+            groups = _run_font_groups(paragraph)
+            rule = _font_rule(groups)
+            if rule["conflict"]:
                 _add(
                     registry,
                     object_id=location,
@@ -525,7 +677,45 @@ def _collect_paragraph_evidence(
                     evidence_type=EvidenceType.XML_NODE.value,
                     status=EvidenceStatus.CONFLICT.value,
                     task_relevant=True,
-                    detail="slot paragraph mixes multiple font sizes",
+                    detail=(
+                        "slot paragraph has inconsistent sizes within the label "
+                        "runs or within the red slot runs"
+                    ),
+                )
+            elif rule["intentional"]:
+                _add(
+                    registry,
+                    object_id=location,
+                    location=location,
+                    prop="font_size",
+                    value={
+                        "label_size_pt": rule["label_size_pt"],
+                        "slot_size_pt": rule["slot_size_pt"],
+                    },
+                    source="docx_styles_xml",
+                    evidence_type=EvidenceType.XML_NODE.value,
+                    status=EvidenceStatus.VERIFIED.value,
+                    task_relevant=True,
+                    detail=(
+                        "mixed sizes follow the label/slot run structure; "
+                        "filling preserves each existing slot run format"
+                    ),
+                )
+                _add(
+                    registry,
+                    object_id=location,
+                    location=location,
+                    prop="font_rule",
+                    value=rule,
+                    source="docx_styles_xml",
+                    evidence_type=EvidenceType.COMPUTED_PROPERTY.value,
+                    status=EvidenceStatus.AMBIGUOUS.value,
+                    task_relevant=True,
+                    detail=(
+                        "label runs and red slot runs intentionally use different "
+                        "sizes; confirm the rule with a semantic supplement"
+                    ),
+                    required_materials=["确认标签字号与占位符字号的模板规则"],
                 )
             elif sizes:
                 _add(
@@ -539,6 +729,19 @@ def _collect_paragraph_evidence(
                     status=EvidenceStatus.VERIFIED.value,
                     task_relevant=True,
                 )
+                if rule["structure"] == "label_then_slot":
+                    _add(
+                        registry,
+                        object_id=location,
+                        location=location,
+                        prop="font_rule",
+                        value=rule,
+                        source="docx_styles_xml",
+                        evidence_type=EvidenceType.COMPUTED_PROPERTY.value,
+                        status=EvidenceStatus.VERIFIED.value,
+                        task_relevant=True,
+                        detail="label and slot runs share one size",
+                    )
 
         if scope == "textbox" or "txbx" in location or (p_el is not None and bool(p_el.xpath("ancestor::w:txbxContent"))):
             _add(

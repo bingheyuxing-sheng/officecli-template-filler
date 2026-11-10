@@ -33,11 +33,13 @@ from engine import (
     execute_repair_plan,
     install_auto_cleanup,
 )
+from engine.cli_io import configure_stdio
 from engine.package_guard import reject_first_package
 from template_gate.errors import TemplateGateError
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Build and execute a dual-document repair plan.")
     parser.add_argument("--reference", required=True, help="Reference/template .docx path")

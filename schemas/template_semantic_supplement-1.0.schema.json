@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://office-skill/v1.0/schemas/template_semantic_supplement-1.0.schema.json",
+  "title": "TemplateSemanticSupplement 1.0",
+  "description": "Batch semantic confirmations for Template Gate evidence. Values are template-instance data, not global skill defaults.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "supplement_id", "template_sha256"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "kind": { "const": "TemplateSemanticSupplement" },
+    "supplement_id": { "type": "string", "pattern": "^SUP_[0-9A-Za-z_-]{1,64}$" },
+    "template_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "description": { "type": "string" },
+    "red_text": { "type": "array", "items": { "$ref": "#/$defs/red_text" } },
+    "font_rules": { "type": "array", "items": { "$ref": "#/$defs/font_rule" } },
+    "fields": { "type": "array", "items": { "$ref": "#/$defs/control" } },
+    "sdts": { "type": "array", "items": { "$ref": "#/$defs/control" } },
+    "template_assertions": { "type": "array", "items": { "$ref": "#/$defs/assertion" } }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^ev_[0-9a-f]{12}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "property": { "type": "string", "minLength": 1 }
+      },
+      "anyOf": [
+        { "required": ["evidence_id"] },
+        { "required": ["location"] }
+      ]
+    },
+    "red_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^ev_[0-9a-f]{12}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "property": { "const": "red_text.semantic" },
+        "original_text": { "type": ["string", "null"] },
+        "semantic": { "enum": ["PLACEHOLDER", "INSTRUCTION", "EMPHASIS"] },
+        "action": { "enum": ["FILL", "REMOVE_IN_FINAL", "PRESERVE"] },
+        "deletion_reason": { "type": ["string", "null"] },
+        "requires_confirmation": { "type": "boolean" },
+        "user_statement": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["evidence_id"] },
+        { "required": ["location"] }
+      ]
+    },
+    "font_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intentional"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^ev_[0-9a-f]{12}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "property": { "const": "font_rule" },
+        "label_size_pt": { "type": "number", "exclusiveMinimum": 0 },
+        "slot_size_pt": { "type": "number", "exclusiveMinimum": 0 },
+        "label_font": { "type": ["string", "null"] },
+        "slot_font": { "type": ["string", "null"] },
+        "intentional": { "type": "boolean" },
+        "user_statement": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["evidence_id"] },
+        { "required": ["location"] }
+      ]
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["values"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^ev_[0-9a-f]{12}$" },
+        "field_id": { "type": "string", "pattern": "^FLD_[0-9a-f]{12}$" },
+        "sdt_id": { "type": "string", "pattern": "^SDT_[0-9a-f]{12}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "property": { "enum": ["field", "sdt"] },
+        "values": { "type": "object" },
+        "user_statement": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["evidence_id"] },
+        { "required": ["location"] },
+        { "required": ["field_id"] },
+        { "required": ["sdt_id"] }
+      ]
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^ev_[0-9a-f]{12}$" },
+        "location": { "type": "string", "minLength": 1 },
+        "property": { "type": "string", "minLength": 1 },
+        "value": {},
+        "user_statement": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["evidence_id"] },
+        { "required": ["location", "property"] }
+      ]
+    }
+  }
+}

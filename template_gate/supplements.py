@@ -47,6 +47,273 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
+def _load_semantic_supplement(path: str) -> Optional[Dict[str, Any]]:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("kind") != "TemplateSemanticSupplement":
+        return None
+    return payload
+
+
+def _supplement_record(
+    registry: EvidenceRegistry,
+    *,
+    evidence_id: Any = None,
+    object_id: Any = None,
+    location: Any = None,
+    prop: Any = None,
+) -> EvidenceRecord:
+    if isinstance(evidence_id, str) and evidence_id:
+        record = registry.get(evidence_id)
+        if record is None:
+            raise ValueError("supplement references unknown evidence_id: %s" % evidence_id)
+        return record
+    property_name = str(prop or "").strip()
+    if object_id:
+        candidates = registry.query(
+            object_id=str(object_id),
+            property=property_name or None,
+        )
+    else:
+        if not isinstance(location, str) or not location:
+            raise ValueError("supplement entry requires evidence_id, object id or location")
+        candidates = [
+            record
+            for record in registry.query(property=property_name or None)
+            if record.location == location
+        ]
+    if not candidates:
+        raise ValueError(
+            "supplement target does not exist: location=%s property=%s"
+            % (location, property_name or "*")
+        )
+    if len(candidates) > 1:
+        raise ValueError(
+            "supplement target is ambiguous: location=%s property=%s matches %d records"
+            % (location, property_name or "*", len(candidates))
+        )
+    return candidates[0]
+
+
+def _resolve_supplement_record(
+    record: EvidenceRecord,
+    value: Any,
+    *,
+    source: str,
+    user_statement: str,
+    detail: str,
+) -> None:
+    record.value = value
+    record.source = source
+    record.evidence_type = EvidenceType.USER_STATEMENT.value
+    record.verification_status = EvidenceStatus.VERIFIED.value
+    record.blocking = False
+    record.resolved_at = _now()
+    record.detail = detail
+    record.resolutions.append(
+        {
+            "resolution_id": "res_"
+            + sha256_text(
+                "%s|%s|%s" % (record.evidence_id, source, canonical_json(value))
+            )[:12],
+            "resolution_type": ResolutionType.PROVIDE_VALUE.value,
+            "value": value,
+            "source": source,
+            "user_statement": user_statement,
+            "resolved_at": _now(),
+        }
+    )
+
+
+def apply_semantic_supplement(
+    registry: EvidenceRegistry,
+    template_path: str,
+    supplement: Dict[str, Any],
+    *,
+    supplement_path: str,
+) -> None:
+    """Apply one TemplateSemanticSupplement 1.0 file to the evidence registry.
+
+    Every declaration must resolve one existing evidence record. Duplicate or
+    ambiguous declarations are rejected rather than applied in file order.
+    """
+    actual_sha = _sha256_file(template_path)
+    declared_sha = str(supplement.get("template_sha256") or "")
+    if declared_sha != actual_sha:
+        raise ValueError(
+            "semantic supplement template_sha256 mismatch: declared %s, actual %s"
+            % (declared_sha or "<missing>", actual_sha)
+        )
+    source = "semantic_supplement:%s" % _sha256_file(supplement_path)
+    try:
+        from jsonschema import Draft202012Validator
+        from jsonschema.exceptions import ValidationError
+
+        schema_path = (
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            + os.sep
+            + "schemas"
+            + os.sep
+            + "template_semantic_supplement-1.0.schema.json"
+        )
+        with open(schema_path, "r", encoding="utf-8") as handle:
+            schema = json.load(handle)
+        Draft202012Validator(schema).validate(supplement)
+    except (OSError, ValueError, TypeError, ValidationError) as exc:
+        raise ValueError("invalid TemplateSemanticSupplement: %s" % exc) from exc
+    seen: set[Tuple[str, str]] = set()
+
+    def claim_key(
+        evidence_id: Any, location: Any, prop: Any, object_id: Any = None
+    ) -> Tuple[str, str]:
+        if isinstance(evidence_id, str) and evidence_id:
+            key = ("evidence_id", evidence_id)
+        else:
+            key = (
+                "location",
+                "%s|%s|%s" % (object_id or "", location or "", prop or ""),
+            )
+        if key in seen:
+            raise ValueError("duplicate semantic supplement declaration: %s" % (key,))
+        seen.add(key)
+        return key
+
+    red_entries = supplement.get("red_text") or []
+    for entry in red_entries:
+        if not isinstance(entry, dict):
+            raise ValueError("red_text supplement entries must be objects")
+        claim_key(
+            entry.get("evidence_id"),
+            entry.get("location"),
+            entry.get("property") or "red_text.semantic",
+        )
+        record = _supplement_record(
+            registry,
+            evidence_id=entry.get("evidence_id"),
+            location=entry.get("location"),
+            prop=entry.get("property") or "red_text.semantic",
+        )
+        current = record.value if isinstance(record.value, dict) else {}
+        value = dict(current)
+        for key in (
+            "semantic",
+            "action",
+            "deletion_reason",
+            "requires_confirmation",
+        ):
+            if key in entry:
+                value[key] = entry[key]
+        value["requires_confirmation"] = False
+        value.setdefault("original_text", entry.get("original_text"))
+        value.setdefault("run_ranges", [])
+        _resolve_supplement_record(
+            record,
+            value,
+            source=source,
+            user_statement=str(entry.get("user_statement") or ""),
+            detail="red-text semantics confirmed by semantic supplement",
+        )
+
+    font_entries = supplement.get("font_rules") or []
+    for entry in font_entries:
+        if not isinstance(entry, dict):
+            raise ValueError("font_rules supplement entries must be objects")
+        claim_key(
+            entry.get("evidence_id"),
+            entry.get("location"),
+            entry.get("property") or "font_rule",
+        )
+        record = _supplement_record(
+            registry,
+            evidence_id=entry.get("evidence_id"),
+            location=entry.get("location"),
+            prop=entry.get("property") or "font_rule",
+        )
+        current = record.value if isinstance(record.value, dict) else {}
+        value = dict(current)
+        for key in (
+            "label_size_pt",
+            "slot_size_pt",
+            "label_font",
+            "slot_font",
+            "intentional",
+        ):
+            if key in entry:
+                value[key] = entry[key]
+        value.setdefault("structure", "label_then_slot")
+        value["requires_confirmation"] = False
+        _resolve_supplement_record(
+            record,
+            value,
+            source=source,
+            user_statement=str(entry.get("user_statement") or ""),
+            detail="mixed label/slot font rule confirmed by semantic supplement",
+        )
+
+    for section_name, property_name, id_key in (
+        ("fields", "field", "field_id"),
+        ("sdts", "sdt", "sdt_id"),
+    ):
+        for entry in supplement.get(section_name) or []:
+            if not isinstance(entry, dict):
+                raise ValueError("%s supplement entries must be objects" % section_name)
+            object_id = entry.get(id_key)
+            claim_key(
+                entry.get("evidence_id"),
+                entry.get("location"),
+                entry.get("property") or property_name,
+                object_id=object_id,
+            )
+            record = _supplement_record(
+                registry,
+                evidence_id=entry.get("evidence_id"),
+                object_id=object_id,
+                location=entry.get("location"),
+                prop=entry.get("property") or property_name,
+            )
+            values = entry.get("values") if isinstance(entry.get("values"), dict) else {}
+            current = record.value if isinstance(record.value, dict) else {}
+            merged = dict(current)
+            merged.update(values)
+            _resolve_supplement_record(
+                record,
+                merged,
+                source=source,
+                user_statement=str(entry.get("user_statement") or ""),
+                detail="%s inventory confirmed by semantic supplement" % property_name,
+            )
+
+    for entry in supplement.get("template_assertions") or []:
+        if not isinstance(entry, dict):
+            raise ValueError("template_assertions entries must be objects")
+        location = entry.get("location")
+        property_name = entry.get("property")
+        claim_key(
+            entry.get("evidence_id"),
+            location,
+            property_name,
+        )
+        record = _supplement_record(
+            registry,
+            evidence_id=entry.get("evidence_id"),
+            location=location,
+            prop=property_name,
+        )
+        value = entry.get("value")
+        _resolve_supplement_record(
+            record,
+            value,
+            source=source,
+            user_statement=str(entry.get("user_statement") or ""),
+            detail="template assertion confirmed by semantic supplement",
+        )
+
+
 def _kind(path: str) -> str:
     extension = os.path.splitext(path)[1].lower()
     if extension in (".docx", ".docm"):
@@ -426,7 +693,16 @@ def apply_supplements(
         if kind == "docx":
             _apply_reference_docx(registry, spec, template_path, path)
         elif kind in ("json", "text"):
-            _apply_claims(registry, path, kind)
+            semantic = _load_semantic_supplement(path) if kind == "json" else None
+            if semantic is not None:
+                apply_semantic_supplement(
+                    registry,
+                    template_path,
+                    semantic,
+                    supplement_path=path,
+                )
+            else:
+                _apply_claims(registry, path, kind)
         else:
             raise ValueError(
                 "unsupported supplement type (only .docx/.json/.md/.txt): %s" % path
@@ -593,6 +869,7 @@ def reanalyze(
 
 
 __all__ = [
+    "apply_semantic_supplement",
     "apply_supplements",
     "analyze_supplements",
     "resolve_evidence",

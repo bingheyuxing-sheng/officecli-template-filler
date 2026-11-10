@@ -21,10 +21,34 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from engine import extract_excel_spec, install_auto_cleanup
+from engine.cli_io import configure_stdio
 from engine.package_guard import check_package, load_limits
 
 
+SUPPORTED_EXCEL_SUFFIXES = (".xlsx", ".xlsm")
+
+
+def _package_reject(path: str) -> "dict | None":
+    verdict = check_package(path, load_limits())
+    if verdict["ok"]:
+        return None
+    violations = verdict.get("violations") or []
+    detail = "; ".join(
+        str(item.get("detail") or item.get("limit"))
+        for item in violations
+        if isinstance(item, dict)
+    )
+    return {
+        "error": verdict["code"],
+        "message": "input package cannot be analyzed: {}".format(detail or verdict["code"]),
+        "input": path,
+        "next_action": "PROVIDE_VALID_XLSX_OR_XLSM",
+        "package_guard": verdict,
+    }
+
+
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Analyze an Excel template and output its structural spec.")
     parser.add_argument("template", nargs="?", default="", help="Path to .xlsx/.xlsm template")
@@ -35,22 +59,67 @@ def main() -> int:
     template_path = args.input_path or args.template
     if not template_path:
         parser.error("a template path is required (positional or --input)")
-    if not template_path.lower().endswith((".xlsx", ".xlsm")):
-        parser.error("analyze_excel_template.py only accepts .xlsx/.xlsm; use analyze_template.py for Word")
-
-    verdict = check_package(template_path, load_limits())
-    if not verdict["ok"]:
-        print(json.dumps({"error": verdict["code"], "package_guard": verdict}, ensure_ascii=False))
+    if not template_path.lower().endswith(SUPPORTED_EXCEL_SUFFIXES):
+        print(
+            json.dumps(
+                {
+                    "error": "UNSUPPORTED_CONTAINER",
+                    "message": (
+                        "analyze_excel_template.py only accepts .xlsx/.xlsm; "
+                        "use analyze_template.py for Word"
+                    ),
+                    "input": template_path,
+                    "supported": list(SUPPORTED_EXCEL_SUFFIXES),
+                },
+                ensure_ascii=False,
+            )
+        )
         return 2
 
-    spec = extract_excel_spec(template_path)
+    rejected = _package_reject(template_path)
+    if rejected:
+        print(json.dumps(rejected, ensure_ascii=False))
+        return 2
+
+    try:
+        spec = extract_excel_spec(template_path)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "error": "DOCUMENT_UNREADABLE",
+                    "message": "{}: {}".format(type(exc).__name__, exc),
+                    "input": template_path,
+                    "next_action": "PROVIDE_VALID_XLSX_OR_XLSM",
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
     payload = json.dumps(spec, ensure_ascii=False, indent=2)
+    errors = spec.get("errors") if isinstance(spec, dict) else None
+    blocked = isinstance(errors, list) and bool(errors)
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as handle:
             handle.write(payload)
-        print(f"Saved Excel template analysis to: {args.out}")
-    else:
+        if not blocked:
+            print(f"Saved Excel template analysis to: {args.out}")
+    if blocked:
+        envelope = {
+            "error": "DOCUMENT_SPEC_BLOCKED",
+            "message": "Excel template spec contains blocking errors",
+            "input": template_path,
+            "errors": errors,
+            "next_action": "PROVIDE_VALID_XLSX_OR_XLSM",
+        }
+        if args.out:
+            envelope["output"] = args.out
+        else:
+            envelope["spec"] = spec
+        print(json.dumps(envelope, ensure_ascii=False, indent=2))
+        return 2
+    if not args.out:
         print(payload)
     return 0
 

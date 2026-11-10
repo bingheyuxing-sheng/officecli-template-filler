@@ -34,6 +34,7 @@ from engine import (
     execute_reformat_plan,
     install_auto_cleanup,
 )
+from engine.cli_io import configure_stdio
 from engine.package_guard import reject_first_package
 from template_gate.errors import TemplateGateError
 
@@ -47,6 +48,7 @@ def _write_json(path: str, payload: dict) -> None:
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Build and apply a semantic REFORMAT diff plan.")
     parser.add_argument("--reference", required=True, help="Reference/template .docx path")

@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
+import docx
 import pytest
 
 from engine.officecli_runtime import (
@@ -55,6 +58,14 @@ def test_linked_section_story_without_a_part_is_refused():
     assert excinfo.value.code == "WRITER_LOCATION_UNSUPPORTED"
 
 
+def test_sdt_locations_translate_to_officecli_paths():
+    assert location_to_path("body.sdt[0].p[0]") == "/body/sdt[1]/p[1]"
+    assert (
+        location_to_path("body.sdt[0].tbl[1].r[0].c[2].p[0]")
+        == "/body/sdt[1]/tbl[2]/tr[1]/tc[3]/p[1]"
+    )
+
+
 @pytest.mark.parametrize(
     ("location", "expected"),
     [
@@ -73,7 +84,6 @@ def test_note_and_comment_locations(location, expected):
     [
         "",
         "textbox.p[0]",
-        "body.sdt[0].p[0]",
         "footnotes.p[0]",
         "comments.comment[0].p[0]",
     ],
@@ -83,39 +93,40 @@ def test_unaddressable_locations_are_refused(location):
         location_to_path(location)
 
 
-class _FakeQueryRuntime:
-    def __init__(self, sections):
-        self._sections = sections
+def test_build_story_map_matches_logical_parts(monkeypatch):
+    class _FakeRuntime:
+        def close(self, file_path):
+            return None
 
-    def query(self, file_path, selector):
-        assert selector == "section"
-        return self._sections
+    def _hf(partname):
+        return SimpleNamespace(part=SimpleNamespace(partname=partname))
 
-
-def test_build_story_map_reads_section_refs():
-    runtime = _FakeQueryRuntime(
-        [
-            {
-                "path": "/section[1]",
-                "format": {
-                    "headerRef.default": "/header[1]",
-                    "headerRef.first": "/header[2]",
-                    "footerRef": "/footer[1]",
-                },
-            },
-            {
-                "path": "/section[2]",
-                "format": {"headerRef": "/header[3]", "footerRef.even": "/footer[2]"},
-            },
-        ]
+    section = SimpleNamespace(
+        header=_hf("/word/header1.xml"),
+        first_page_header=None,
+        even_page_header=None,
+        footer=_hf("/word/footer2.xml"),
+        first_page_footer=None,
+        even_page_footer=None,
     )
-    mapping = build_story_map("ignored.docx", runtime=runtime)
-    assert mapping["sec[0].header"] == "/header[1]"
-    assert mapping["sec[0].first_page_header"] == "/header[2]"
-    assert mapping["sec[0].footer"] == "/footer[1]"
-    assert mapping["sec[1].header"] == "/header[3]"
-    assert mapping["sec[1].even_page_footer"] == "/footer[2]"
-    assert "sec[1].first_page_header" not in mapping
+    monkeypatch.setattr(
+        docx, "Document", lambda _path: SimpleNamespace(sections=[section])
+    )
+    import engine.officecli_runtime as runtime_module
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_part_address_map",
+        lambda *args, **kwargs: {
+            "/word/header1.xml": ["/header[2]"],
+            "/word/footer2.xml": ["/footer[1]"],
+        },
+    )
+    mapping = build_story_map("ignored.docx", runtime=_FakeRuntime())
+    assert mapping == {
+        "sec[0].header": "/header[2]",
+        "sec[0].footer": "/footer[1]",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +203,32 @@ def test_missing_binary_override_is_not_silently_ignored(monkeypatch):
 def test_close_is_safe_when_the_binary_override_is_invalid(monkeypatch):
     monkeypatch.setenv("OFFICECLI_BINARY", str(Path("missing") / "officecli.exe"))
     OfficecliRuntime().close("doc.docx")
+
+
+def test_live_failed_batch_leaves_the_file_byte_identical(tmp_path):
+    runtime = OfficecliRuntime()
+    try:
+        runtime.preflight()
+    except OfficecliError as exc:
+        pytest.skip("officecli is not runnable here: {}".format(exc))
+
+    path = tmp_path / "atomic.docx"
+    document = docx.Document()
+    document.add_paragraph("Hello")
+    document.save(str(path))
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    with pytest.raises(OfficecliError):
+        runtime.batch(
+            str(path),
+            [
+                {"command": "set", "path": "/body/p[1]", "props": {"find": "Hello", "replace": "Changed"}},
+                {"command": "set", "path": "/body/p[99]", "props": {"text": "x"}},
+            ],
+        )
+    runtime.close(str(path))
+
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
 
 
 def test_validate_returns_a_schema_failure_as_a_verdict(monkeypatch):

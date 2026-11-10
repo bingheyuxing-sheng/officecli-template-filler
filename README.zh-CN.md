@@ -56,7 +56,7 @@ python -m pip install -r requirements.txt
 | `POLISH` | `scripts/polish_document.py` | 通过 OfficeCLI 的 run/段落级替换润色措辞，保持版式 | 不需要 |
 | `MERGE` | `scripts/merge_documents.py` | 通过 OfficeCLI dump/replay 合并 2+ 个 DOCX 或 XLSX | 不需要 |
 
-Excel 模板是另一条独立路由：`EXCEL_GENERATE` → `scripts/generate_excel.py`（`--template`、`--data`、`--out`），通过 OfficeCLI 填单元格并保留既有公式；启用宏的 `.xlsm` 需要显式 `--allow-writer-fallback`。
+Excel 模板是另一条独立路由：`EXCEL_GENERATE` → `scripts/generate_excel.py`（`--template`、`--data`、`--out`），通过 OfficeCLI 填单元格并保留既有公式；启用宏的 `.xlsm` 需要显式 `--allow-writer-fallback`。模板没有 `{{...}}` / `【...】` 占位符时，在 payload 里传 `cells` 直接按单元格写值（列表或 `"Sheet1!B2": value` 映射）；公式单元格和合并区域非左上角单元格会被拒绝并返回 `INVALID_CELL_PLAN`。既无占位符也无单元格计划时返回 `NO_MATCHING_PLACEHOLDERS`，不会发布一份未修改的“假成功”文件。
 
 `POLISH` 与 `MERGE` 基于 OfficeCLI 后端。`POLISH` 遇到跨不同格式 run 的替换会直接拒绝，而不是让 OfficeCLI 重建段落；`MERGE` 以第一个输入为基准包，把后续输入作为 OfficeCLI batch 回放，未合并的故事/对象会记入 `limitations`。若后续文档的样式 id 与基准包重名，保留基准包的定义，只导入缺失样式。
 
@@ -182,7 +182,7 @@ officecli-template-filler/
 
 ## 版本与发布
 
-当前版本：**4.3.1**（`engine/__init__.py`、`SKILL.md`）。
+当前版本：**4.3.2**（`engine/__init__.py`、`SKILL.md`）。
 
 - `dist/` 已被 git 忽略。它是发布流程产生的构建产物，从不入库。
 - `python scripts/package_skill.py` 会从当前工作区生成 skill zip 与 manifest；如果存在未提交改动，manifest 的 `source_dirty` 为 true。

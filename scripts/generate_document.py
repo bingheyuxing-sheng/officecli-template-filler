@@ -36,6 +36,7 @@ from engine import (
     release_office_file_locks,
     install_auto_cleanup,
 )
+from engine.cli_io import configure_stdio
 
 
 def _same_path(left: str, right: str) -> bool:
@@ -340,6 +341,7 @@ def _run_plan_path(args) -> int:
         writer=args.writer,
         allow_writer_fallback=args.allow_writer_fallback,
         qa_report_path=args.qa_report or None,
+        require_content_approval=bool(content_plan is not None),
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if result.get("status") in ("SUCCESS", "UNVERIFIED"):
@@ -348,6 +350,7 @@ def _run_plan_path(args) -> int:
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Fill a Word template non-destructively using LogicalParagraphView.")
     parser.add_argument("--template", required=True, help="Input .docx template path")

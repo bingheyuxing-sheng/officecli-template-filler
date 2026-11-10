@@ -332,7 +332,17 @@ def _eval_simple_excel_formula(ws, formula: str, visited: Optional[set] = None) 
                             return [], err
                         vals.append(v)
                     else:
-                        vals.append(Decimal(part))
+                        # Excel permits arithmetic expressions inside aggregate
+                        # arguments, e.g. SUM(G35+G44+G60). Re-enter the
+                        # evaluator for that term instead of treating it as text.
+                        expr_value, expr_err = _eval_simple_excel_formula(
+                            ws, "=" + part, visited
+                        )
+                        if expr_err:
+                            return [], expr_err
+                        if expr_value is None:
+                            return [], "#VALUE!"
+                        vals.append(expr_value)
                 except Exception:
                     return [], "#VALUE!"
         return vals, None

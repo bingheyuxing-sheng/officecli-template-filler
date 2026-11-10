@@ -43,7 +43,14 @@ def normalize_text(text: str) -> str:
     return value.strip()
 
 
-def _validate(template_sha256: str, location_id: str, matched_text: str, occurrence: int) -> str:
+def _validate(
+    template_sha256: str,
+    location_id: str,
+    matched_text: str,
+    occurrence: int,
+    *,
+    allow_empty: bool = False,
+) -> str:
     if not _TEMPLATE_SHA_RE.match(template_sha256 or ""):
         raise ValueError("SLOT_TEMPLATE_SHA_INVALID")
     if not LOCATION_RE.match(location_id or ""):
@@ -52,20 +59,44 @@ def _validate(template_sha256: str, location_id: str, matched_text: str, occurre
         raise ValueError("SLOT_OCCURRENCE_INVALID")
     normalized = normalize_text(matched_text)
     if not normalized:
+        if allow_empty:
+            # Empty-table anchors have no literal text. The U+2205 empty-set
+            # character gives them a stable, visible canonical identity while
+            # the public slot.matched_text remains "".
+            return "\u2205"
         raise ValueError("SLOT_TEXT_EMPTY_UNEVIDENCED")
     return normalized
 
 
-def make_slot_id(template_sha256: str, location_id: str, matched_text: str, occurrence: int) -> str:
+def make_slot_id(
+    template_sha256: str,
+    location_id: str,
+    matched_text: str,
+    occurrence: int,
+    *,
+    allow_empty: bool = False,
+) -> str:
     """Return the stable `S_` slot id for one template position."""
-    normalized = _validate(template_sha256, location_id, matched_text, occurrence)
+    normalized = _validate(
+        template_sha256,
+        location_id,
+        matched_text,
+        occurrence,
+        allow_empty=allow_empty,
+    )
     canonical = (
         f"v1|{template_sha256}|{location_id}|{normalized}|{int(occurrence)}"
     )
     return "S_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 
 
-def make_slot_key(location_id: str, matched_text: str, occurrence: int) -> str:
+def make_slot_key(
+    location_id: str,
+    matched_text: str,
+    occurrence: int,
+    *,
+    allow_empty: bool = False,
+) -> str:
     """Return the version-independent 16 hex slot key (template upgrade lineage only)."""
     if not LOCATION_RE.match(location_id or ""):
         raise ValueError("SLOT_LOCATION_INVALID")
@@ -73,7 +104,10 @@ def make_slot_key(location_id: str, matched_text: str, occurrence: int) -> str:
         raise ValueError("SLOT_OCCURRENCE_INVALID")
     normalized = normalize_text(matched_text)
     if not normalized:
-        raise ValueError("SLOT_TEXT_EMPTY_UNEVIDENCED")
+        if allow_empty:
+            normalized = "\u2205"
+        else:
+            raise ValueError("SLOT_TEXT_EMPTY_UNEVIDENCED")
     canonical = f"v1|{location_id}|{normalized}|{int(occurrence)}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 

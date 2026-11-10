@@ -19,12 +19,16 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+from engine.cli_io import configure_stdio  # noqa: E402
+from engine.package_guard import reject_first_package  # noqa: E402
 from template_gate import build_analysis  # noqa: E402
 from template_gate.report import build_report, render_markdown  # noqa: E402
 from template_gate.store import GateStore  # noqa: E402
-from template_gate.supplements import resolve_evidence
+from template_gate.supplements import resolve_evidence  # noqa: E402
+from template_gate.supplements import analyze_supplements  # noqa: E402
 from template_intelligence import build_document_spec_from_path  # noqa: E402
-from engine.package_guard import reject_first_package  # noqa: E402
+
+SUPPORTED_WORD_SUFFIXES = (".docx", ".docm")
 
 
 def _write_text(path: str, text: str) -> None:
@@ -47,6 +51,20 @@ def _load_json(path: str) -> dict:
     return payload
 
 
+def _unsupported_template(path: str) -> "dict | None":
+    if path.lower().endswith(SUPPORTED_WORD_SUFFIXES):
+        return None
+    return {
+        "error": "UNSUPPORTED_CONTAINER",
+        "message": (
+            "template_gate.py only accepts .docx/.docm; "
+            "use analyze_excel_template.py for .xlsx/.xlsm"
+        ),
+        "input": path,
+        "supported": list(SUPPORTED_WORD_SUFFIXES),
+    }
+
+
 def _render_report(analysis: dict, gate_home: str, fmt: str) -> tuple:
     report = build_report(analysis)
     store = GateStore(gate_home)
@@ -60,18 +78,57 @@ def _render_report(analysis: dict, gate_home: str, fmt: str) -> tuple:
 
 
 def _cmd_analyze(args) -> int:
+    unsupported = _unsupported_template(args.template)
+    if unsupported:
+        print(json.dumps(unsupported, ensure_ascii=False))
+        return 2
+
     rejected = reject_first_package({"template": args.template})
     if rejected:
         print(json.dumps(rejected, ensure_ascii=False))
         return 2
 
-    spec = build_document_spec_from_path(args.template)
-    analysis = build_analysis(
-        args.template,
-        args.task_type,
-        spec=spec,
-        supplements=args.supplement or None,
-    )
+    try:
+        spec = build_document_spec_from_path(args.template)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "error": "DOCUMENT_UNREADABLE",
+                    "message": "{}: {}".format(type(exc).__name__, exc),
+                    "input": args.template,
+                    "next_action": "PROVIDE_VALID_DOCX_OR_DOCM",
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
+    try:
+        analysis = build_analysis(
+            args.template,
+            args.task_type,
+            spec=spec,
+            supplements=args.supplement or None,
+        )
+    except Exception as exc:
+        code = "SEMANTIC_SUPPLEMENT_INVALID" if args.supplement else "TEMPLATE_ANALYSIS_FAILED"
+        print(
+            json.dumps(
+                {
+                    "error": code,
+                    "message": "{}: {}".format(type(exc).__name__, exc),
+                    "input": args.template,
+                    "supplements": args.supplement or [],
+                    "next_action": (
+                        "FIX_SEMANTIC_SUPPLEMENT"
+                        if args.supplement
+                        else "CHECK_TEMPLATE_OR_RETRY"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
     text = json.dumps(analysis, ensure_ascii=False, indent=2)
     if args.out:
         _write_text(args.out, text)
@@ -174,6 +231,42 @@ def _cmd_resolve(args) -> int:
     return 2 if updated.get("summary", {}).get("blocking") else 0
 
 
+def _cmd_apply_supplement(args) -> int:
+    unsupported = _unsupported_template(args.template)
+    if unsupported:
+        print(json.dumps(unsupported, ensure_ascii=False))
+        return 2
+
+    analysis = _load_json(args.analysis)
+    try:
+        updated = analyze_supplements(
+            args.template,
+            analysis,
+            [args.supplement],
+        )
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "error": "SEMANTIC_SUPPLEMENT_INVALID",
+                    "message": "{}: {}".format(type(exc).__name__, exc),
+                    "template": args.template,
+                    "supplement": args.supplement,
+                    "next_action": "FIX_SEMANTIC_SUPPLEMENT",
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
+    text = json.dumps(updated, ensure_ascii=False, indent=2)
+    if args.out:
+        _write_text(args.out, text)
+        print("Saved updated template analysis to: %s" % args.out)
+    else:
+        print(text)
+    return 2 if updated.get("summary", {}).get("blocking") else 0
+
+
 def _cmd_status(args) -> int:
     if args.gate:
         record = GateStore(args.gate_home).load(args.gate)
@@ -196,6 +289,7 @@ def _cmd_status(args) -> int:
 
 
 def main() -> int:
+    configure_stdio()
     parser = argparse.ArgumentParser(description="Template Understanding Gate CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -230,6 +324,16 @@ def main() -> int:
     resolve.add_argument("--source", default="user_answer", help="Evidence source label")
     resolve.add_argument("--out", default="", help="Optional updated analysis path")
     resolve.set_defaults(func=_cmd_resolve)
+
+    supplement = subparsers.add_parser(
+        "apply-supplement",
+        help="Apply a TemplateSemanticSupplement 1.0 batch to an analysis.",
+    )
+    supplement.add_argument("--analysis", required=True, help="Analysis JSON path")
+    supplement.add_argument("--template", required=True, help="Template .docx path")
+    supplement.add_argument("--supplement", required=True, help="Supplement JSON path")
+    supplement.add_argument("--out", default="", help="Optional updated analysis path")
+    supplement.set_defaults(func=_cmd_apply_supplement)
 
     confirm = subparsers.add_parser("confirm", help="Confirm a reviewed analysis and persist a Gate Record.")
     confirm.add_argument("--analysis", required=True, help="Analysis JSON path")

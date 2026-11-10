@@ -304,6 +304,23 @@ def _semantic_errors(spec: Dict[str, Any]) -> List[Dict[str, str]]:
                     "candidate_type internal_fact requires confirmation_tier MUST_ASK_USER",
                 )
             )
+        if candidate_type == "empty_anchor":
+            if protection_status != "CONDITIONAL":
+                errors.append(
+                    _error(
+                        INVALID_SPEC,
+                        prefix + ".protection_status",
+                        "candidate_type empty_anchor requires protection_status CONDITIONAL",
+                    )
+                )
+            if confirmation_tier != "MUST_ASK_USER":
+                errors.append(
+                    _error(
+                        INVALID_SPEC,
+                        prefix + ".confirmation_tier",
+                        "candidate_type empty_anchor requires confirmation_tier MUST_ASK_USER",
+                    )
+                )
 
         span = slot.get("span")
         if isinstance(span, dict):

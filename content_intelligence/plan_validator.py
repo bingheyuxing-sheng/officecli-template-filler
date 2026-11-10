@@ -370,6 +370,34 @@ def _check_fill_plan(
                        "Slot %s does not exist in DocumentSpec" % slot_id)
             )
 
+    controls = spec.get("controls") if isinstance(spec.get("controls"), dict) else {}
+    spec_fields = {
+        field["field_id"]: field
+        for field in controls.get("fields") or []
+        if isinstance(field, dict) and isinstance(field.get("field_id"), str)
+    }
+    spec_sdts = {
+        sdt["sdt_id"]: sdt
+        for sdt in controls.get("sdts") or []
+        if isinstance(sdt, dict) and isinstance(sdt.get("sdt_id"), str)
+    }
+    allowed_control_ids = baseline.get("allowed_control_ids")
+    allowed_control_set = (
+        set(_list_of_str(allowed_control_ids))
+        if isinstance(allowed_control_ids, list)
+        else None
+    )
+    if allowed_control_set is not None:
+        known_controls = set(spec_fields) | set(spec_sdts)
+        for control_id in sorted(allowed_control_set - known_controls):
+            errors.append(
+                _issue(
+                    "UNKNOWN_CONTROL",
+                    "baseline/allowed_control_ids",
+                    "Control %s does not exist in DocumentSpec.controls" % control_id,
+                )
+            )
+
     operations = [op for op in plan.get("operations", []) or [] if isinstance(op, dict)]
 
     op_ids: List[str] = [op["op_id"] for op in operations if isinstance(op.get("op_id"), str)]
@@ -399,6 +427,9 @@ def _check_fill_plan(
         _check_operation(
             operation, spec, spec_slots, allowed_set, facts_by_id,
             content_plan, sequences_by_id, errors, warnings,
+            spec_fields=spec_fields,
+            spec_sdts=spec_sdts,
+            allowed_control_set=allowed_control_set,
         )
 
     policy = plan.get("global_policy") if isinstance(plan.get("global_policy"), dict) else {}
@@ -424,11 +455,59 @@ def _check_operation(
     sequences_by_id: Dict[str, Any],
     errors: List[Dict[str, Any]],
     warnings: List[Dict[str, Any]],
+    *,
+    spec_fields: Dict[str, Dict[str, Any]],
+    spec_sdts: Dict[str, Dict[str, Any]],
+    allowed_control_set: Optional[set[str]],
 ) -> None:
     op_id = operation.get("op_id")
     location = "operations/%s" % op_id
     target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
     target_location = target.get("location_id")
+    op_type = operation.get("type")
+
+    source_ref = operation.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref.strip():
+        errors.append(
+            _issue("SOURCE_REF_MISSING", "%s/source_ref" % location,
+                   "Operation %s has no source_ref" % op_id)
+        )
+        source_ref = None
+    else:
+        source_ref = source_ref.strip()
+        if source_ref not in ("USER_INPUT", "IMAGE_INPUT") and not _FACT_ID_RE.match(source_ref):
+            errors.append(
+                _issue("SOURCE_REF_INVALID", "%s/source_ref" % location,
+                       "source_ref %r is neither USER_INPUT, IMAGE_INPUT nor a fact id" % source_ref)
+            )
+
+    sequence = operation.get("sequence")
+    for dependency in _list_of_str(operation.get("depends_on")):
+        if dependency not in sequences_by_id:
+            errors.append(
+                _issue("UNKNOWN_DEPENDENCY", "%s/depends_on" % location,
+                       "depends_on references unknown op %s" % dependency)
+            )
+        elif isinstance(sequence, int) and isinstance(sequences_by_id[dependency], int):
+            if sequences_by_id[dependency] >= sequence:
+                errors.append(
+                    _issue("DEPENDENCY_ORDER", "%s/depends_on" % location,
+                           "depends_on %s must have a lower sequence than %s" % (dependency, op_id))
+                )
+
+    if op_type in ("edit_field", "edit_sdt"):
+        _check_control_operation(
+            operation,
+            target_location,
+            location,
+            spec_fields,
+            spec_sdts,
+            allowed_control_set,
+            errors,
+            warnings,
+        )
+        return
+
     slot_id = operation.get("slot_id")
     slot = spec_slots.get(slot_id)
 
@@ -459,6 +538,22 @@ def _check_operation(
         )
     _check_protected_regions(spec, target_location, op_id, location, errors, warnings)
 
+    if op_type == "clear_red_text":
+        red = slot.get("red_text") if isinstance(slot.get("red_text"), dict) else {}
+        if (
+            red.get("semantic") != "INSTRUCTION"
+            or red.get("action") != "REMOVE_IN_FINAL"
+        ):
+            errors.append(
+                _issue(
+                    "PROTECTED_SLOT_VIOLATION",
+                    location,
+                    "clear_red_text is allowed only for an INSTRUCTION slot "
+                    "with action REMOVE_IN_FINAL",
+                )
+            )
+        return
+
     preconditions = _list_of_str(operation.get("preconditions"))
     for check in preconditions:
         if check not in ALLOWED_PRECONDITIONS:
@@ -473,26 +568,10 @@ def _check_operation(
                    "STRICT operation is missing preconditions: %s" % ", ".join(missing_checks))
         )
 
-    source_ref = operation.get("source_ref")
-    if not isinstance(source_ref, str) or not source_ref.strip():
-        errors.append(
-            _issue("SOURCE_REF_MISSING", "%s/source_ref" % location,
-                   "Operation %s has no source_ref" % op_id)
-        )
-        source_ref = None
-    else:
-        source_ref = source_ref.strip()
-        if source_ref not in ("USER_INPUT", "IMAGE_INPUT") and not _FACT_ID_RE.match(source_ref):
-            errors.append(
-                _issue("SOURCE_REF_INVALID", "%s/source_ref" % location,
-                       "source_ref %r is neither USER_INPUT, IMAGE_INPUT nor a fact id" % source_ref)
-            )
-
     value = operation.get("value")
     if isinstance(value, str) and value == "":
         errors.append(_issue("VALUE_MISSING", "%s/value" % location, "operation value is empty"))
 
-    op_type = operation.get("type")
     if op_type == "fill_cell":
         _check_fill_cell_target(operation, target, target_location, slot, preconditions,
                                 op_id, location, errors)
@@ -532,21 +611,137 @@ def _check_operation(
                            % (value, value_ref, expected))
                 )
 
-    sequence = operation.get("sequence")
-    for dependency in _list_of_str(operation.get("depends_on")):
-        if dependency not in sequences_by_id:
-            errors.append(
-                _issue("UNKNOWN_DEPENDENCY", "%s/depends_on" % location,
-                       "depends_on references unknown op %s" % dependency)
-            )
-        elif isinstance(sequence, int) and isinstance(sequences_by_id[dependency], int):
-            if sequences_by_id[dependency] >= sequence:
-                errors.append(
-                    _issue("DEPENDENCY_ORDER", "%s/depends_on" % location,
-                           "depends_on %s must have a lower sequence than %s" % (dependency, op_id))
-                )
-
     _check_overflow(operation, slot, op_id, location, errors)
+
+
+def _check_control_operation(
+    operation: Dict[str, Any],
+    target_location: Any,
+    location: str,
+    spec_fields: Dict[str, Dict[str, Any]],
+    spec_sdts: Dict[str, Dict[str, Any]],
+    allowed_control_set: Optional[set[str]],
+    errors: List[Dict[str, Any]],
+    warnings: List[Dict[str, Any]],
+) -> None:
+    op_type = operation.get("type")
+    if op_type == "edit_field":
+        control_id = operation.get("field_id")
+        field = spec_fields.get(control_id)
+        if field is None:
+            errors.append(
+                _issue(
+                    "UNKNOWN_CONTROL",
+                    location,
+                    "Field %r does not exist in DocumentSpec.controls.fields"
+                    % (control_id,),
+                )
+            )
+            return
+        if allowed_control_set is not None and control_id not in allowed_control_set:
+            errors.append(
+                _issue(
+                    "UNAUTHORIZED_CONTROL_TARGET",
+                    location,
+                    "Field %s is outside baseline.allowed_control_ids" % control_id,
+                )
+            )
+        if field.get("address_status") != "RESOLVED" or not field.get("editable"):
+            errors.append(
+                _issue(
+                    "PROTECTED_CONTROL_VIOLATION",
+                    location,
+                    "Field %s is not editable (address_status=%s, editable=%s)"
+                    % (control_id, field.get("address_status"), field.get("editable")),
+                )
+            )
+        if field.get("lock_state") == "LOCKED":
+            errors.append(
+                _issue(
+                    "PROTECTED_CONTROL_VIOLATION",
+                    location,
+                    "Field %s is locked" % control_id,
+                )
+            )
+        if target_location != field.get("location_id"):
+            errors.append(
+                _issue(
+                    "TARGET_LOCATION_MISMATCH",
+                    "%s/target/location_id" % location,
+                    "target location %r does not equal field location %r"
+                    % (target_location, field.get("location_id")),
+                )
+            )
+        return
+
+    control_id = operation.get("sdt_id")
+    sdt = spec_sdts.get(control_id)
+    if sdt is None:
+        errors.append(
+            _issue(
+                "UNKNOWN_CONTROL",
+                location,
+                "SDT %r does not exist in DocumentSpec.controls.sdts" % (control_id,),
+            )
+        )
+        return
+    if allowed_control_set is not None and control_id not in allowed_control_set:
+        errors.append(
+            _issue(
+                "UNAUTHORIZED_CONTROL_TARGET",
+                location,
+                "SDT %s is outside baseline.allowed_control_ids" % control_id,
+            )
+        )
+    if not sdt.get("editable"):
+        errors.append(
+            _issue(
+                "PROTECTED_CONTROL_VIOLATION",
+                location,
+                "SDT %s is not editable (lock=%s)"
+                % (control_id, sdt.get("lock")),
+            )
+        )
+    if sdt.get("lock") in ("CONTENT_LOCKED", "SDT_CONTENT_LOCKED"):
+        errors.append(
+            _issue(
+                "PROTECTED_CONTROL_VIOLATION",
+                location,
+                "SDT %s has content lock %s" % (control_id, sdt.get("lock")),
+            )
+        )
+    if target_location != sdt.get("location_id"):
+        errors.append(
+            _issue(
+                "TARGET_LOCATION_MISMATCH",
+                "%s/target/location_id" % location,
+                "target location %r does not equal SDT location %r"
+                % (target_location, sdt.get("location_id")),
+            )
+        )
+    updates = operation.get("control") if isinstance(operation.get("control"), dict) else {}
+    if (
+        "text" in updates
+        and sdt.get("contains_fields")
+        and operation.get("allow_field_loss") is not True
+    ):
+        errors.append(
+            _issue(
+                "PROTECTED_CONTROL_VIOLATION",
+                location,
+                "SDT %s contains fields; replacing its text requires "
+                "allow_field_loss=true" % control_id,
+            )
+        )
+    if sdt.get("requires_confirmation") and operation.get("allow_field_loss") is not True:
+        warnings.append(
+            _issue(
+                "CONTROL_CONFIRMATION_REQUIRED",
+                location,
+                "SDT %s is marked requires_confirmation" % control_id,
+                default_severity="medium",
+            )
+        )
 
 
 def _check_fill_cell_target(

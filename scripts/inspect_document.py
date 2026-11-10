@@ -19,10 +19,12 @@ if ROOT_DIR not in sys.path:
 
 import docx
 from engine import extract_document_spec, extract_excel_spec, install_auto_cleanup, route_document_task
+from engine.cli_io import configure_stdio
 from engine.package_guard import check_package, load_limits
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Inspect an Office document and output DocumentSpec JSON.")
     parser.add_argument("files", nargs="*", default=[], help="Input .docx/.xlsx file path(s)")

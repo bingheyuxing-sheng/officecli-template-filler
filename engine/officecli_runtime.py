@@ -32,6 +32,7 @@ _SECTION_RE = re.compile(r"^sec\[([0-9]+)\]$")
 _SEGMENT_MAP = {
     "p": "p",
     "tbl": "tbl",
+    "sdt": "sdt",
     "r": "tr",
     "tr": "tr",
     "row": "tr",
@@ -258,19 +259,47 @@ def _append_segments(base: str, segments: Sequence[str]) -> str:
     return path
 
 
-def build_story_map(file_path: str, runtime: Optional["OfficecliRuntime"] = None) -> Dict[str, str]:
+def build_story_map(
+    file_path: str,
+    runtime: Optional["OfficecliRuntime"] = None,
+    *,
+    document: Any = None,
+) -> Dict[str, str]:
     """Map ``sec[i].<story>`` to the OfficeCLI container path for that story.
 
     OfficeCLI exposes headers and footers as ``/header[N]`` and ``/footer[N]``
-    parts, while DocumentSpec addresses them per section. ``get /section[N]``
-    returns ``headerRef.default`` / ``headerRef.first`` / ``headerRef.even``
-    (and the footer equivalents), which is the authoritative crosswalk.
+    parts, while DocumentSpec addresses them per section. OfficeCLI 1.0.160
+    returns section indexes that do not reliably line up with logical
+    ``python-docx`` section order, so the section query's numeric index must not
+    be used as the crosswalk. Instead, each header/footer address is read as raw
+    XML and matched by canonical XML against the logical section's resolved part.
     """
     engine = runtime or OfficecliRuntime()
     mapping: Dict[str, str] = {}
     try:
-        sections = engine.query(file_path, "section")
-    except OfficecliError:
+        if document is None:
+            import docx
+
+            document = docx.Document(file_path)
+        part_addresses = build_part_address_map(
+            file_path,
+            runtime=engine,
+            document=document,
+            close_runtime=False,
+        )
+        for index, section in enumerate(document.sections):
+            for story, _ref_name, _scope in _SECTION_STORIES:
+                header_footer = getattr(section, story, None)
+                if header_footer is None:
+                    continue
+                try:
+                    partname = "/" + str(header_footer.part.partname).lstrip("/")
+                except Exception:
+                    continue
+                matches = part_addresses.get(partname) or []
+                if len(matches) == 1:
+                    mapping["sec[{}].{}".format(index, story)] = matches[0]
+    except (OSError, ValueError, KeyError, ImportError):
         return mapping
     finally:
         # `query` starts a resident; never leave the template locked for the
@@ -279,18 +308,96 @@ def build_story_map(file_path: str, runtime: Optional["OfficecliRuntime"] = None
         if callable(close):
             close(file_path)
 
-    for index, section in enumerate(sections):
-        fmt = section.get("format")
-        if not isinstance(fmt, dict):
-            continue
-        for story, ref_name, scope in _SECTION_STORIES:
-            if scope == "default":
-                container = fmt.get(ref_name) or fmt.get("{}.{}".format(ref_name, scope))
-            else:
-                container = fmt.get("{}.{}".format(ref_name, scope))
-            if isinstance(container, str) and container.startswith("/"):
-                mapping["sec[{}].{}".format(index, story)] = container
     return mapping
+
+
+def _xml_canonical(value: Any) -> Optional[bytes]:
+    try:
+        from lxml import etree
+
+        if isinstance(value, (bytes, str)):
+            root = etree.fromstring(
+                value.encode("utf-8") if isinstance(value, str) else value
+            )
+        else:
+            root = value
+        return etree.tostring(root, method="c14n")
+    except (ValueError, TypeError, ImportError):
+        return None
+
+
+def build_part_address_map(
+    file_path: str,
+    runtime: Optional["OfficecliRuntime"] = None,
+    *,
+    document: Any = None,
+    close_runtime: bool = True,
+) -> Dict[str, List[str]]:
+    """Map OOXML part names to OfficeCLI part addresses by canonical XML.
+
+    File names (``footer1.xml``) and OfficeCLI ordinals (``/footer[1]``) do not
+    necessarily agree. The match is content-based; an identical part appearing
+    twice yields multiple addresses and callers must treat it as ambiguous.
+    """
+    engine = runtime or OfficecliRuntime()
+    mapping: Dict[str, List[str]] = {}
+    try:
+        if document is None:
+            import docx
+
+            document = docx.Document(file_path)
+        package_parts = list(document.part.package.iter_parts())
+        by_digest: Dict[bytes, List[str]] = {}
+        for stem in ("header", "footer"):
+            count = sum(
+                1
+                for part in package_parts
+                if re.match(
+                    r"^/?word/{0}\d+\.xml$".format(stem),
+                    str(getattr(part, "partname", "")),
+                )
+            )
+            for index in range(1, count + 1):
+                address = "/{0}[{1}]".format(stem, index)
+                try:
+                    digest = _xml_canonical(engine.raw(file_path, address))
+                except OfficecliError:
+                    continue
+                if digest is not None:
+                    by_digest.setdefault(digest, []).append(address)
+
+        for part in package_parts:
+            partname = "/" + str(getattr(part, "partname", "")).lstrip("/")
+            if partname == "/word/document.xml":
+                mapping[partname] = ["/document"]
+            elif partname == "/word/footnotes.xml":
+                mapping[partname] = ["/footnotes"]
+            elif partname == "/word/endnotes.xml":
+                mapping[partname] = ["/endnotes"]
+            elif re.match(r"^/word/(?:header|footer)\d+\.xml$", partname):
+                digest = _xml_canonical(getattr(part, "blob", None))
+                if digest is not None:
+                    mapping[partname] = list(by_digest.get(digest) or [])
+    except (OSError, ValueError, KeyError, ImportError):
+        return mapping
+    finally:
+        if close_runtime:
+            close = getattr(engine, "close", None)
+            if callable(close):
+                close(file_path)
+    return mapping
+
+
+def _address_rank(address: Optional[str]) -> Tuple[int, int]:
+    if not address:
+        return (99, 9999)
+    if address == "/document":
+        return (0, 0)
+    match = re.match(r"^/(header|footer|footnotes|endnotes)(?:\[(\d+)\])?$", address)
+    if not match:
+        return (99, 9999)
+    order = {"header": 1, "footer": 2, "footnotes": 3, "endnotes": 4}[match.group(1)]
+    return (order, int(match.group(2) or 0))
 
 
 def location_to_path(
@@ -776,6 +883,7 @@ __all__ = [
     "OfficecliVersionError",
     "UnsupportedLocation",
     "build_set_command",
+    "build_part_address_map",
     "build_story_map",
     "find_binary",
     "get_runtime",

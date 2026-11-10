@@ -36,6 +36,7 @@ from engine.style_engine import resolve_style_sz_and_font
 from engine.table_engine import classify_cell_structure
 
 from .fingerprint import compute_four_hashes
+from .control_inventory import build_control_inventory
 from .slot_id import (
     LOCATION_RE,
     make_slot_id,
@@ -44,7 +45,7 @@ from .slot_id import (
     resolve_slot_id_collisions,
 )
 
-SPEC_BUILDER_CACHE_VERSION = "1"
+SPEC_BUILDER_CACHE_VERSION = "5"
 
 _HF_NAMES = (
     "header", "first_page_header", "even_page_header",
@@ -73,14 +74,8 @@ _L4_DETAILS = {
     "floating_anchor_drawing": "floating drawing anchor found; its layout cannot be verified after filling",
     "macro_enabled_docm": "macro-enabled document; the package must stay read-only for shape edits",
 }
-_L3_CODES = {
-    "sdt_control": "SDT_EDIT_UNSUPPORTED",
-    "field_code": "FIELD_UPDATE_UNSUPPORTED",
-}
-_L3_DETAILS = {
-    "sdt_control": "content control (w:sdt) present; SDT editing has no verified handler",
-    "field_code": "field code present; field result updates have no verified handler",
-}
+_L3_CODES: Dict[str, str] = {}
+_L3_DETAILS: Dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +474,101 @@ def _within(span: Tuple[int, int], others: Sequence[Tuple[int, int]]) -> bool:
     return any(start < other_end and other_start < end for other_start, other_end in others)
 
 
+def _red_text_semantics(text: str) -> Tuple[str, Optional[str], str]:
+    """Classify one merged red-text unit without guessing at ambiguity."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return "AMBIGUOUS", None, "empty red-text unit"
+    matches: List[str] = []
+    if re.fullmatch(r"[*]+", stripped):
+        matches.append("PLACEHOLDER")
+    parenthesized = (
+        len(stripped) >= 3
+        and stripped[0] in "（("
+        and stripped[-1] in "）)"
+    )
+    if parenthesized:
+        matches.append("INSTRUCTION")
+    if not matches:
+        matches.append("EMPHASIS")
+    if len(matches) > 1:
+        return (
+            "AMBIGUOUS",
+            None,
+            "red text matches more than one semantic pattern: " + ", ".join(matches),
+        )
+    semantic = matches[0]
+    if semantic == "PLACEHOLDER":
+        return semantic, "FILL", "red asterisk placeholder"
+    if semantic == "INSTRUCTION":
+        return semantic, "REMOVE_IN_FINAL", "parenthesized red instruction for the template user"
+    return semantic, "PRESERVE", "red emphasis or domain text; preserve in the final document"
+
+
+def _merge_red_units(paragraph, text: str) -> List[Dict[str, Any]]:
+    """Merge adjacent red runs into one semantic unit, in paragraph order."""
+    if paragraph is None:
+        return []
+    entries: List[Dict[str, Any]] = []
+    cursor = 0
+    for run_index, run in enumerate(paragraph.runs):
+        try:
+            red = is_red_run(run, paragraph)
+        except Exception:
+            red = False
+        run_text = run.text or ""
+        if not run_text:
+            continue
+        start = text.find(run_text, cursor)
+        if start < 0:
+            start = text.find(run_text)
+        if start < 0:
+            continue
+        end = start + len(run_text)
+        cursor = max(cursor, end)
+        if not red or not run_text.strip():
+            continue
+        entry = {
+            "run_index": run_index,
+            "text": run_text,
+            "start": start,
+            "end": end,
+        }
+        if entries and entry["start"] == entries[-1]["end"]:
+            entries[-1]["text"] += run_text
+            entries[-1]["end"] = end
+            entries[-1]["run_ranges"].append(
+                {"run_index": run_index, "start": start, "end": end}
+            )
+        else:
+            entries.append(
+                {
+                    "text": run_text,
+                    "start": start,
+                    "end": end,
+                    "run_ranges": [
+                        {"run_index": run_index, "start": start, "end": end}
+                    ],
+                }
+            )
+
+    merged: List[Dict[str, Any]] = []
+    for entry in entries:
+        semantic, action, reason = _red_text_semantics(entry["text"])
+        merged.append(
+            {
+                "text": entry["text"],
+                "span": {"start": entry["start"], "end": entry["end"]},
+                "run_ranges": entry["run_ranges"],
+                "semantic": semantic,
+                "action": action,
+                "deletion_reason": reason if semantic == "INSTRUCTION" else None,
+                "requires_confirmation": semantic == "AMBIGUOUS",
+            }
+        )
+    return merged
+
+
 def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
     order = 0
@@ -498,6 +588,7 @@ def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, An
             "effective_sz_half_pt": size,
             "font_east_asia": font,
         }
+        candidate_count_before = len(candidates)
 
         has_sdt = bool(p_el.xpath(".//w:sdt"))
         has_field = bool(p_el.xpath(".//w:fldSimple | .//w:fldChar | .//w:instrText"))
@@ -505,24 +596,9 @@ def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, An
         # textbox paragraphs whose stable `txbx_p[i]` location hides the enclosing SDT.
         inside_sdt = ".sdt[" in location or bool(p_el.xpath("ancestor::w:sdt"))
         if has_sdt or has_field or inside_sdt:
-            # A control/field paragraph is a protected unit. Tokens inside it are not offered
-            # as fill targets; the whole paragraph is reported as `control_or_field`.
-            # CP-W2-002: any paragraph discovered inside a `w:sdt` container is protected
-            # as a whole, so no FILLABLE token is ever emitted inside SDT content.
-            start = len(text) - len(text.lstrip())
-            end = len(text.rstrip())
-            if end > start:
-                candidate = dict(base)
-                candidate.update({
-                    "candidate_type": "control_or_field",
-                    "matched_text": text[start:end],
-                    "span": {"start": start, "end": end},
-                    "protection_status": "PROTECTED",
-                    "confirmation_tier": "PROTECTED_DO_NOT_TOUCH",
-                    "_order": order,
-                })
-                candidates.append(candidate)
-                order += 1
+            # Fields and SDTs are first-class editable controls in `controls`.
+            # They are not text slots; a slot here would double-address the
+            # same node and make the protected-region set lie about it.
             continue
 
         fact_spans = _locate_labels(text, match_internal_fact_slots(text))
@@ -547,33 +623,39 @@ def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, An
             order += 1
             explicit_ranges.append((start, end))
 
-        red_cursor = 0
-        if paragraph is not None:
-            for run in paragraph.runs:
-                try:
-                    if not is_red_run(run, paragraph) or not run.text.strip():
-                        continue
-                except Exception:
-                    continue
-                run_text = run.text
-                index = text.find(run_text, red_cursor)
-                if index == -1:
-                    continue
-                start, end = index, index + len(run_text)
-                red_cursor = end
-                if _within((start, end), explicit_ranges) or _within((start, end), fact_ranges):
-                    continue
-                candidate = dict(base)
-                candidate.update({
-                    "candidate_type": "red_run_clue",
-                    "matched_text": run_text,
-                    "span": {"start": start, "end": end},
-                    "protection_status": "FILLABLE",
-                    "confirmation_tier": "DEFAULT_FILL_WITH_NOTICE",
-                    "_order": order,
-                })
-                candidates.append(candidate)
-                order += 1
+        for unit in _merge_red_units(paragraph, text):
+            span = (unit["span"]["start"], unit["span"]["end"])
+            if _within(span, explicit_ranges) or _within(span, fact_ranges):
+                continue
+            semantic = unit["semantic"]
+            if semantic == "PLACEHOLDER":
+                protection_status = "FILLABLE"
+                confirmation_tier = "DEFAULT_FILL_WITH_NOTICE"
+            elif semantic == "EMPHASIS":
+                protection_status = "PROTECTED"
+                confirmation_tier = "PROTECTED_DO_NOT_TOUCH"
+            else:
+                protection_status = "CONDITIONAL"
+                confirmation_tier = "MUST_ASK_USER"
+            candidate = dict(base)
+            candidate.update({
+                "candidate_type": "red_run_clue",
+                "matched_text": unit["text"],
+                "span": dict(unit["span"]),
+                "protection_status": protection_status,
+                "confirmation_tier": confirmation_tier,
+                "red_text": {
+                    "original_text": unit["text"],
+                    "run_ranges": list(unit["run_ranges"]),
+                    "semantic": semantic,
+                    "action": unit["action"],
+                    "deletion_reason": unit["deletion_reason"],
+                    "requires_confirmation": bool(unit["requires_confirmation"]),
+                },
+                "_order": order,
+            })
+            candidates.append(candidate)
+            order += 1
 
         for label, start, end in fact_spans:
             candidate = dict(base)
@@ -587,6 +669,38 @@ def _collect_candidates(contexts: Sequence[Dict[str, Any]]) -> List[Dict[str, An
             })
             candidates.append(candidate)
             order += 1
+
+        # Table cells are often intentionally left blank for later content.
+        # Expose those paragraphs as explicit, user-confirmed anchors instead of
+        # forcing a template-specific FillPlan to invent its own addressing.
+        # Headers/footers are excluded because their fixed regions are protected.
+        if len(candidates) == candidate_count_before and scope == "table":
+            stripped = text.strip()
+            if not stripped:
+                candidate = dict(base)
+                candidate.update({
+                    "candidate_type": "empty_anchor",
+                    "matched_text": "",
+                    "span": {"start": 0, "end": 1},
+                    "protection_status": "CONDITIONAL",
+                    "confirmation_tier": "MUST_ASK_USER",
+                    "_order": order,
+                })
+                candidates.append(candidate)
+                order += 1
+            elif re.fullmatch(r"[.…]+", stripped):
+                start = text.find(stripped)
+                candidate = dict(base)
+                candidate.update({
+                    "candidate_type": "empty_anchor",
+                    "matched_text": stripped,
+                    "span": {"start": start, "end": start + len(stripped)},
+                    "protection_status": "CONDITIONAL",
+                    "confirmation_tier": "MUST_ASK_USER",
+                    "_order": order,
+                })
+                candidates.append(candidate)
+                order += 1
 
     return candidates
 
@@ -607,7 +721,11 @@ def _assign_slot_identities(
             candidate["occurrence"] = occurrence
             canonical = f"v1|{template_sha256}|{location}|{normalized}|{occurrence}"
             base_id = make_slot_id(
-                template_sha256, location, candidate["matched_text"], occurrence
+                template_sha256,
+                location,
+                candidate["matched_text"],
+                occurrence,
+                allow_empty=candidate["candidate_type"] == "empty_anchor",
             )
             candidate["_canonical"] = canonical
             candidate["_base_id"] = base_id
@@ -678,7 +796,10 @@ def _build_slots(
         slot = {
             "slot_id": candidate["slot_id"],
             "slot_key": make_slot_key(
-                location, candidate["matched_text"], candidate["occurrence"]
+                location,
+                candidate["matched_text"],
+                candidate["occurrence"],
+                allow_empty=candidate["candidate_type"] == "empty_anchor",
             ),
             "location_id": location,
             "scope": candidate["scope"],
@@ -695,6 +816,8 @@ def _build_slots(
             "protection_status": candidate["protection_status"],
             "confirmation_tier": candidate["confirmation_tier"],
         }
+        if isinstance(candidate.get("red_text"), dict):
+            slot["red_text"] = copy.deepcopy(candidate["red_text"])
         slots.append(slot)
     return slots, collisions, conflicts
 
@@ -752,6 +875,7 @@ def _build_protected_regions(
     table_contexts: Sequence[Dict[str, Any]],
     slots: Sequence[Dict[str, Any]] = (),
     sdt_containers: Sequence[Dict[str, Any]] = (),
+    sdts: Sequence[Dict[str, Any]] = (),
 ) -> List[Dict[str, Any]]:
     regions: List[Dict[str, Any]] = []
     slot_locations = {slot["location_id"] for slot in slots}
@@ -766,14 +890,6 @@ def _build_protected_regions(
             "evidence": evidence,
             "severity": severity,
         })
-
-    for ctx in contexts:
-        p_el = ctx["p_el"]
-        location = ctx["location_id"]
-        if p_el.xpath(".//w:sdt"):
-            _add("sdt", location, "content control (w:sdt) found; SDT content is read-only")
-        if p_el.xpath(".//w:fldSimple | .//w:fldChar | .//w:instrText"):
-            _add("field", location, "field code found; field result must not be overwritten")
 
     for index, section in enumerate(doc.sections):
         for name in _HF_NAMES:
@@ -798,6 +914,14 @@ def _build_protected_regions(
                 has_paragraph_object = bool(
                     paragraph._p.xpath(".//w:drawing | .//w:pict")
                 )
+                has_control = bool(
+                    paragraph._p.xpath(".//w:sdt | .//w:fldSimple | .//w:fldChar | .//w:instrText")
+                )
+                if has_control:
+                    # Fields and SDTs are editable controls with their own
+                    # inventory; protecting the enclosing paragraph would make
+                    # the control unusable.
+                    continue
                 if not paragraph_text and not has_paragraph_object:
                     continue
                 kind = "header" if name.endswith("header") else "footer"
@@ -865,16 +989,20 @@ def _build_protected_regions(
                 severity="warning",
             )
 
-    # CP-W2-002: one blocking region per SDT container with content, addressed by the
-    # container itself (`body.sdt[0]`, `sec[0].header.sdt[0]`, cell form).
-    for container in sdt_containers:
-        location = container.get("location")
+    # Only genuinely locked SDTs are protected. Unlocked controls are editable
+    # through FillPlan edit_sdt operations.
+    for sdt in sdts:
+        if not isinstance(sdt, dict):
+            continue
+        lock = str(sdt.get("lock") or "UNLOCKED")
+        if lock not in ("CONTENT_LOCKED", "SDT_CONTENT_LOCKED"):
+            continue
+        location = sdt.get("location_id")
         _add(
             "sdt",
-            location,
-            "%s: content control (w:sdt) wraps %d paragraph(s) / %d table(s); "
-            "SDT content is read-only while sdt_edit=false"
-            % (location, container["paragraph_count"], container["table_count"]),
+            str(location or ""),
+            "%s: lock=%s; SDT content is not editable"
+            % (location, lock),
         )
     return regions
 
@@ -980,12 +1108,19 @@ def _build_unsupported_features(
 # ---------------------------------------------------------------------------
 
 
-def _capabilities(images: Sequence[Dict[str, Any]], tables: Sequence[Dict[str, Any]]) -> Dict[str, bool]:
+def _capabilities(
+    images: Sequence[Dict[str, Any]],
+    tables: Sequence[Dict[str, Any]],
+    controls: Optional[Dict[str, Any]] = None,
+) -> Dict[str, bool]:
     try:
         backend = find_pdf_backend()
         visual_render = (backend.get("name") or "none") != "none"
     except Exception:
         visual_render = False
+    control_block = controls if isinstance(controls, dict) else {}
+    fields = control_block.get("fields") or []
+    sdts = control_block.get("sdts") or []
     return {
         "text_fill": True,
         "table_fill": True,
@@ -993,8 +1128,8 @@ def _capabilities(images: Sequence[Dict[str, Any]], tables: Sequence[Dict[str, A
             image["object_type"] in ("inline_blip", "anchored_blip", "vml") for image in images
         ),
         "nested_table": any(int(table["depth"]) > 0 for table in tables),
-        "field_update": False,
-        "sdt_edit": False,
+        "field_update": any(bool(field.get("editable")) for field in fields if isinstance(field, dict)),
+        "sdt_edit": any(bool(sdt.get("editable")) for sdt in sdts if isinstance(sdt, dict)),
         "smartart_edit": False,
         "visual_render": visual_render,
     }
@@ -1015,7 +1150,7 @@ def _scan_body_sdt(doc) -> Dict[str, Any]:
     try:
         from docx.table import Table
 
-        def _record_container(location: str, content) -> None:
+        def _record_container(location: str, content, sdt_el) -> None:
             paragraphs = content.findall(qn("w:p")) if content is not None else []
             tables = content.findall(qn("w:tbl")) if content is not None else []
             scan["containers"].append({
@@ -1023,13 +1158,14 @@ def _scan_body_sdt(doc) -> Dict[str, Any]:
                 "paragraph_count": len(paragraphs),
                 "table_count": len(tables),
                 "has_content": bool(paragraphs or tables),
+                "sdt_element": sdt_el,
             })
 
         def _scan_container(root_el, prefix: str, parent_obj) -> None:
             for sdt_index, sdt_el in enumerate(root_el.findall(qn("w:sdt"))):
                 location = f"{prefix}sdt[{sdt_index}]"
                 content = sdt_el.find(qn("w:sdtContent"))
-                _record_container(location, content)
+                _record_container(location, content, sdt_el)
                 if content is None:
                     continue
                 _scan_container(content, location + ".", parent_obj)
@@ -1044,11 +1180,14 @@ def _scan_body_sdt(doc) -> Dict[str, Any]:
         def _scan_tables(tables, prefix: str, parent_obj) -> None:
             for t_idx, table in enumerate(tables):
                 seen_tcs: set = set()
+                kept_tcs: List[Any] = []
                 for r_idx, row in enumerate(table.rows):
                     for c_idx, cell in enumerate(row.cells):
-                        if id(cell._tc) in seen_tcs:
+                        tc = cell._tc
+                        if id(tc) in seen_tcs:
                             continue
-                        seen_tcs.add(id(cell._tc))
+                        seen_tcs.add(id(tc))
+                        kept_tcs.append(tc)
                         cell_prefix = f"{prefix}tbl[{t_idx}].r[{r_idx}].c[{c_idx}]"
                         _scan_container(cell._tc, cell_prefix + ".", cell)
                         if cell.tables:
@@ -1089,6 +1228,11 @@ def build_document_spec(
 
     sdt_scan = _scan_body_sdt(doc)
     sdt_with_content = [c for c in sdt_scan["containers"] if c["has_content"]]
+    controls = build_control_inventory(doc, file_path or "", sdt_with_content)
+    sdt_public = [
+        {key: value for key, value in container.items() if key != "sdt_element"}
+        for container in sdt_with_content
+    ]
     if (sdt_with_content or sdt_scan["scan_error"]) and \
             compatibility.get("compatibility_level") in ("L1", "L2"):
         # fail-closed: never claim L1/L2 while SDT content exists in any story/container
@@ -1145,20 +1289,15 @@ def build_document_spec(
 
     capacity_profiles = _build_capacity_profiles(candidates, contexts_by_location, printable_width)
     protected_regions = _build_protected_regions(
-        doc, contexts, table_contexts, slots, sdt_containers=sdt_with_content
+        doc,
+        contexts,
+        table_contexts,
+        slots,
+        sdt_containers=sdt_public,
+        sdts=controls.get("sdts") or [],
     )
     layout_constraints = _build_layout_constraints(table_contexts, contexts)
     unsupported_features = _build_unsupported_features(doc, compatibility, contexts)
-    for container in sdt_with_content:
-        unsupported_features.append({
-            "code": "SDT_BODY_UNSUPPORTED",
-            "detail": (
-                "%s wraps %d paragraph(s) / %d table(s); the content is discovered as "
-                "protected positions and is not fillable while sdt_edit=false"
-                % (container["location"], container["paragraph_count"], container["table_count"])
-            ),
-            "location_id": container["location"],
-        })
     if sdt_scan["scan_error"]:
         unsupported_features.append({
             "code": "SDT_BODY_SCAN_INCOMPLETE",
@@ -1225,16 +1364,18 @@ def build_document_spec(
             "severity": "medium",
             "detail": "unsupported story location(s): " + ", ".join(skipped_stories),
         })
-    if sdt_with_content:
+    editable_sdts = [sdt for sdt in controls.get("sdts") or [] if sdt.get("editable")]
+    if sdt_public:
         warnings.append({
-            "code": "SDT_BODY_PROTECTED_ONLY",
-            "severity": "medium",
+            "code": "SDT_CONTROL_INVENTORY",
+            "severity": "low",
             "detail": (
-                "%d SDT container(s) with content were discovered as protected positions "
-                "(sdt_edit=false, so they are disclosed but not fillable): %s"
+                "%d SDT container(s) with content; %d editable; locked controls are "
+                "reported as protected regions: %s"
                 % (
-                    len(sdt_with_content),
-                    ", ".join(container["location"] for container in sdt_with_content),
+                    len(sdt_public),
+                    len(editable_sdts),
+                    ", ".join(container["location"] for container in sdt_public),
                 )
             ),
         })
@@ -1259,7 +1400,7 @@ def build_document_spec(
             "template_sha256": template_sha256,
             "compatibility": compatibility.get("compatibility_level", "L4"),
             "protection_mode": "STRICT",
-            "capabilities": _capabilities(images, tables),
+            "capabilities": _capabilities(images, tables, controls),
         },
         "document": _document_block(sections),
         "structure": {
@@ -1268,6 +1409,7 @@ def build_document_spec(
             "images": images,
         },
         "slots": slots,
+        "controls": controls,
         "protected_regions": protected_regions,
         "capacity_profiles": capacity_profiles,
         "layout_constraints": layout_constraints,
@@ -1327,6 +1469,7 @@ def _error_spec(file_path: str, exc: Exception) -> Dict[str, Any]:
         "document": {"page_size": None, "orientation": None, "sections": [{"section_index": 0}]},
         "structure": {"paragraphs": [], "tables": [], "images": []},
         "slots": [],
+        "controls": {"fields": [], "sdts": []},
         "protected_regions": [],
         "capacity_profiles": [],
         "layout_constraints": [],

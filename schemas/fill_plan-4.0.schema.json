@@ -26,7 +26,15 @@
         "template_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "spec_schema_version": { "const": "4.0" },
         "fingerprint_id": { "type": "string", "pattern": "^FP_[0-9]{3,}$" },
-        "allowed_slot_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/slot_id" } }
+        "allowed_slot_ids": { "type": "array", "minItems": 0, "uniqueItems": true, "items": { "$ref": "#/$defs/slot_id" } },
+        "allowed_control_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(FLD_[0-9a-f]{12}|SDT_[0-9a-f]{12})$"
+          }
+        }
       }
     },
     "operation": {
@@ -36,21 +44,26 @@
         "op_id",
         "sequence",
         "type",
-        "slot_id",
         "target",
         "source_ref",
         "policy",
-        "preconditions",
-        "overflow"
+        "preconditions"
       ],
       "properties": {
         "op_id": { "type": "string", "pattern": "^OP_[0-9A-Za-z_-]{1,32}$" },
         "sequence": { "type": "integer", "minimum": 1 },
-        "type": { "enum": ["replace_text", "fill_paragraph", "fill_cell", "replace_image"] },
+        "type": { "enum": ["replace_text", "fill_paragraph", "fill_cell", "replace_image", "edit_field", "edit_sdt", "clear_red_text"] },
         "slot_id": { "$ref": "#/$defs/slot_id" },
+        "field_id": { "type": "string", "pattern": "^FLD_[0-9a-f]{12}$" },
+        "sdt_id": { "type": "string", "pattern": "^SDT_[0-9a-f]{12}$" },
         "target": { "$ref": "#/$defs/target" },
         "source_ref": { "type": "string", "minLength": 1 },
         "value": { "type": "string" },
+        "instruction": { "type": "string", "minLength": 1 },
+        "field_type": { "type": "string", "minLength": 1 },
+        "cached_result": { "type": "string" },
+        "control": { "$ref": "#/$defs/sdt_updates" },
+        "allow_field_loss": { "type": "boolean" },
         "value_ref": { "type": ["string", "null"], "pattern": "^F_[0-9A-Za-z_-]{1,32}$" },
         "policy": { "const": "STRICT" },
         "preconditions": {
@@ -66,7 +79,7 @@
         {
           "if": { "properties": { "type": { "const": "fill_cell" } } },
           "then": {
-            "required": ["value"],
+            "required": ["slot_id", "value", "overflow"],
             "properties": {
               "target": {
                 "required": ["table_id", "row", "col"]
@@ -77,7 +90,7 @@
         {
           "if": { "properties": { "type": { "const": "replace_image" } } },
           "then": {
-            "required": ["value"],
+            "required": ["slot_id", "value", "overflow"],
             "properties": {
               "target": { "required": ["image_role"] }
             }
@@ -87,9 +100,50 @@
           "if": {
             "properties": { "type": { "enum": ["replace_text", "fill_paragraph"] } }
           },
-          "then": { "required": ["value"] }
+          "then": { "required": ["slot_id", "value", "overflow"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "clear_red_text" } } },
+          "then": { "required": ["slot_id"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "edit_field" } } },
+          "then": {
+            "required": ["field_id"],
+            "oneOf": [
+              { "required": ["instruction"] },
+              { "required": ["field_type"] }
+            ]
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "edit_sdt" } } },
+          "then": {
+            "required": ["sdt_id", "control"]
+          }
         }
       ]
+    },
+    "sdt_updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "text": { "type": "string" },
+        "tag": { "type": ["string", "null"] },
+        "alias": { "type": ["string", "null"] },
+        "checked": { "type": "boolean" },
+        "items": { "type": "array", "items": { "type": "string" } },
+        "format": { "type": "string" },
+        "date": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": { "type": "string" },
+            "format": { "type": "string" }
+          }
+        }
+      }
     },
     "target": {
       "type": "object",
@@ -141,7 +195,8 @@
           }
         },
         "styles": { "const": "DENY" },
-        "page_setup": { "const": "DENY" }
+        "page_setup": { "const": "DENY" },
+        "update_fields_on_open": { "type": "boolean", "default": true }
       }
     }
   }

@@ -29,10 +29,12 @@ from engine import (
     install_auto_cleanup,
     run_visual_layout_qa,
 )
+from engine.cli_io import configure_stdio
 from engine.package_guard import reject_first_package
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Run Visual Layout QA and optional PDF rendering.")
     parser.add_argument("docx_path", help="Path to .docx file")

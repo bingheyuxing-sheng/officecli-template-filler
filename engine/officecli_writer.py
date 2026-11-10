@@ -157,6 +157,7 @@ def restore_paragraph_identity(
     staged_path: str,
     strip_red_runs: Optional[Sequence[Tuple[str, int]]] = None,
     allow_appended: bool = False,
+    allow_appended_comments: bool = False,
 ) -> None:
     """Undo officecli's ``w14:paraId`` / ``w14:textId`` stamping in every part.
 
@@ -168,6 +169,9 @@ def restore_paragraph_identity(
     the template never had) per part, so the only remaining delta is the
     authorised text fill. ``strip_red_runs`` additionally mirrors the executor's
     red-placeholder convention on the runs the batch replaced.
+    ``allow_appended_comments`` permits new comment paragraphs in
+    ``comments.xml`` while still rejecting a shrink or a count change in any
+    other part.
     """
     import docx
     from docx.oxml.ns import qn
@@ -185,8 +189,12 @@ def restore_paragraph_identity(
             )
         original = list(source_root.iter(qn("w:p")))
         staged = list(target_root.iter(qn("w:p")))
+        append_allowed = allow_appended or (
+            allow_appended_comments
+            and str(partname).lower().endswith("/comments.xml")
+        )
         if len(original) != len(staged):
-            if not (allow_appended and len(staged) > len(original)):
+            if not (append_allowed and len(staged) > len(original)):
                 raise OfficecliError(
                     "officecli changed the paragraph count in {} ({} -> {}); "
                     "refusing to normalise".format(partname, len(original), len(staged))

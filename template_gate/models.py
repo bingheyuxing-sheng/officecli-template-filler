@@ -15,7 +15,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = "1.0"
-ANALYSIS_VERSION = "1.0"
+ANALYSIS_VERSION = "2.0"
 
 
 class EvidenceStatus(str, Enum):

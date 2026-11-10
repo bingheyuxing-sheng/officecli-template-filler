@@ -191,3 +191,40 @@ def test_live_snapshot_restore_rebuilds_a_decided_revision(tmp_path):
         str(item["revision_id"])
         for item in list_revisions(str(restored), include_format=True)
     }
+
+
+def test_live_comment_append_preserves_existing_comments_part(tmp_path):
+    _require_officecli()
+    target = tmp_path / "target.docx"
+    first = tmp_path / "first.docx"
+    second = tmp_path / "second.docx"
+
+    document = docx.Document()
+    document.add_paragraph("First comment target")
+    document.save(str(target))
+
+    plan = build_proofread_plan(str(target), auto_check=False)
+    plan["actions"].append({
+        "action_id": "first_comment",
+        "action_type": "ADD_REVIEW_COMMENT",
+        "target": "body.p[0]",
+        "location_id": "body.p[0]",
+        "comment": "First review comment.",
+    })
+    first_result = execute_review_plan(plan, str(first), snapshot_path="")
+    assert first_result["comments_added"] == 1
+
+    plan = build_proofread_plan(str(first), auto_check=False)
+    plan["actions"].append({
+        "action_id": "second_comment",
+        "action_type": "ADD_REVIEW_COMMENT",
+        "target": "body.p[0]",
+        "location_id": "body.p[0]",
+        "comment": "Second review comment.",
+    })
+    second_result = execute_review_plan(plan, str(second), snapshot_path="")
+    assert second_result["comments_added"] == 1
+
+    audit = audit_review_integrity(str(second))
+    assert audit["passed"] is True, audit["issues"]
+    assert audit["comment_count"] == 2

@@ -3,7 +3,7 @@ name: officecli-template-filler
 description: Template-driven Word and Excel document engine with OfficeCLI-first FillPlan execution, native tracked changes, OfficeCLI-backed polish/merge, a mandatory template-understanding gate, and four-state QA. Use when the user supplies a .docx or .xlsx template to fill, generate, repair, reformat, review, proofread, polish, merge, or QA, including 模板填充, 按模板生成文档, 审阅留痕修订, 润色措辞, 文档合并 and Excel 模板填数. Do not use for PDF, PPTX, or writing without a template.
 ---
 
-# Office Template Filler — Python Office Document Intelligence Skill (v4.3.1)
+# Office Template Filler — Python Office Document Intelligence Skill (v4.3.2)
 
 Use this skill only when a **template** drives the work. Start with four checks:
 
@@ -73,7 +73,7 @@ Routing notes that prevent the common misroutes:
 
 ---
 
-## Core Architecture Rule 3 — Directory & Module Architecture (v4.3.1)
+## Core Architecture Rule 3 — Directory & Module Architecture (v4.3.2)
 
 ```
 officecli-template-filler/
@@ -84,7 +84,7 @@ officecli-template-filler/
 ├── content_intelligence/                 # ContentPlan / FillPlan builders and validators
 ├── document_engine/                      # FillPlan executor, fill ledger, execution pipeline
 ├── qa/                                   # QAReport 4.0, QA gate, pipeline, environment probe
-├── engine/                               # importable Python engine package (v4.3.1)
+├── engine/                               # importable Python engine package (v4.3.2)
 └── scripts/                              # CLI entrypoints — the surface an agent calls (table below)
 ```
 
@@ -199,7 +199,7 @@ python scripts/analyze_template.py --input "$INPUT_1" --spec-version 4 --output 
 python scripts/analyze_excel_template.py --input "$INPUT_1" --output "$TEMP/document_spec.json"
 ```
 The v4 spec is cached by template SHA-256 + engine version, so a repeated call is a cache hit and returns the same JSON without re-scanning the document. Set `OFFICECLI_DISABLE_CACHE=1` only for debugging/reproducibility.
-For `GENERATE`, **always pass `--spec-version 4`**. The default (`3`) is the legacy CLI summary kept for the old `--data` token path and non-generation modes; it is never the v4 plan chain. Inspect the v4 artifact's `slots`, `protected_regions`, `unsupported_features` and `warnings` — not `candidate_hits` (`L1`–`L4` still appears under `template.compatibility`). A body-level `w:sdt` is discovered as PROTECTED (`kind: "sdt"` region); `sdt_edit` stays false.
+For `GENERATE`, **always pass `--spec-version 4`**. The default (`3`) is the legacy CLI summary kept for the old `--data` token path and non-generation modes; it is never the v4 plan chain. Inspect the v4 artifact's `slots`, `controls`, `protected_regions`, `unsupported_features` and `warnings` — not `candidate_hits` (`L1`–`L4` still appears under `template.compatibility`). Fields are inventoried in `controls.fields` with instruction/type/cached result and an OfficeCLI address; an unresolved address stays non-editable. SDTs are inventoried in `controls.sdts`; unlocked SDTs are editable, while locked SDTs remain protected regions. An SDT containing a field defaults to refresh-only and requires explicit confirmation before replacing its text.
 
 Also read `routing.capability` from Step 1 before executing anything:
 
@@ -305,7 +305,7 @@ Every entrypoint ends with a `transaction` object:
 
 - **For `GENERATE` only (v4 plan chain — the default workflow)**:
   1. Analyze with `--spec-version 4`, then validate the artifact (`template_intelligence.spec_validator.validate_document_spec`) before building anything.
-  2. Build `ContentPlan` (facts with `source`, sections, target slots) and `FillPlan` (operations, preconditions, `overflow.strategy: REJECT`) per `schemas/content_plan-4.0.schema.json` / `fill_plan-4.0.schema.json`. Canonical builders: `content_intelligence.build_content_plan()` and `build_fill_plan()`; validate with `validate_content_plan()` / `validate_fill_plan()`. Never invent facts; missing sources stay missing and fail validation.
+  2. Build `ContentPlan` (facts with `source`, sections, target slots) and `FillPlan` (operations, preconditions, `overflow.strategy: REJECT`) per `schemas/content_plan-4.0.schema.json` / `fill_plan-4.0.schema.json`. Canonical builders: `content_intelligence.build_content_plan()` and `build_fill_plan()`; validate with `validate_content_plan()` / `validate_fill_plan()`. Never invent facts; missing sources stay missing and fail validation. Before `generate_document.py --content-plan` is allowed to run, review the rendered content plan and add an `approval` block with `approved: true`, approver, timestamp, and the SHA-256 of the reviewed artifact.
   3. Execute the deterministic chain:
   ```powershell
   python scripts/generate_document.py --template "$INPUT_1" --spec "$TEMP/document_spec.json" `
@@ -357,7 +357,7 @@ Every entrypoint ends with a `transaction` object:
   ```powershell
   python scripts/generate_excel.py --template "$INPUT_XLSX" --payload "$TEMP/payload.json" --output "$OUTPUT_XLSX"
   ```
-  `generate_excel.py` only rewrites string cells that contain `{{...}}` / `【...】`; formulas and cell styles are preserved. `openpyxl` cannot round-trip charts, images, or VBA, so record any such object in `coverage_gaps` instead of claiming fidelity.
+  `generate_excel.py` rewrites string cells that contain `{{...}}` / `【...】`; formulas and cell styles are preserved. When the workbook has no tokens, pass a direct cell plan in the payload (`"cells": [{"sheet": "...", "cell": "B2", "value": "...", "type": "number"}]`, or a `"Sheet1!B2": value` map). Literal writes only: a formula cell or a non-top-left cell of a merged range returns `INVALID_CELL_PLAN` / exit 2 and publishes nothing. If neither tokens nor cells match, it returns `NO_MATCHING_PLACEHOLDERS` / exit 2 and publishes nothing — never accept an unchanged no-op.
 - **For `REVIEW` (human accept/reject required)**:
   ```powershell
   python scripts/review_document.py --reference "$REF_DOCX" --target "$DRAFT_DOCX" `

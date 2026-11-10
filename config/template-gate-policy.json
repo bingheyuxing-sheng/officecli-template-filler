@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "analysis_version": "1.0",
+  "version": "2.0",
+  "analysis_version": "2.0",
   "description": "System-owned Template Understanding Gate policy. Callers must not override it.",
   "task_types": {
     "GENERATE": {
@@ -14,8 +14,11 @@
         "table.capacity",
         "table.purpose",
         "protected.region",
+        "field",
+        "sdt",
         "font_family",
         "font_size",
+        "font_rule",
         "red_text.semantic"
       ]
     },

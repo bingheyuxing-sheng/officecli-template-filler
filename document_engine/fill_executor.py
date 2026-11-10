@@ -30,8 +30,10 @@ import json
 import os
 import re
 import shutil
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
 import docx
 
@@ -571,6 +573,662 @@ def _apply_operation(
 
 
 # ---------------------------------------------------------------------------
+# OfficeCLI control operations
+# ---------------------------------------------------------------------------
+
+
+def _raw_root(stage_path: str, part: str):
+    from lxml import etree
+
+    from engine.officecli_runtime import get_runtime
+
+    runtime = get_runtime()
+    try:
+        payload = runtime.raw(stage_path, part)
+    finally:
+        runtime.close(stage_path)
+    return etree.fromstring(payload.encode("utf-8"))
+
+
+def _raw_set(stage_path: str, part: str, xpath: str, action: str, xml: str) -> None:
+    from engine.officecli_runtime import get_runtime
+
+    runtime = get_runtime()
+    try:
+        runtime.raw_set(
+            stage_path,
+            part,
+            xpath=xpath,
+            action=action,
+            xml=xml,
+        )
+    finally:
+        runtime.close(stage_path)
+
+
+def _local_name(element: Any) -> str:
+    tag = element.tag if isinstance(element.tag, str) else ""
+    return tag.split("}")[-1]
+
+
+def _ancestor(element: Any, name: str):
+    node = element
+    while node is not None:
+        if _local_name(node) == name:
+            return node
+        node = node.getparent()
+    return None
+
+
+def _field_parts(root: Any, begin_xpath: str):
+    from docx.oxml.ns import qn
+
+    namespaces = {"w": qn("w:p")[1:].split("}")[0]}
+    matches = root.xpath(begin_xpath, namespaces=namespaces)
+    if len(matches) != 1:
+        raise ValueError(
+            "field begin XPath resolved to {} nodes".format(len(matches))
+        )
+    begin = matches[0]
+    paragraph = _ancestor(begin, "p")
+    if paragraph is None:
+        raise ValueError("field begin is not inside a paragraph")
+    instruction_nodes: List[Any] = []
+    result_nodes: List[Any] = []
+    separate = None
+    end = None
+    depth = 0
+    started = False
+    for element in paragraph.iter():
+        if element is begin:
+            started = True
+            continue
+        if not started:
+            continue
+        name = _local_name(element)
+        if name == "fldChar":
+            kind = element.get(qn("w:fldCharType")) or ""
+            if kind == "begin":
+                depth += 1
+            elif kind == "end":
+                if depth == 0:
+                    end = element
+                    break
+                depth -= 1
+            elif kind == "separate" and depth == 0:
+                separate = element
+            continue
+        if name == "instrText" and depth == 0 and separate is None:
+            instruction_nodes.append(element)
+        elif name == "t" and depth == 0 and separate is not None:
+            result_nodes.append(element)
+    return begin, separate, end, instruction_nodes, result_nodes
+
+
+def _field_instruction_via_raw(
+    stage_path: str,
+    part: str,
+    begin_xpath: str,
+    instruction: str,
+) -> None:
+    from template_intelligence.control_inventory import _element_xpath
+
+    root = _raw_root(stage_path, part)
+    begin, separate, end, instruction_nodes, _results = _field_parts(root, begin_xpath)
+    if _local_name(begin) != "fldChar":
+        raise ValueError("fldSimple fields are not supported for instruction edits")
+    if instruction_nodes:
+        _raw_set(
+            stage_path,
+            part,
+            _element_xpath(instruction_nodes[0], root),
+            "replace",
+            '<w:instrText xml:space="preserve">{}</w:instrText>'.format(
+                xml_escape(instruction)
+            ),
+        )
+        for node in reversed(instruction_nodes[1:]):
+            _raw_set(
+                stage_path,
+                part,
+                _element_xpath(node, root),
+                "remove",
+                "",
+            )
+    else:
+        anchor = separate or end
+        anchor_run = _ancestor(anchor, "r") if anchor is not None else None
+        if anchor_run is None:
+            raise ValueError("field has no instruction node and no insert anchor")
+        _raw_set(
+            stage_path,
+            part,
+            _element_xpath(anchor_run, root),
+            "insertbefore",
+            '<w:r><w:instrText xml:space="preserve">{}</w:instrText></w:r>'.format(
+                xml_escape(instruction)
+            ),
+        )
+    verify = _raw_root(stage_path, part)
+    _begin2, _separate2, _end2, nodes2, _results2 = _field_parts(
+        verify, begin_xpath
+    )
+    if len(nodes2) != 1:
+        raise ValueError(
+            "field normalisation produced {} instrText nodes".format(len(nodes2))
+        )
+    actual = (nodes2[0].text or "").strip()
+    if " ".join(actual.split()) != " ".join(instruction.strip().split()):
+        raise ValueError(
+            "field instruction readback mismatch: {!r}".format(actual)
+        )
+
+
+def _field_result_via_raw(
+    stage_path: str,
+    part: str,
+    begin_xpath: str,
+    cached_result: str,
+) -> None:
+    from template_intelligence.control_inventory import _element_xpath
+
+    root = _raw_root(stage_path, part)
+    _begin, _separate, end, _instructions, result_nodes = _field_parts(
+        root, begin_xpath
+    )
+    if result_nodes:
+        _raw_set(
+            stage_path,
+            part,
+            _element_xpath(result_nodes[0], root),
+            "replace",
+            '<w:t xml:space="preserve">{}</w:t>'.format(xml_escape(cached_result)),
+        )
+        for node in result_nodes[1:]:
+            _raw_set(
+                stage_path,
+                part,
+                _element_xpath(node, root),
+                "replace",
+                '<w:t xml:space="preserve"></w:t>',
+            )
+    else:
+        end_run = _ancestor(end, "r") if end is not None else None
+        if end_run is None:
+            raise ValueError("field has no result node and no field-end run")
+        _raw_set(
+            stage_path,
+            part,
+            _element_xpath(end_run, root),
+            "insertbefore",
+            '<w:r><w:t xml:space="preserve">{}</w:t></w:r>'.format(
+                xml_escape(cached_result)
+            ),
+        )
+    verify = _raw_root(stage_path, part)
+    _begin2, _separate2, _end2, _instructions2, result_nodes2 = _field_parts(
+        verify, begin_xpath
+    )
+    if not result_nodes2:
+        raise ValueError("field cached result readback found no w:t node")
+    actual = "".join(node.text or "" for node in result_nodes2)
+    if actual != cached_result:
+        raise ValueError(
+            "field cached result readback mismatch: {!r}".format(actual)
+        )
+
+
+def _flatten_sdt_updates(control: Mapping[str, Any]) -> Dict[str, str]:
+    props: Dict[str, str] = {}
+    for key, value in control.items():
+        if key == "date" and isinstance(value, dict):
+            for date_key, date_value in value.items():
+                props["date.{}".format(date_key)] = str(date_value)
+        elif key == "items" and isinstance(value, list):
+            props[key] = ",".join(str(item) for item in value)
+        elif isinstance(value, bool):
+            props[key] = "true" if value else "false"
+        elif value is None:
+            props[key] = ""
+        else:
+            props[key] = str(value)
+    return props
+
+
+def _instruction_for_field_type(field_type: str, existing: str) -> str:
+    suffix = re.sub(r"^\s*[A-Za-z]+", "", existing or "")
+    return "{}{}".format(field_type.strip().upper(), suffix)
+
+
+def _officecli_control_plan(
+    pending: Sequence[Dict[str, Any]],
+    spec: Dict[str, Any],
+    slots: Dict[str, Any],
+    paragraphs: Dict[str, Any],
+    story_map: Optional[Mapping[str, str]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Optional[str]]:
+    from docx.oxml.ns import qn
+
+    from engine.officecli_writer import location_to_path
+
+    controls = spec.get("controls") if isinstance(spec.get("controls"), dict) else {}
+    fields = {
+        item["field_id"]: item
+        for item in controls.get("fields") or []
+        if isinstance(item, dict) and isinstance(item.get("field_id"), str)
+    }
+    sdts = {
+        item["sdt_id"]: item
+        for item in controls.get("sdts") or []
+        if isinstance(item, dict) and isinstance(item.get("sdt_id"), str)
+    }
+    commands: List[Dict[str, Any]] = []
+    plan_by_op: Dict[str, Dict[str, Any]] = {}
+
+    for operation in pending:
+        op_id = operation.get("op_id")
+        op_type = operation.get("type")
+        if op_type == "edit_field":
+            field = fields.get(operation.get("field_id"))
+            if field is None or not field.get("officecli_path"):
+                return [], {}, "field {} has no OfficeCLI address".format(
+                    operation.get("field_id")
+                )
+            instruction = operation.get("instruction")
+            if instruction is None:
+                instruction = _instruction_for_field_type(
+                    str(operation.get("field_type") or ""),
+                    str(field.get("instruction") or ""),
+                )
+            commands.append(
+                {
+                    "command": "set",
+                    "path": field["officecli_path"],
+                    "props": {"instruction": str(instruction)},
+                }
+            )
+            plan_by_op[op_id] = {
+                "kind": "field",
+                "field": field,
+                "instruction": str(instruction),
+                "cached_result": operation.get("cached_result"),
+            }
+            continue
+
+        if op_type == "edit_sdt":
+            sdt = sdts.get(operation.get("sdt_id"))
+            if sdt is None or not sdt.get("officecli_path"):
+                return [], {}, "SDT {} has no OfficeCLI address".format(
+                    operation.get("sdt_id")
+                )
+            props = _flatten_sdt_updates(operation.get("control") or {})
+            if not props:
+                return [], {}, "edit_sdt has no updatable properties"
+            commands.append(
+                {
+                    "command": "set",
+                    "path": sdt["officecli_path"],
+                    "props": props,
+                }
+            )
+            plan_by_op[op_id] = {
+                "kind": "sdt",
+                "sdt": sdt,
+                "props": props,
+            }
+            continue
+
+        if op_type == "clear_red_text":
+            slot = slots.get(operation.get("slot_id")) or {}
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            location_id = target.get("location_id")
+            paragraph = paragraphs.get(location_id)
+            if paragraph is None:
+                return [], {}, "clear_red_text location {} did not resolve".format(
+                    location_id
+                )
+            try:
+                path = location_to_path(location_id, story_map=story_map)
+            except Exception as exc:
+                return [], {}, str(exc)
+            view = LogicalParagraphView(paragraph._p)
+            span = slot.get("span") if isinstance(slot.get("span"), dict) else {}
+            start = span.get("start")
+            end = span.get("end")
+            if not isinstance(start, int) or not isinstance(end, int) or end <= start:
+                return [], {}, "clear_red_text slot has no valid span"
+            direct_runs = paragraph._p.findall(qn("w:r"))
+            run_texts: Dict[int, List[str]] = {}
+            for index in range(start, min(end, len(view.char_map))):
+                run = view.char_map[index].r_el
+                if run not in direct_runs:
+                    return [], {}, "clear_red_text span enters a nested run"
+                run_index = direct_runs.index(run)
+                run_texts.setdefault(run_index, []).append(view.logical_text[index])
+            run_commands: List[Dict[str, Any]] = []
+            # OfficeCLI can drop a run when a scoped replacement becomes empty.
+            # Clear from the highest run index downward so later commands keep
+            # addressing the same nodes in the original paragraph.
+            for run_index in sorted(run_texts, reverse=True):
+                chars = run_texts[run_index]
+                text = "".join(chars)
+                if text:
+                    run_commands.append(
+                        {
+                            "command": "set",
+                            "path": "{}/r[{}]".format(path, run_index + 1),
+                            "props": {"find": text, "replace": ""},
+                        }
+                    )
+            if not run_commands:
+                return [], {}, "clear_red_text produced no run commands"
+            commands.extend(run_commands)
+            plan_by_op[op_id] = {
+                "kind": "clear_red",
+                "read_path": path,
+                "before": view.logical_text,
+                "text": str(slot.get("matched_text") or ""),
+            }
+            continue
+
+        return [], {}, "control operation type {!r} is unsupported".format(op_type)
+
+    return commands, plan_by_op, None
+
+
+def _control_operation_batch(
+    template_path: str,
+    stage_path: str,
+    commands: Sequence[Dict[str, Any]],
+    pending: Sequence[Dict[str, Any]],
+    plan_by_op: Dict[str, Dict[str, Any]],
+    results_by_id: Dict[str, Dict[str, Any]],
+    ledger: FillLedger,
+    *,
+    update_fields_on_open: bool,
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    from engine import officecli_writer
+
+    errors: List[Dict[str, Any]] = []
+
+    def fail_remaining(code: str, message: str, remaining: Sequence[Dict[str, Any]]) -> None:
+        for operation in remaining:
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            ledger.record(
+                operation.get("op_id"),
+                operation.get("slot_id"),
+                target.get("location_id"),
+                operation.get("source_ref"),
+                operation.get("value"),
+                {"status": "FAILED", "error_code": code, "detail": message},
+            )
+            results_by_id[operation.get("op_id")].update(
+                {"status": "FAILED", "error_code": code, "detail": message}
+            )
+
+    batch_commands = list(commands)
+    if update_fields_on_open:
+        batch_commands.append(
+            {
+                "command": "set",
+                "path": "/settings",
+                "props": {"updateFields": "true"},
+            }
+        )
+    if batch_commands:
+        try:
+            officecli_writer.run_batch(stage_path, batch_commands)
+        except Exception as exc:
+            code = "EXECUTION_FAILED"
+            message = "officecli control batch failed: {}: {}".format(
+                type(exc).__name__, exc
+            )
+            errors.append(
+                _error_record(
+                    code,
+                    message,
+                    details={"writer": "officecli", "phase": "CONTROL_BATCH"},
+                    rollback_required=True,
+                )
+            )
+            fail_remaining(code, message, pending)
+            return errors, "OFFICECLI_CONTROL_WRITE_FAILED"
+        finally:
+            officecli_writer.close(stage_path)
+
+    for index, operation in enumerate(pending):
+        descriptor = plan_by_op.get(operation.get("op_id")) or {}
+        try:
+            kind = descriptor.get("kind")
+            if kind == "field":
+                field = descriptor["field"]
+                locator = field.get("raw_locator") or {}
+                _field_instruction_via_raw(
+                    stage_path,
+                    str(locator.get("part")),
+                    str(locator.get("begin_xpath")),
+                    str(descriptor["instruction"]),
+                )
+                cached = descriptor.get("cached_result")
+                if cached is not None:
+                    _field_result_via_raw(
+                        stage_path,
+                        str(locator.get("part")),
+                        str(locator.get("begin_xpath")),
+                        str(cached),
+                    )
+            elif kind == "sdt":
+                sdt = descriptor["sdt"]
+                if "text" in descriptor["props"]:
+                    actual = officecli_writer.get_text(
+                        stage_path, str(sdt.get("officecli_path"))
+                    )
+                    if actual != descriptor["props"]["text"]:
+                        raise ValueError(
+                            "SDT text readback mismatch: {!r}".format(actual)
+                        )
+            elif kind == "clear_red":
+                actual = officecli_writer.get_text(
+                    stage_path, str(descriptor["read_path"])
+                )
+                if descriptor["text"] and descriptor["text"] in actual:
+                    raise ValueError("red instruction text survived clear_red_text")
+            else:
+                raise ValueError("control operation has no execution descriptor")
+        except Exception as exc:
+            code = "EXECUTION_FAILED"
+            message = "control operation {} failed: {}: {}".format(
+                operation.get("op_id"), type(exc).__name__, exc
+            )
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            errors.append(
+                _error_record(
+                    code,
+                    message,
+                    details={
+                        "op_id": operation.get("op_id"),
+                        "location_id": target.get("location_id"),
+                        "phase": "CONTROL_READBACK",
+                    },
+                    rollback_required=True,
+                )
+            )
+            ledger.record(
+                operation.get("op_id"),
+                operation.get("slot_id"),
+                target.get("location_id"),
+                operation.get("source_ref"),
+                operation.get("value"),
+                {"status": "FAILED", "error_code": code, "detail": message},
+            )
+            results_by_id[operation.get("op_id")].update(
+                {"status": "FAILED", "error_code": code, "detail": message}
+            )
+            fail_remaining(code, message, pending[index + 1:])
+            return errors, "OFFICECLI_CONTROL_READBACK_FAILED"
+
+        ledger.record(
+            operation.get("op_id"),
+            operation.get("slot_id"),
+            (operation.get("target") or {}).get("location_id"),
+            operation.get("source_ref"),
+            operation.get("value"),
+            {"status": "SUCCESS"},
+        )
+        results_by_id[operation.get("op_id")].update({"status": "SUCCESS"})
+
+    if update_fields_on_open:
+        try:
+            _raw_set(
+                stage_path,
+                "/settings",
+                "/w:settings/w:updateFields",
+                "setattr",
+                "w:val=true",
+            )
+        except Exception as exc:
+            code = "EXECUTION_FAILED"
+            message = "updateFieldsOnOpen could not be written: {}: {}".format(
+                type(exc).__name__, exc
+            )
+            errors.append(
+                _error_record(
+                    code,
+                    message,
+                    details={"phase": "UPDATE_FIELDS_ON_OPEN"},
+                    rollback_required=True,
+                )
+            )
+            return errors, "FIELD_REFRESH_SETTING_FAILED"
+    return errors, None
+
+
+def _snapshot_controls(path: str) -> Dict[str, Any]:
+    document = docx.Document(path)
+    from template_intelligence.control_inventory import collect_fields
+
+    fields = collect_fields(document, "")
+    by_location: Dict[str, List[Tuple[str, str, str]]] = {}
+    for field in fields:
+        by_location.setdefault(str(field["location_id"]), []).append(
+            (
+                str(field["field_type"]),
+                str(field["instruction"]),
+                str(field["cached_result"]),
+            )
+        )
+    sdts: Dict[str, str] = {}
+    with zipfile.ZipFile(path) as package:
+        for name in package.namelist():
+            if not re.match(r"^word/(document|header\d+|footer\d+|footnotes|endnotes)\.xml$", name):
+                continue
+            from lxml import etree
+
+            root = etree.fromstring(package.read(name))
+            ns = {
+                "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            }
+            for sdt in root.xpath(".//w:sdt", namespaces=ns):
+                id_nodes = sdt.xpath("./w:sdtPr/w:id", namespaces=ns)
+                if not id_nodes:
+                    continue
+                sdt_id = id_nodes[0].get(
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
+                )
+                text = "".join(sdt.xpath(".//w:t/text()", namespaces=ns))
+                if sdt_id:
+                    sdts[str(sdt_id)] = text
+    return {"fields": by_location, "field_count": len(fields), "sdts": sdts}
+
+
+def _verify_control_snapshot(
+    before: Dict[str, Any],
+    after: Dict[str, Any],
+    pending: Sequence[Dict[str, Any]],
+    spec: Dict[str, Any],
+) -> Dict[str, Any]:
+    declared_fields = {
+        operation.get("field_id")
+        for operation in pending
+        if operation.get("type") == "edit_field"
+    }
+    declared_sdts = {
+        operation.get("sdt_id")
+        for operation in pending
+        if operation.get("type") == "edit_sdt"
+    }
+    controls = spec.get("controls") if isinstance(spec.get("controls"), dict) else {}
+    fields_by_id = {
+        field["field_id"]: field
+        for field in controls.get("fields") or []
+        if isinstance(field, dict) and isinstance(field.get("field_id"), str)
+    }
+    sdts_by_id = {
+        sdt["sdt_id"]: sdt
+        for sdt in controls.get("sdts") or []
+        if isinstance(sdt, dict) and isinstance(sdt.get("sdt_id"), str)
+    }
+    declared_locations = {
+        str(fields_by_id[field_id].get("location_id"))
+        for field_id in declared_fields
+        if field_id in fields_by_id
+    }
+    problems: List[str] = []
+    allow_sdt_field_loss = any(
+        operation.get("type") == "edit_sdt"
+        and isinstance(operation.get("control"), dict)
+        and "text" in operation["control"]
+        and operation.get("allow_field_loss") is True
+        for operation in pending
+    )
+    if after["field_count"] != before["field_count"] and not allow_sdt_field_loss:
+        problems.append(
+            "field count changed unexpectedly: {} -> {}".format(
+                before["field_count"], after["field_count"]
+            )
+        )
+    for location, before_values in before["fields"].items():
+        if location in declared_locations:
+            continue
+        after_values = after["fields"].get(location)
+        if after_values != before_values:
+            problems.append("undeclared field changed at {}".format(location))
+    declared_sdt_ooxml_ids = {
+        str(sdts_by_id.get(control_id, {}).get("ooxml_id") or "")
+        for control_id in declared_sdts
+    }
+    for field_id in declared_fields:
+        parent_id = fields_by_id.get(field_id, {}).get("parent_sdt_id")
+        parent = sdts_by_id.get(parent_id) if isinstance(parent_id, str) else None
+        if parent and parent.get("ooxml_id") is not None:
+            declared_sdt_ooxml_ids.add(str(parent["ooxml_id"]))
+    for sdt_id, text in before["sdts"].items():
+        declared = sdt_id in declared_sdt_ooxml_ids
+        if not declared and after["sdts"].get(sdt_id) != text:
+            problems.append("undeclared SDT changed: {}".format(sdt_id))
+    if set(before["sdts"]) != set(after["sdts"]):
+        problems.append("SDT id set changed")
+    return {"passed": not problems, "problems": problems}
+
+
+def _verify_update_fields_on_open(path: str) -> bool:
+    from lxml import etree
+
+    with zipfile.ZipFile(path) as package:
+        if "word/settings.xml" not in package.namelist():
+            return False
+        root = etree.fromstring(package.read("word/settings.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    nodes = root.xpath("/w:settings/w:updateFields", namespaces=ns)
+    if not nodes:
+        return False
+    value = nodes[0].get(
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
+    )
+    return str(value or "").strip().lower() in ("1", "true", "on")
+
+
+# ---------------------------------------------------------------------------
 # writer backends
 # ---------------------------------------------------------------------------
 
@@ -594,9 +1252,9 @@ def _officecli_operation_plan(
     officecli replaces text by rebuilding the target node. A paragraph-scoped
     ``set`` merges the paragraph's runs, which changes the structural tree; a
     run-scoped ``set`` (verified on 1.0.160) keeps every run, its order and its
-    formatting. The plan therefore resolves the token to exactly one direct
-    ``w:r`` and refuses the backend whenever the token spans runs, sits in a
-    nested run, or appears more than once.
+    formatting. The plan therefore resolves each occurrence to exactly one
+    direct ``w:r`` and refuses the backend whenever the token spans runs, sits
+    in a nested run, or cannot be isolated from another occurrence.
     """
     from docx.oxml.ns import qn
 
@@ -608,6 +1266,9 @@ def _officecli_operation_plan(
 
     commands: List[Dict[str, Any]] = []
     plan_by_op: Dict[str, Dict[str, Any]] = {}
+    original_by_location: Dict[str, str] = {}
+    replacements_by_location: Dict[str, List[Tuple[int, int, str]]] = {}
+    used_run_paths: set[str] = set()
 
     for operation in pending:
         op_id = operation.get("op_id")
@@ -626,7 +1287,7 @@ def _officecli_operation_plan(
 
         slot = slots.get(operation.get("slot_id")) or {}
         token = slot.get("matched_text")
-        if not isinstance(token, str) or not token:
+        if not isinstance(token, str):
             return [], {}, "slot {} has no literal matched_text".format(
                 operation.get("slot_id")
             )
@@ -649,20 +1310,44 @@ def _officecli_operation_plan(
 
         view = LogicalParagraphView(paragraph._p)
         before_text = view.logical_text
+        original_by_location.setdefault(location_id, before_text)
+
+        if not token:
+            if before_text != "":
+                return [], {}, (
+                    "empty-token slot {} targets non-empty paragraph {}".format(
+                        operation.get("slot_id"), location_id
+                    )
+                )
+            commands.append(
+                {
+                    "command": "set",
+                    "path": path,
+                    "props": {"text": str(operation.get("value"))},
+                }
+            )
+            plan_by_op[op_id] = {
+                "path": path,
+                "read_path": path,
+                "before": before_text,
+                "token": token,
+                "run_index": None,
+            }
+            replacements_by_location.setdefault(location_id, []).append(
+                (0, 0, str(operation.get("value")))
+            )
+            continue
+
         try:
             occurrence = max(1, int(slot.get("occurrence") or 1))
         except (TypeError, ValueError):
             occurrence = 1
-        if occurrence != 1 or before_text.count(token) != 1:
-            return [], {}, (
-                "token {!r} is not unique in {}; officecli replaces every match".format(
-                    token, location_id
-                )
-            )
 
         offset = _find_occurrence(before_text, token, occurrence)
         if offset is None:
-            return [], {}, "token {!r} is not found in {}".format(token, location_id)
+            return [], {}, "token {!r} occurrence {} is not found in {}".format(
+                token, occurrence, location_id
+            )
         last = offset + len(token) - 1
         if last >= len(view.char_map):
             return [], {}, "token {!r} exceeds the addressable run map".format(token)
@@ -690,17 +1375,34 @@ def _officecli_operation_plan(
                 "token {!r} is not unique inside the target run of {}".format(token, location_id)
             )
 
-        commands.append(
-            build_set_command("{0}/r[{1}]".format(path, run_index), token,
-                              str(operation.get("value")))
+        run_path = "{0}/r[{1}]".format(path, run_index)
+        if run_path in used_run_paths:
+            return [], {}, (
+                "multiple operations target the same officecli run {!r}; "
+                "split the runs or fill them with one operation".format(run_path)
+            )
+        used_run_paths.add(run_path)
+        value = str(operation.get("value"))
+        commands.append(build_set_command(run_path, token, value))
+        replacements_by_location.setdefault(location_id, []).append(
+            (offset, offset + len(token), value)
         )
         plan_by_op[op_id] = {
-            "path": "{0}/r[{1}]".format(path, run_index),
+            "path": run_path,
             "read_path": path,
             "before": before_text,
             "token": token,
             "run_index": run_index,
         }
+
+    for location_id, replacements in replacements_by_location.items():
+        expected = original_by_location[location_id]
+        for start, end, value in sorted(replacements, reverse=True):
+            expected = expected[:start] + value + expected[end:]
+        for operation in pending:
+            target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+            if target.get("location_id") == location_id:
+                plan_by_op[operation.get("op_id")]["expected_text"] = expected
 
     return commands, plan_by_op, None
 
@@ -831,8 +1533,14 @@ def _apply_operations_via_officecli(
         officecli_writer.run_batch(stage_path, list(commands))
     except Exception as exc:
         code = "EXECUTION_FAILED"
+        details = getattr(exc, "details", None)
+        detail_text = ""
+        if isinstance(details, dict):
+            detail_text = str(
+                details.get("stderr") or details.get("stdout") or ""
+            ).strip()
         message = "officecli could not apply the batch: {}: {}".format(
-            type(exc).__name__, exc
+            type(exc).__name__, str(exc) + (" | " + detail_text if detail_text else "")
         )
         errors.append(_error_record(
             code, message,
@@ -852,10 +1560,11 @@ def _apply_operations_via_officecli(
             descriptor = plan_by_op[op_id]
             try:
                 after_text = officecli_writer.get_text(stage_path, descriptor["read_path"])
-                if descriptor["token"] in after_text:
+                expected_text = descriptor.get("expected_text")
+                if expected_text is not None and after_text != expected_text:
                     raise ValueError(
-                        "placeholder token survived the batch at {}".format(
-                            descriptor["read_path"]
+                        "text read-back mismatch at {}: expected {!r}, got {!r}".format(
+                            descriptor["read_path"], expected_text, after_text
                         )
                     )
             except Exception as exc:
@@ -1219,6 +1928,7 @@ def execute_fill_plan(
     writer: str = "officecli",
     allow_writer_fallback: bool = False,
     qa_report_path: Optional[str] = None,
+    require_content_approval: bool = True,
 ) -> Dict[str, Any]:
     """Execute a FillPlan 4.0 deterministically and return a ToolEnvelope 4.0 dict.
 
@@ -1255,6 +1965,8 @@ def execute_fill_plan(
         "writer_fallback": None,
         "qa_report_path": None,
         "qa_report_error": None,
+        "control_qa": None,
+        "field_refresh": None,
     }
 
     tx: Optional[DocumentTransaction] = None
@@ -1345,6 +2057,25 @@ def execute_fill_plan(
             content_report = validate_content_plan(content_plan, spec)
             data["content_plan_validation"] = content_report
             errors.extend(_validation_errors(content_report, "INVALID_CONTENT_PLAN"))
+            approval = (
+                content_plan.get("approval")
+                if isinstance(content_plan.get("approval"), dict)
+                else {}
+            )
+            if require_content_approval and (
+                approval.get("approved") is not True
+                or not str(approval.get("approved_by") or "").strip()
+                or not str(approval.get("approved_at") or "").strip()
+            ):
+                errors.append(
+                    _error_record(
+                        "CONTENT_PLAN_APPROVAL_REQUIRED",
+                        "Final generation requires an approved ContentPlan "
+                        "approval block (approved_by and approved_at).",
+                        details={"content_plan_id": content_plan.get("plan_id")},
+                        rollback_required=False,
+                    )
+                )
         errors.extend(_validation_errors(spec_report, "INVALID_FILL_PLAN"))
         errors.extend(_validation_errors(plan_report, "INVALID_FILL_PLAN"))
         if errors:
@@ -1525,6 +2256,50 @@ def execute_fill_plan(
             tx.abort("PRECONDITION_BLOCKED")
             return envelope("BLOCKED", "STOP")
 
+        control_types = {"edit_field", "edit_sdt", "clear_red_text"}
+        pending_controls = [
+            operation for operation in pending
+            if operation.get("type") in control_types
+        ]
+        pending_text = [
+            operation for operation in pending
+            if operation.get("type") not in control_types
+        ]
+        if pending_controls and writer != "officecli":
+            for operation in pending_controls:
+                target = operation.get("target") if isinstance(operation.get("target"), dict) else {}
+                entry = results_by_id[operation.get("op_id")]
+                message = "control operations require the officecli writer"
+                ledger.record(
+                    operation.get("op_id"),
+                    operation.get("slot_id"),
+                    target.get("location_id"),
+                    operation.get("source_ref"),
+                    operation.get("value"),
+                    {
+                        "status": "FAILED",
+                        "error_code": "WRITER_UNSUPPORTED",
+                        "detail": message,
+                    },
+                )
+                entry.update(
+                    {
+                        "status": "FAILED",
+                        "error_code": "WRITER_UNSUPPORTED",
+                        "detail": message,
+                    }
+                )
+            errors.append(
+                _error_record(
+                    "WRITER_UNSUPPORTED",
+                    "edit_field/edit_sdt/clear_red_text require OfficeCLI",
+                    details={"writer": writer},
+                    rollback_required=False,
+                )
+            )
+            tx.abort("WRITER_UNSUPPORTED")
+            return envelope("BLOCKED", "STOP")
+
         # -- 4. locate every target before mutating --------------------------
         header_footer_state = _header_footer_snapshot(document)
         paragraphs = _paragraph_map(document)
@@ -1548,6 +2323,8 @@ def execute_fill_plan(
                     )
                 else:
                     cells[operation.get("op_id")] = cell
+            elif op_type == "edit_sdt":
+                continue
             elif location_id not in paragraphs:
                 locate_failures[operation.get("op_id")] = (
                     "SLOT_LOCATION_UNRESOLVED",
@@ -1594,6 +2371,20 @@ def execute_fill_plan(
         backend_fallback: Optional[str] = None
         officecli_commands: List[Dict[str, Any]] = []
         officecli_plan: Dict[str, Dict[str, Any]] = {}
+        control_commands: List[Dict[str, Any]] = []
+        control_plan: Dict[str, Dict[str, Any]] = {}
+        policy = fill_plan.get("global_policy") if isinstance(fill_plan.get("global_policy"), dict) else {}
+        update_fields_on_open = bool(
+            policy.get("update_fields_on_open", True)
+            and any(
+                isinstance(item, dict)
+                for item in (
+                    (spec.get("controls") or {}).get("fields")
+                    if isinstance(spec.get("controls"), dict)
+                    else []
+                ) or []
+            )
+        )
 
         if writer == "officecli" and pending:
             from engine.officecli_runtime import OfficecliError
@@ -1647,8 +2438,22 @@ def execute_fill_plan(
                 story_map = officecli_writer.build_story_map(template_path)
 
             commands, plan_by_op, fallback = _officecli_operation_plan(
-                pending, slots, paragraphs, cells, story_map=story_map
+                pending_text, slots, paragraphs, cells, story_map=story_map
             )
+            if fallback is None and pending_controls:
+                (
+                    control_commands,
+                    control_plan,
+                    control_fallback,
+                ) = _officecli_control_plan(
+                    pending_controls,
+                    spec,
+                    slots,
+                    paragraphs,
+                    story_map=story_map,
+                )
+                if control_fallback is not None:
+                    fallback = control_fallback
             if fallback is None:
                 backend = "officecli"
                 officecli_commands = commands
@@ -1703,15 +2508,95 @@ def execute_fill_plan(
 
         # -- 5. mutate the staged copy through the selected writer ------------
         if backend == "officecli":
-            operation_errors, abort_reason = _apply_operations_via_officecli(
-                template_path,
-                tx.stage(),
-                officecli_commands,
-                pending,
-                officecli_plan,
-                results_by_id,
-                ledger,
-            )
+            control_before = _snapshot_controls(template_path)
+            if pending_text:
+                operation_errors, abort_reason = _apply_operations_via_officecli(
+                    template_path,
+                    tx.stage(),
+                    officecli_commands,
+                    pending_text,
+                    officecli_plan,
+                    results_by_id,
+                    ledger,
+                )
+            else:
+                operation_errors, abort_reason = [], None
+            if abort_reason is None and (pending_controls or update_fields_on_open):
+                control_errors, abort_reason = _control_operation_batch(
+                    template_path,
+                    tx.stage(),
+                    control_commands,
+                    pending_controls,
+                    control_plan,
+                    results_by_id,
+                    ledger,
+                    update_fields_on_open=update_fields_on_open,
+                )
+                operation_errors.extend(control_errors)
+            if abort_reason is None and (pending_controls or update_fields_on_open):
+                try:
+                    from engine import officecli_writer
+
+                    officecli_writer.restore_paragraph_identity(
+                        template_path, tx.stage()
+                    )
+                    officecli_writer.restore_table_look(template_path, tx.stage())
+                except Exception as exc:
+                    operation_errors.append(
+                        _error_record(
+                            "EXECUTION_FAILED",
+                            "control output normalisation failed: {}: {}".format(
+                                type(exc).__name__, exc
+                            ),
+                            details={"phase": "CONTROL_NORMALIZE"},
+                            rollback_required=True,
+                        )
+                    )
+                    abort_reason = "OFFICECLI_CONTROL_NORMALIZE_FAILED"
+            if abort_reason is None:
+                control_after = _snapshot_controls(tx.stage())
+                control_qa = _verify_control_snapshot(
+                    control_before, control_after, pending_controls, spec
+                )
+                data["control_qa"] = control_qa
+                if not control_qa["passed"]:
+                    operation_errors.append(
+                        _error_record(
+                            "EXECUTION_FAILED",
+                            "control snapshot verification failed",
+                            details={"problems": control_qa["problems"]},
+                            rollback_required=True,
+                        )
+                    )
+                    abort_reason = "CONTROL_SNAPSHOT_MISMATCH"
+            if abort_reason is None and update_fields_on_open:
+                if not _verify_update_fields_on_open(tx.stage()):
+                    operation_errors.append(
+                        _error_record(
+                            "EXECUTION_FAILED",
+                            "updateFieldsOnOpen was not persisted in settings.xml",
+                            details={"phase": "FIELD_REFRESH_VERIFY"},
+                            rollback_required=True,
+                        )
+                    )
+                    abort_reason = "FIELD_REFRESH_SETTING_FAILED"
+                else:
+                    data["field_refresh"] = {
+                        "update_fields_on_open": True,
+                        "verification": "OOXML_SETTING_PRESENT",
+                        "page_numbers": "DEFERRED_TO_OPEN",
+                    }
+                    warnings.append(
+                        {
+                            "code": "FIELD_REFRESH_DEFERRED_TO_OPEN",
+                            "message": (
+                                "Fields (including PAGE/TOC) are configured to "
+                                "refresh when the document opens; exact page "
+                                "numbers were not verified in Word/WPS."
+                            ),
+                            "severity": "warning",
+                        }
+                    )
         else:
             operation_errors, abort_reason = _apply_operations_in_memory(
                 document,

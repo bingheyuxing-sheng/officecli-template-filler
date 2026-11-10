@@ -551,6 +551,14 @@ def iter_all_document_paragraphs_with_Wait_context(doc) -> Iterator[ParagraphCon
         if any(k in reltype for k in ("footnotes", "endnotes", "comments")):
             target_part = rel.target_part
             el = getattr(target_part, "element", None)
+            if el is None:
+                el = getattr(target_part, "_element", None)
+            if el is None:
+                blob = getattr(target_part, "blob", None)
+                if blob:
+                    from docx.oxml import parse_xml
+
+                    el = parse_xml(blob)
             if el is not None:
                 part_short = reltype.split("/")[-1]
                 for idx, p_el in enumerate(el.findall(".//" + qn("w:p"))):

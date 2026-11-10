@@ -26,6 +26,7 @@ def generate_document_v4(
     writer: str = "officecli",
     allow_writer_fallback: bool = False,
     qa_report_path: Optional[str] = None,
+    require_content_approval: bool = True,
 ) -> Dict[str, Any]:
     """Execute ``fill_plan`` over ``template_path`` and return a ToolEnvelope 4.0 dict."""
     return execute_fill_plan(
@@ -40,6 +41,7 @@ def generate_document_v4(
         writer=writer,
         allow_writer_fallback=allow_writer_fallback,
         qa_report_path=qa_report_path,
+        require_content_approval=require_content_approval,
     )
 
 

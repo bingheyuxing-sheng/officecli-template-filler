@@ -38,10 +38,12 @@ from engine import (
     install_auto_cleanup,
     write_review_snapshot,
 )
+from engine.cli_io import configure_stdio
 from engine.package_guard import reject_first_package
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Proofread a single document into a tracked-changes deliverable.")
     parser.add_argument("--target", required=True, help="Document to proofread")

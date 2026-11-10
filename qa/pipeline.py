@@ -197,6 +197,51 @@ def _has_image_ops(fill_plan: Any) -> bool:
     )
 
 
+def _authorized_structural_mask_locations(
+    spec: Optional[Dict[str, Any]],
+    fill_plan: Any,
+) -> set[str]:
+    """Paragraphs whose run structure may change under an explicit operation.
+
+    Empty table anchors necessarily add a text run, and clearing a red
+    instruction may remove the emptied run. Both operations are user-visible,
+    plan-authorized edits; only the target paragraph is masked from the
+    structural comparison. Paragraph properties still participate in the hash.
+    """
+    if not isinstance(spec, dict) or not isinstance(fill_plan, dict):
+        return set()
+    slots = {
+        slot["slot_id"]: slot
+        for slot in spec.get("slots", []) or []
+        if isinstance(slot, dict) and isinstance(slot.get("slot_id"), str)
+    }
+    locations: set[str] = set()
+    for operation in fill_plan.get("operations", []) or []:
+        if not isinstance(operation, dict):
+            continue
+        location = (operation.get("target") or {}).get("location_id")
+        if not isinstance(location, str):
+            continue
+        if operation.get("type") == "clear_red_text":
+            locations.add(location)
+            continue
+        slot = slots.get(operation.get("slot_id"))
+        if isinstance(slot, dict) and slot.get("candidate_type") == "empty_anchor":
+            locations.add(location)
+    return locations
+
+
+def _apply_structural_mask(document, locations: set[str]) -> None:
+    if not locations:
+        return
+    for ctx in iter_all_document_paragraphs_with_Wait_context(document):
+        if ctx["location_id"] not in locations:
+            continue
+        p_el = ctx["p_el"]
+        for child in list(p_el):
+            p_el.remove(child)
+
+
 def _attempted_body_paragraphs(fill_plan: Any) -> set:
     indexes = set()
     if not isinstance(fill_plan, dict):
@@ -544,11 +589,16 @@ def run_full_qa(
                 output_doc = docx.Document(staged)
                 template_texts = _spec_protected_texts(template_doc, spec)
                 output_texts = _spec_protected_texts(output_doc, spec)
+                # QA checks may mutate a parsed document in memory; the output
+                # fingerprint is therefore taken from a fresh disk read.
+                mask_locations = _authorized_structural_mask_locations(
+                    spec, fill_plan
+                )
+                _apply_structural_mask(template_doc, mask_locations)
+                _apply_structural_mask(output_doc, mask_locations)
                 template_hashes = compute_four_hashes(
                     template_doc, protected_texts=template_texts
                 )
-                # QA checks may mutate a parsed document in memory; the output
-                # fingerprint is therefore taken from a fresh disk read.
                 output_hashes = compute_four_hashes(
                     output_doc, protected_texts=output_texts
                 )
@@ -620,6 +670,14 @@ def run_full_qa(
             try:
                 record["evidence"]["input_sha256"] = _sha256_file(template)
                 record["evidence"]["output_sha256"] = _sha256_file(staged)
+                if mask_locations:
+                    record["evidence"]["detail"] = (
+                        "%s; structural mask applied to %d authorized paragraph(s)"
+                        % (
+                            record["evidence"].get("detail", ""),
+                            len(mask_locations),
+                        )
+                    ).strip("; ")
             except OSError:
                 # Optional evidence: an unreadable file must not fabricate a hash.
                 pass

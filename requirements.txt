@@ -6,6 +6,9 @@ Pillow>=10.0.0
 # v4.0 计划链路（DocumentSpec 校验、FillPlan/ContentPlan 校验、QA 门禁）运行时必需
 jsonschema>=4.20
 
+# 原则意见 PDF 的只读文本提取（失败时报告 PDF_TEXT_UNAVAILABLE）
+pypdf>=5.0.0
+
 # 可选：PDF 页面级差异比对（缺失时相关检查标记为 UNVERIFIED）
 # pymupdf>=1.24.0
 

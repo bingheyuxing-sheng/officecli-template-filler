@@ -39,6 +39,7 @@ from engine import (
     install_auto_cleanup,
 )
 from engine import officecli_writer
+from engine.cli_io import configure_stdio
 from engine.package_guard import check_package, load_limits
 from engine.polish_engine import (
     PolishExecutionError,
@@ -59,6 +60,7 @@ def _write_json(path: str, payload: dict) -> None:
 
 
 def main() -> int:
+    configure_stdio()
     install_auto_cleanup()
     parser = argparse.ArgumentParser(description="Refine wording without changing the document layout.")
     parser.add_argument("--target", required=True, help="Draft .docx to polish")

@@ -74,7 +74,11 @@ python -m pip install -r requirements.txt
 
 Excel templates are a separate routed path: `EXCEL_GENERATE` → `scripts/generate_excel.py`
 (`--template`, `--data`, `--out`), which fills cells through OfficeCLI and keeps existing
-formulas; macro-enabled `.xlsm` files require an explicit `--allow-writer-fallback`.
+formulas; macro-enabled `.xlsm` files require an explicit `--allow-writer-fallback`. When the
+template has no `{{...}}` / `【...】` tokens, pass a `cells` plan in the payload (a list of
+`{sheet, cell, value, type}` objects or a `"Sheet1!B2": value` map); formula cells and
+non-top-left merged cells are refused with `INVALID_CELL_PLAN`. A payload with neither tokens
+nor cells returns `NO_MATCHING_PLACEHOLDERS` and publishes nothing.
 
 `POLISH` and `MERGE` run on the OfficeCLI backend. `POLISH` refuses a span that crosses
 differently formatted runs instead of letting OfficeCLI rebuild the paragraph; `MERGE` uses the
@@ -222,7 +226,7 @@ by design; a failed check aborts the transaction rather than degrading the outpu
 
 ## Version and releases
 
-Current version: **4.3.1** (`engine/__init__.py`, `SKILL.md`).
+Current version: **4.3.2** (`engine/__init__.py`, `SKILL.md`).
 
 - `dist/` is ignored by git. It is build output produced by the release flow, never committed.
 - `python scripts/package_skill.py` builds a working-tree skill zip and manifest under `dist/`; the

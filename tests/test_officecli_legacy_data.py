@@ -90,15 +90,17 @@ def test_legacy_token_plan_maps_body_table_and_header(tmp_path):
     assert body_target["strip_red"] is True
 
 
-def test_legacy_token_plan_reports_unaddressable_sdt(tmp_path):
+def test_legacy_token_plan_addresses_sdt(tmp_path):
     template = tmp_path / "template.docx"
     _sdt_template(template)
 
     plan = build_legacy_token_plan(str(template), {"{{sdt}}": "X"})
 
-    assert plan.commands == []
-    assert plan.unsupported
-    assert plan.unsupported[0]["location_id"] == "body.sdt[0].p[0]"
+    assert plan.unsupported == []
+    assert plan.occurrences == 1
+    assert [command["path"] for command in plan.commands] == [
+        "/body/sdt[1]/p[1]"
+    ]
 
 
 def test_live_legacy_data_path_uses_officecli_and_strips_red(tmp_path):
@@ -181,7 +183,7 @@ def test_legacy_data_path_explicit_python_docx_still_works(tmp_path):
     assert docx.Document(str(output)).paragraphs[0].text == "Hello Alice"
 
 
-def test_live_legacy_data_blocks_unaddressable_sdt_without_fallback(tmp_path):
+def test_live_legacy_data_addresses_sdt_without_fallback(tmp_path):
     _require_officecli()
     template = tmp_path / "template.docx"
     _sdt_template(template)
@@ -208,14 +210,16 @@ def test_live_legacy_data_blocks_unaddressable_sdt_without_fallback(tmp_path):
         env=os.environ.copy(),
         cwd=str(ROOT),
     )
-    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
-    assert payload["error"] == "WRITER_LOCATION_UNSUPPORTED"
     assert payload["writer_backend"] == "officecli"
-    assert not output.exists()
+    assert payload["writer_fallback"] is None
+    rendered = docx.Document(str(output))
+    assert "{{sdt}}" not in rendered.element.body.xml
+    assert ">X<" in rendered.element.body.xml
 
 
-def test_live_legacy_data_falls_back_for_unaddressable_sdt(tmp_path):
+def test_live_legacy_data_does_not_fallback_for_supported_sdt(tmp_path):
     _require_officecli()
     template = tmp_path / "template.docx"
     _sdt_template(template)
@@ -245,8 +249,8 @@ def test_live_legacy_data_falls_back_for_unaddressable_sdt(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
-    assert payload["writer_backend"] == "python-docx"
-    assert payload["writer_fallback"]["code"] == "WRITER_LOCATION_UNSUPPORTED"
+    assert payload["writer_backend"] == "officecli"
+    assert payload["writer_fallback"] is None
     rendered = docx.Document(str(output))
     assert "{{sdt}}" not in rendered.element.body.xml
     assert ">X<" in rendered.element.body.xml
