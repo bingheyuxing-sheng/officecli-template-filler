@@ -24,9 +24,17 @@ from document_engine.fill_executor import (
 )
 from document_engine.fill_ledger import FillLedger
 from engine.ooxml_utils import iter_all_document_paragraphs_with_Wait_context
+from engine.officecli_runtime import OfficecliError, OfficecliRuntime
 from template_gate import build_analysis
 from template_gate.report import build_report, render_markdown
 from template_intelligence import build_document_spec_from_path
+
+
+def _require_officecli() -> None:
+    try:
+        OfficecliRuntime().preflight()
+    except OfficecliError as exc:
+        pytest.skip("officecli is not runnable here: {}".format(exc))
 
 
 def _sha256(path: Path) -> str:
@@ -92,6 +100,7 @@ def _make_control_template(path: Path) -> Path:
 
 
 def test_control_inventory_resolves_fields_and_footer_sdt(tmp_path):
+    _require_officecli()
     template = _make_control_template(tmp_path / "controls.docx")
     spec = build_document_spec_from_path(str(template))
     fields = spec["controls"]["fields"]
@@ -380,6 +389,7 @@ def _control_plan(spec, field):
 
 
 def test_fill_plan_control_operations_and_execution(tmp_path):
+    _require_officecli()
     template = _make_control_template(tmp_path / "controls.docx")
     spec = build_document_spec_from_path(str(template))
     field = spec["controls"]["fields"][-1]
@@ -428,6 +438,7 @@ def test_fill_plan_control_operations_and_execution(tmp_path):
 
 
 def test_edit_sdt_text_requires_explicit_field_loss(tmp_path):
+    _require_officecli()
     template = _make_control_template(tmp_path / "controls.docx")
     spec = build_document_spec_from_path(str(template))
     sdt = spec["controls"]["sdts"][0]
